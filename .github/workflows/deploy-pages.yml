@@ -1,0 +1,33 @@
+# 推送到 main 即把 web/ 目录部署到 GitHub Pages。
+# 周更管线（本机 crontab）每周五推送 data.js 变更 → 本工作流自动重新部署 → 线上榜单刷新。
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/deploy-pages.yml"]
+  workflow_dispatch:   # 支持手动触发
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4

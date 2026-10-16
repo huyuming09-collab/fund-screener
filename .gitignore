@@ -1,0 +1,25 @@
+# ---- Python ----
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ---- 运行数据（全部可由管线/抓取再生成，不入库）----
+data/cache/
+data/nav_full/
+data/snapshots/
+data/logs/
+data/*.pkl
+data/*.log
+data/*.png
+data/*.json
+data/*.csv
+
+# 例外：公司非货规模映射为外部一次性采集、代码不可再生成，且缺失会导致
+# 小公司红线静默失效 —— 必须入库（batch._load_company_scale 依赖）。
+!data/fund_company_map.csv
+!data/company_scale_nonmoney.csv
+
+# ---- 本地杂项 ----
+out.json
+.DS_Store

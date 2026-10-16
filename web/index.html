@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基金筛选 · 周榜 TOP20</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --ink:#1f2329; --sub:#8a9099; --line:#eceef1;
+  --up:#e64545;      /* 涨/收益红 */
+  --down:#12a05c;    /* 跌/回撤绿 */
+  --accent:#ff6a00;  /* 主色（支付宝橙风） */
+  --gold:#ffb400;
+  --radius:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;background:#e9ebef;height:100%;overflow:hidden;}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+     color:var(--ink);display:flex;justify-content:center;}
+/* 手机框：视口等高，列表与详情各自内部滚动（修复详情页无法上下滑动：此前 #detail 被
+   撑高到整个榜单高度、overflow 永不触发，同时 body 被锁 → 卡死） */
+/* 内容列：手机满宽；电脑（≥640px）居中限宽 480px + 投影（窄栏居中单列，用户确认口径） */
+#phone{width:100%;max-width:480px;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);position:relative;overflow:hidden;
+       display:flex;flex-direction:column;}
+@media (min-width:640px){ #phone{box-shadow:0 0 24px rgba(0,0,0,.12);} }
+#phone>header{flex:0 0 auto;}
+
+/* ---------- 顶部 ---------- */
+header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#ff8a3d,#ff6a00);
+       color:#fff;padding:14px 16px 10px;}
+header h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.5px;}
+header .meta{font-size:11px;opacity:.92;margin-top:4px;}
+.tabs{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px;}
+.tab{flex:0 0 auto;padding:5px 14px;border-radius:14px;font-size:13px;background:rgba(255,255,255,.22);
+     color:#fff;white-space:nowrap;border:none;}
+.tab.active{background:#fff;color:var(--accent);font-weight:600;}
+.tab.disabled{opacity:.45;}
+.tab .soon{font-size:10px;margin-left:3px;}
+
+/* ---------- 榜单卡 ---------- */
+main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.fundcard{background:var(--card);border-radius:var(--radius);padding:13px 14px 11px;margin-bottom:11px;
+          box-shadow:0 1px 4px rgba(20,24,40,.05);cursor:pointer;transition:transform .08s;}
+.fundcard:active{transform:scale(.985);}
+.fc-head{display:flex;align-items:center;gap:9px;}
+.rank{flex:0 0 auto;width:26px;height:26px;border-radius:8px;background:#fff2ea;color:var(--accent);
+      font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.rank.top1{background:#fff0f0;color:var(--up);} .rank.top2{background:#fff6e8;color:#ff9800;}
+.rank.top3{background:#fff9e0;color:#e0a800;}
+.fc-name{font-size:15.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+         white-space:nowrap;}
+.fc-code{font-size:11.5px;color:var(--sub);margin-top:2px;display:flex;gap:6px;align-items:center;}
+.fc-code .score{color:var(--accent);font-weight:600;}
+.fc-code .dot{color:#d8dbe0;}
+.fc-metrics{display:grid;grid-template-columns:repeat(4,1fr);margin-top:11px;
+            background:#fafbfc;border-radius:10px;padding:8px 2px;}
+.m{ text-align:center;position:relative;}
+.m+.m:before{content:"";position:absolute;left:0;top:14%;height:72%;width:1px;background:var(--line);}
+.m .v{font-size:14px;font-weight:650;letter-spacing:-.2px;}
+.m .l{font-size:10.5px;color:var(--sub);margin-top:3px;}
+.pos{color:var(--up);} .neg{color:var(--down);}
+.fc-foot{display:flex;gap:10px;margin-top:9px;font-size:11.5px;color:var(--sub);align-items:center;}
+.fc-foot .ok{color:var(--down);}
+.empty-tip{color:var(--sub);text-align:center;font-size:13px;padding:30px 0;}
+
+/* ---------- 详情页 ---------- */
+#detail{position:absolute;inset:0;background:var(--bg);z-index:50;transform:translateX(100%);
+        transition:transform .22s ease;overflow-y:auto;display:none;}
+#detail.show{display:block;transform:translateX(0);}
+.d-head{background:linear-gradient(180deg,#ff8a3d,#ff6a00);color:#fff;padding:14px 16px 16px;
+        position:sticky;top:0;z-index:5;}
+.back{display:inline-block;font-size:15px;color:#fff;background:rgba(255,255,255,.22);
+      border:none;border-radius:50%;width:28px;height:28px;line-height:26px;text-align:center;
+      margin-right:10px;cursor:pointer;}
+.d-title{display:flex;align-items:center;}
+.d-title .n{font-size:17px;font-weight:600;}
+.d-scoreline{display:flex;gap:14px;margin-top:10px;font-size:12px;align-items:baseline;}
+.d-scoreline b{font-size:20px;font-weight:700;}
+.sec{background:#fff;border-radius:var(--radius);margin:12px;padding:13px 14px;
+     box-shadow:0 1px 4px rgba(20,24,40,.05);}
+.sec h3{margin:0 0 10px;font-size:14.5px;font-weight:650;display:flex;justify-content:space-between;
+        align-items:center;}
+.sec h3 .hint{font-size:11px;color:var(--sub);font-weight:400;}
+.winbar{display:flex;gap:6px;margin-bottom:8px;}
+.win{padding:3px 10px;font-size:12px;border-radius:12px;background:#f2f4f7;color:var(--sub);border:none;}
+.win.on{background:var(--accent);color:#fff;}
+canvas{width:100%;height:150px;display:block;}
+.stage{display:grid;grid-template-columns:repeat(6,1fr);}
+.stage .m .v{font-size:13px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px 8px;}
+.gcell{background:#fafbfc;border-radius:10px;padding:8px 10px;}
+.gcell .l{font-size:11px;color:var(--sub);}
+.gcell .v{font-size:15px;font-weight:650;margin-top:3px;}
+.gcell .v small{font-size:11px;color:var(--sub);font-weight:400;}
+table.yr{width:100%;border-collapse:collapse;font-size:13px;}
+table.yr td,table.yr th{padding:7px 4px;text-align:center;border-bottom:1px solid var(--line);}
+table.yr th{color:var(--sub);font-size:11.5px;font-weight:500;}
+table.yr tr:last-child td{border-bottom:none;}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12px;}
+.bar-row .bl{width:96px;color:var(--sub);flex:0 0 auto;text-align:right;}
+.bar-bg{flex:1;height:9px;background:#f2f4f7;border-radius:5px;overflow:hidden;}
+.bar{height:100%;border-radius:5px;background:linear-gradient(90deg,#ffb15e,#ff6a00);}
+.bar-row .bv{width:44px;text-align:right;font-weight:600;font-size:12px;}
+.kv{display:flex;justify-content:space-between;font-size:13px;padding:7px 0;
+    border-bottom:1px dashed var(--line);}
+.kv:last-child{border-bottom:none;}
+.kv .k{color:var(--sub);}
+.pctbar{position:relative;height:22px;background:#f2f4f7;border-radius:11px;margin:6px 0 2px;overflow:hidden;}
+.pctbar .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#ffd28a,#ff9a3d);
+              border-radius:11px;}
+.pctbar .lbl{position:absolute;top:0;bottom:0;display:flex;align-items:center;font-size:11.5px;
+             color:#5a4632;padding-left:9px;font-weight:600;}
+.mgr-name{font-size:15px;font-weight:650;}
+.mgr-sub{font-size:12px;color:var(--sub);margin-top:4px;line-height:1.6;}
+.mgr-cards{display:flex;gap:8px;margin-top:9px;}
+.mgr-cards .mc{flex:1;background:#fafbfc;border-radius:10px;padding:7px 8px;text-align:center;}
+.mgr-cards .mc .v{font-size:15px;font-weight:650;color:var(--accent);}
+.mgr-cards .mc .l{font-size:10.5px;color:var(--sub);margin-top:2px;}
+.disclaimer{font-size:11px;color:#a8adb5;line-height:1.7;padding:6px 16px 26px;}
+/* 列表页常显免责底栏（小程序停做改网页后按公开页面口径挂载） */
+.page-disc{flex:0 0 auto;font-size:10.5px;color:#a8adb5;line-height:1.6;text-align:center;
+           padding:8px 14px calc(8px + env(safe-area-inset-bottom));background:var(--bg);
+           border-top:1px solid var(--line);}
+.redline-tag{display:inline-block;background:#fff0f0;color:var(--up);border-radius:6px;
+             font-size:11px;padding:1px 6px;margin-left:6px;}
+</style>
+</head>
+<body>
+<div id="phone">
+  <header>
+    <h1>基金筛选周榜</h1>
+    <div class="meta" id="meta">—</div>
+    <div class="tabs" id="tabs"></div>
+  </header>
+
+  <main id="list"></main>
+
+  <!-- 列表页常显免责声明（data.js 缺失时用同文案兜底） -->
+  <div class="page-disc" id="p-disc"></div>
+
+  <!-- 详情页 -->
+  <div id="detail" aria-hidden="true">
+    <div class="d-head">
+      <div class="d-title"><button class="back" onclick="closeDetail()">‹</button>
+        <span class="n" id="d-name">—</span></div>
+      <div class="d-scoreline">
+        <span>综合评分 <b id="d-score">—</b></span>
+        <span id="d-rank"></span>
+        <span id="d-code" style="opacity:.9"></span>
+      </div>
+    </div>
+    <div id="d-body"></div>
+    <div class="disclaimer" id="d-disc"></div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+/* ============ 工具 ============ */
+const D = window.CARD_DATA;
+const pct = (v, nd=2) => v==null ? '—' : (v*100).toFixed(nd)+'%';
+const cls = v => v==null ? '' : (v>=0 ? 'pos' : 'neg');
+const pctCls = v => v==null ? '' : (v>=0 ? 'pos' : 'neg');   /* 收益红、回撤本身用中性展示 */
+const yi  = v => v==null ? '—' : v.toFixed(2)+'亿';
+const $ = id => document.getElementById(id);
+
+/* ============ 分类 tab（框架占位） ============ */
+function renderTabs(active){
+  $('tabs').innerHTML = D.categories.map(c =>
+    `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
+      ${c.enabled?'':'disabled onclick="toast()"'}>${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
+  ).join('');
+}
+function toast(){ /* 占位分类 */ }
+
+/* ============ 榜单 ============ */
+const METRIC_CELLS = f => [
+  ['近1年收益',  pct(f.metrics.ret_1y),  cls(f.metrics.ret_1y)],
+  ['近五年年化', pct(f.metrics.ret_5y),  cls(f.metrics.ret_5y)],
+  ['近五年最大回撤', pct(f.metrics.mdd_5y), ''],   /* 回撤全称展示，绿→负值语义但此处用中性 */
+  ['夏普比率',   f.metrics.sharpe_5y==null?'—':f.metrics.sharpe_5y.toFixed(2), ''],
+];
+
+function renderList(){
+  const funds = D.funds || [];
+  $('meta').innerHTML = `数据基准 ${D.asof} · 模型 ${D.model_version} · 筛出 ${D.funnel['P2 年度分位中位≥55%'] ?? D.n} 只取前 ${D.top_n} 名`
+    + ` · 本期上榜 <b>${funds.length}</b> 只`;
+  if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
+  $('list').innerHTML = funds.map(f => `
+    <div class="fundcard" onclick='openDetail(${JSON.stringify(f.code)})'>
+      <div class="fc-head">
+        <div class="rank ${f.rank<=3?'top'+f.rank:''}">${f.rank}</div>
+        <div style="flex:1;min-width:0">
+          <div class="fc-name">${f.name}</div>
+          <div class="fc-code">${f.code}<span class="dot">·</span>短债
+            <span class="dot">·</span><span class="score">评分 ${f.score}</span></div>
+        </div>
+      </div>
+      <div class="fc-metrics">
+        ${METRIC_CELLS(f).map(([l,v,c])=>`<div class="m"><div class="v ${c}">${v}</div><div class="l">${l}</div></div>`).join('')}
+      </div>
+      <div class="fc-foot">
+        <span>规模 ${yi(f.fund_info.scale_yi)}</span><span>·</span>
+        <span>经理从业 ${f.manager.career_years==null?'—':f.manager.career_years+'年'}</span><span>·</span>
+        <span class="${f.redlines.length?'':'ok'}">${f.redlines.length?'有红线项':'无红线'}</span>
+      </div>
+    </div>`).join('');
+}
+
+/* ============ 详情 ============ */
+let CUR = null, WIN = '1y';
+
+function openDetail(code){
+  CUR = D.funds.find(f=>f.code===code); if(!CUR) return;
+  WIN = '1y';
+  $('d-name').textContent = CUR.name;
+  $('d-score').textContent = CUR.score;
+  $('d-rank').textContent  = `第 ${CUR.rank} 名 / ${D.n}`;
+  $('d-code').textContent  = CUR.code + ' · 短债';
+  $('d-disc').textContent  = D.disclaimer;
+  $('d-body').innerHTML = bodyHTML(CUR);
+  const el = $('detail'); el.style.display='block';
+  requestAnimationFrame(()=>el.classList.add('show'));
+  drawTrend();
+  document.body.style.overflow='hidden';
+}
+function closeDetail(){
+  const el=$('detail'); el.classList.remove('show');
+  setTimeout(()=>{el.style.display='none';},220);
+  document.body.style.overflow='';
+}
+
+function bodyHTML(f){
+  const m = f.metrics, st = f.stages, fi = f.fund_info, mg = f.manager;
+  const years = Object.keys(f.yearly).sort();
+  const scoreRows = Object.entries(f.score_detail)
+      .filter(([k,v])=>v!=null).sort((a,b)=>b[1]-a[1]);
+  const w = Math.max(...scoreRows.map(([,v])=>v), 1);
+  return `
+  <!-- 阶段收益 -->
+  <div class="sec"><h3>阶段收益<span class="hint">累计收益</span></h3>
+    <div class="stage">
+      ${D.categories && [['1m','近1月'],['3m','近3月'],['6m','近6月'],['1y','近1年'],['3y','近3年'],['5y','近5年']]
+        .map(([k,l])=>`<div class="m"><div class="v ${cls(st[k])}">${pct(st[k])}</div><div class="l">${l}</div></div>`).join('')}
+    </div>
+  </div>
+
+  <!-- 净值走势 -->
+  <div class="sec"><h3>净值走势<span class="hint">归一化收益曲线</span></h3>
+    <div class="winbar">
+      ${['1y','3y','5y'].map(k=>`<button class="win ${k===WIN?'on':''}" onclick="setWin('${k}')">${k==='1y'?'近1年':k==='3y'?'近3年':'近5年'}</button>`).join('')}
+    </div>
+    <canvas id="trend" width="710" height="300"></canvas>
+  </div>
+
+  <!-- 风险表现 -->
+  <div class="sec"><h3>风险表现</h3>
+    <div class="grid2">
+      <div class="gcell"><div class="l">近五年最大回撤</div><div class="v">${pct(m.mdd_5y)}</div></div>
+      <div class="gcell"><div class="l">近一年最大回撤</div><div class="v">${pct(m.mdd_1y)}</div></div>
+      <div class="gcell"><div class="l">近五年年化波动</div><div class="v">${pct(m.vol_5y)}</div></div>
+      <div class="gcell"><div class="l">夏普比率（近5年）</div><div class="v">${m.sharpe_5y==null?'—':m.sharpe_5y.toFixed(2)}
+        <small>近1年 ${m.sharpe_1y==null?'—':m.sharpe_1y.toFixed(2)}</small></div></div>
+      <div class="gcell"><div class="l">下跌修复（LVI·5年）</div><div class="v">${m.lvi_5y==null?'—':m.lvi_5y.toFixed(2)}</div></div>
+      <div class="gcell"><div class="l">最大回撤修复</div>
+        <div class="v">${m.repair_days==null?'—':(m.repair_recovered?m.repair_days+'天':'未修复')}
+        <small>${m.repair_signif?'显著回撤':'不显著'}</small></div></div>
+      <div class="gcell"><div class="l">月度胜率（5年）</div><div class="v">${pct(m.winrate_m_5y,1)}</div></div>
+      <div class="gcell"><div class="l">超额胜率（5年）</div><div class="v">${pct(m.q_excess_20q,1)}</div></div>
+    </div>
+  </div>
+
+  <!-- 分年收益 -->
+  <div class="sec"><h3>分年收益<span class="hint">末列为年内至今</span></h3>
+    <table class="yr"><tr><th>年度</th>${years.map(y=>`<th>${y===D.asof.slice(0,4)?y+'至今':y}</th>`).join('')}</tr>
+    <tr><td style="color:var(--sub);font-size:12px">收益率</td>
+      ${years.map(y=>`<td class="${cls(f.yearly[y])}">${pct(f.yearly[y])}</td>`).join('')}</tr></table>
+  </div>
+
+  <!-- 同类分位 -->
+  <div class="sec"><h3>同类分位（短债池）<span class="hint">越高越靠前</span></h3>
+    <div class="l" style="font-size:12px;color:var(--sub)">业绩综合分位</div>
+    <div class="pctbar"><div class="fill" style="width:${(f.screening.comp_pct*100).toFixed(1)}%"></div>
+      <div class="lbl">超过 ${(f.screening.comp_pct*100).toFixed(1)}% 的同类基金</div></div>
+    <div class="l" style="font-size:12px;color:var(--sub);margin-top:8px">逐年收益中位分位</div>
+    <div class="pctbar"><div class="fill" style="width:${(f.screening.yearly_med*100).toFixed(1)}%"></div>
+      <div class="lbl">超过 ${(f.screening.yearly_med*100).toFixed(1)}% 的同类基金</div></div>
+    <div style="font-size:11.5px;color:var(--sub);margin-top:8px">
+      近5年最大单日涨幅 ${pct(f.screening.max_gain_5y)}（筛选阈值 &lt;1%）</div>
+  </div>
+
+  <!-- 基金经理 -->
+  <div class="sec"><h3>基金经理</h3>
+    <div class="mgr-name">${mg.name}</div>
+    <div class="mgr-sub">现任 ${f.name.replace(/[ABCDEF]$/,'')} 基金经理，任本基金
+      ${mg.tenure_days==null?'—':(mg.tenure_days/365).toFixed(1)+' 年'}</div>
+    <div class="mgr-cards">
+      <div class="mc"><div class="v">${mg.career_years==null?'—':mg.career_years+'年'}</div><div class="l">从业年限</div></div>
+      <div class="mc"><div class="v">${mg.products_ann==null?'—':(mg.products_ann*100).toFixed(2)+'%'}</div><div class="l">在管产品年化均值</div></div>
+      <div class="mc"><div class="v">${mg.tenure_days==null?'—':(mg.tenure_days/365).toFixed(1)+'年'}</div><div class="l">任本基金</div></div>
+    </div>
+  </div>
+
+  <!-- 基本信息 -->
+  <div class="sec"><h3>基本信息</h3>
+    <div class="kv"><span class="k">基金规模</span><span>${yi(fi.scale_yi)}（${fi.n_classes}类份额合并）</span></div>
+    <div class="kv"><span class="k">成立日期</span><span>${fi.establish_date}（${fi.age}年）</span></div>
+    <div class="kv"><span class="k">累计净值年限</span><span>${fi.nav_years}年</span></div>
+    <div class="kv"><span class="k">申购+托管费</span><span>${(fi.fee_total*100).toFixed(2)}%/年</span></div>
+    <div class="kv"><span class="k">晨星评级</span><span>${fi.ms_rating?fi.ms_rating+'星':'—'}</span></div>
+    <div class="kv"><span class="k">机构持有占比</span><span>${pct(fi.inst_ratio,1)}</span></div>
+    <div class="kv"><span class="k">业绩基准</span><span style="max-width:60%;text-align:right">${fi.benchmark||'—'}</span></div>
+  </div>
+
+  <!-- 评分明细 -->
+  <div class="sec"><h3>评分明细<span class="hint">v5.2 · 分项贡献分</span></h3>
+    ${scoreRows.map(([k,v])=>`
+      <div class="bar-row"><div class="bl">${LABELS[k]||k}</div>
+        <div class="bar-bg"><div class="bar" style="width:${(v/w*100).toFixed(1)}%"></div></div>
+        <div class="bv">${v.toFixed(1)}</div></div>`).join('')}
+    ${f.redlines.length
+      ? `<div style="margin-top:6px;font-size:12px">红线：${f.redlines.map(r=>`<span class="redline-tag">${r}</span>`).join('')}</div>`
+      : `<div style="margin-top:6px;font-size:12px;color:var(--down)">✓ 未触碰任何红线项</div>`}
+    <div style="margin-top:8px;font-size:11.5px;color:var(--sub)">
+      入选依据：业绩综合分位 ${pct(f.screening.comp_pct)}（≥45%）·
+      年度分位中位 ${pct(f.screening.yearly_med)}（≥55%）·
+      规模 ${yi(f.screening.scale_sum)}（≥5亿）</div>
+  </div>`;
+}
+
+const LABELS = {
+  ret_1y:'近1年收益', ret_3y:'近3年收益', ret_5y:'近5年收益', yearly_5y:'逐年收益',
+  mdd_1y:'近1年回撤', mdd_3y:'近3年回撤', mdd_5y:'近5年回撤', vol_5y:'5年波动',
+  repair_5y:'回撤修复', lvi_5y:'下跌修复5年', lvi_3y:'下跌修复3年',
+  q_excess_20q:'超额胜率', winrate_m_5y:'月度胜率', rank_stab:'排名稳定性',
+  mgr_tenure:'经理任期', mgr_career:'经理从业', mgr_products_ann:'经理业绩',
+  fee:'费率', ms_rating:'晨星评级', inst_ratio:'机构占比', fund_scale:'基金规模',
+  age:'成立年限', company_scale:'公司规模',
+};
+
+/* ============ 走势图 ============ */
+function setWin(k){ WIN=k; document.querySelectorAll('.win').forEach(b=>
+    b.classList.toggle('on', b.textContent==={'1y':'近1年','3y':'近3年','5y':'近5年'}[k])); drawTrend(); }
+
+function drawTrend(){
+  const cv = $('trend'); if(!cv || !CUR) return;
+  const pts = CUR.trend[WIN] || []; if(pts.length<2) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height, PADL=54, PADR=12, PADT=14, PADB=24;
+  ctx.clearRect(0,0,W,H);
+  // 归一化为累计收益率
+  const base = pts[0][1];
+  const ys = pts.map(p=>(p[1]/base-1));
+  const y0 = 0, y1 = Math.max(...ys), y2 = Math.min(...ys, 0);
+  const span = (y1-y2) || 1;
+  const X = i => PADL + i*(W-PADL-PADR)/(pts.length-1);
+  const Y = v => PADT + (y1-v)/span*(H-PADT-PADB);
+  // 网格 + 纵轴标签
+  ctx.font = '18px sans-serif'; ctx.fillStyle='#9aa0a6'; ctx.strokeStyle='#eef0f3'; ctx.lineWidth=1.5;
+  for(let g=0; g<=4; g++){
+    const v = y2 + span*g/4, y = Y(v);
+    ctx.beginPath(); ctx.moveTo(PADL,y); ctx.lineTo(W-PADR,y); ctx.stroke();
+    ctx.fillText((v*100).toFixed(1)+'%', 6, y+6);
+  }
+  // 零线
+  ctx.strokeStyle='#d0d4da'; ctx.setLineDash([6,5]);
+  ctx.beginPath(); ctx.moveTo(PADL,Y(0)); ctx.lineTo(W-PADR,Y(0)); ctx.stroke(); ctx.setLineDash([]);
+  // 曲线
+  const grad = ctx.createLinearGradient(0,PADT,0,H-PADB);
+  grad.addColorStop(0,'rgba(255,106,0,.28)'); grad.addColorStop(1,'rgba(255,106,0,0)');
+  ctx.beginPath(); ctx.moveTo(X(0), Y(ys[0]));
+  ys.forEach((v,i)=>ctx.lineTo(X(i),Y(v)));
+  ctx.strokeStyle='#ff6a00'; ctx.lineWidth=3; ctx.stroke();
+  ctx.lineTo(X(ys.length-1),H-PADB); ctx.lineTo(X(0),H-PADB); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+  // 首尾日期
+  ctx.fillStyle='#9aa0a6'; ctx.fillText(pts[0][0].slice(2), PADL, H-6);
+  const last = pts[pts.length-1][0].slice(2);
+  ctx.fillText(last, W-PADR-ctx.measureText(last).width, H-6);
+  // 端点值
+  ctx.fillStyle='#ff6a00'; ctx.fillText((ys[ys.length-1]*100).toFixed(2)+'%',
+     Math.max(PADL, X(ys.length-1)-90), Math.max(PADT+14, Y(ys[ys.length-1])-10));
+}
+
+/* ============ 启动 ============ */
+/* 免责声明：优先取 data.js，缺失时用与 cards.DISCLAIMER 同口径的静态兜底 */
+const DISCLAIMER_FALLBACK = '本页榜单由程序基于公开历史数据自动生成，仅为数据分析研究结论，'
+  + '不构成任何投资建议或基金推介；数据源（天天基金/AkShare 等）可能存在延迟与错误；'
+  + '历史业绩与评分不代表未来表现，基金有风险，投资须谨慎，据此操作风险自担。';
+$('p-disc').textContent = (D && D.disclaimer) || DISCLAIMER_FALLBACK;
+if(!D || !D.funds){
+  document.getElementById('list').innerHTML =
+    '<div class="empty-tip">数据未加载：请先运行 <b>python -m fundscorer.pipeline</b> 生成 data.js</div>';
+}else{
+  renderTabs(D.category); renderList();
+}
+</script>
+</body>
+</html>
