@@ -96,9 +96,9 @@ data/             运行数据（**不入 git**，见 .gitignore）：cache/、n
 
 ### GitHub 仓库与线上部署
 
-- 公开仓库：`https://github.com/<你>/fund-screener`（MIT 许可）
+- 公开仓库：`https://github.com/huyuming09-collab/fund-screener`（MIT 许可）
 - 线上页面（GitHub Pages，由 `.github/workflows/deploy-pages.yml` 自动部署 `web/`）：
-  `https://<你>.github.io/fund-screener/`
+  `https://huyuming09-collab.github.io/fund-screener/`
 - 数据流：本机 crontab 每周五跑 `scripts/weekly_update.sh` → 管线导出新 `web/data.js`
   → 自动 commit/push → Pages 工作流重新部署 → 线上榜单刷新。管线失败则不推送，线上保留上一期。
 - 克隆后首次运行：`pip install -r requirements.txt` 后直接 `python -m fundscorer.pipeline`；
