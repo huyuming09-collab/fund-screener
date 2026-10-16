@@ -32,6 +32,8 @@ DATA = ROOT / "data"
 CSV_PATH = DATA / "screen_report.csv"
 JSON_PATH = DATA / "top20.json"
 JS_PATH = ROOT / "web" / "data.js"
+HISTORY_PATH = DATA / "rank_history.json"      # 历期榜单（环比基准，本地文件）
+HISTORY_KEEP = 26                              # 只留最近 26 期
 
 
 class _Logger:
@@ -54,6 +56,64 @@ class _Logger:
     def close(self):
         if self._fh:
             self._fh.close()
+
+
+def load_prev_ranks(path: Path | None = None,
+                    today: str | None = None) -> dict | None:
+    """环比基准：日期**严格早于** today 的最近一期 {base: rank}；无历史 → None。
+
+    按基金 base 对比（份额代码可能变，base 不变）；同日重跑仍对比上周，显示稳定。
+    """
+    import json
+    path = path or HISTORY_PATH
+    if not path.exists():
+        return None
+    try:
+        hist: dict = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    today = today or str(dt.date.today())
+    prior = {d: v for d, v in hist.items() if d < today}
+    if not prior:
+        return None
+    ranks = prior[max(prior)]
+    return ranks or None
+
+
+def save_history(res, path: Path | None = None, today: str | None = None) -> None:
+    """导出成功后追加本期榜单；只保留最近 HISTORY_KEEP 期（原子写）。"""
+    import json
+    path = path or HISTORY_PATH
+    today = today or str(dt.date.today())
+    hist: dict = {}
+    if path.exists():
+        try:
+            hist = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            hist = {}
+    hist[today] = {str(r["base"]): int(r["rank"]) for _, r in res.iterrows()}
+    for d in sorted(hist)[:-HISTORY_KEEP]:
+        hist.pop(d, None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(str(path) + ".tmp")
+    tmp.write_text(json.dumps(hist, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(path)
+
+
+def attach_rank_changes(res, prev_ranks: dict | None):
+    """给榜单补 rank_prev / rank_delta / is_new 三列（环比展示用）。"""
+    if res.empty:
+        return res
+    if prev_ranks is None:                      # 首期：全部无环比、不标新增
+        res["rank_prev"] = None
+        res["rank_delta"] = None
+        res["is_new"] = False
+        return res
+    # Int64（可空）：新增基金为 pd.NA，CSV 导出为整数/空串而非 3.0
+    res["rank_prev"] = res["base"].map(prev_ranks).astype("Int64")
+    res["rank_delta"] = (res["rank_prev"] - res["rank"]).astype("Int64")
+    res["is_new"] = res["rank_prev"].isna()
+    return res
 
 
 def refresh(pool: str, log) -> dict:
@@ -144,14 +204,28 @@ def run(skip_refresh: bool = False, top: int | None = None,
         if len(res) < top_n:
             log(f"[警告] 最终输出 {len(res)} 只 < TOP{top_n}")
 
+        # ---- 5b. 环比上一期（无历史 → 首期口径：无环比、不标新增） ----
+        prev_ranks = load_prev_ranks()
+        res = attach_rank_changes(res, prev_ranks)
+        if prev_ranks is None:
+            log("[5b] 无历史榜单（首期），本期不显示环比")
+        else:
+            n_new = int(res["is_new"].sum()) if len(res) else 0
+            ups = int((res["rank_delta"] > 0).sum()) if len(res) else 0
+            log(f"[5b] 环比基准=上一期（{len(prev_ranks)} 只）：上升 {ups}，新增 {n_new}")
+
         # ---- 6. 导出（全部就绪后原子替换） ----
         CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp_csv = Path(str(CSV_PATH) + ".tmp")
-        res[S.REPORT_COLS].to_csv(tmp_csv, index=False, encoding="utf-8-sig")
+        res[S.REPORT_COLS + ["rank_prev", "rank_delta"]].to_csv(
+            tmp_csv, index=False, encoding="utf-8-sig")
         tmp_csv.replace(CSV_PATH)
 
-        payload = cards.build_payload(res, snapshot, navs, funnel)
+        n_screened = len(candidates)
+        payload = cards.build_payload(res, snapshot, navs, funnel,
+                                      prev_ranks=prev_ranks, n_screened=n_screened)
         cards.write_payload(payload, JSON_PATH, JS_PATH)
+        save_history(res)                      # 导出成功后才写历史（失败不污染基准）
 
         log(f"[5] 导出完成：{CSV_PATH.name}（{len(res)} 行）、{JSON_PATH.name}、"
             f"web/data.js")

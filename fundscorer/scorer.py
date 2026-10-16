@@ -102,6 +102,12 @@ def collect_metrics(code: str) -> dict:
 
     # 质地
     m["fee_total"] = _sum_fee(f10)
+    # 费率组件持久化（卡片展示 A 类口径：申购原价/优惠价 + 管理/托管/销售服务）
+    m["mgmt_fee"] = f10.get("mgmt_fee")
+    m["custody_fee"] = f10.get("custody_fee")
+    m["sales_fee"] = f10.get("sales_fee")
+    m["purchase_fee"] = f10.get("purchase_fee")
+    m["purchase_fee_disc"] = f10.get("purchase_fee_disc")
     m["ms_rating"] = data.fetch_rating(code)
     m["inst_ratio"] = data.fetch_inst_ratio(code)
     m["mgr_career_years"] = data.fetch_manager_career_years(m["manager"], code) if m["manager"] else None

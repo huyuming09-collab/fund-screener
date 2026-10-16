@@ -6,14 +6,15 @@
 
 契约（funds[] 每项，docs/08 有字段表）：
     rank / code / name / base / category / score        榜单头部（无星级——用户口径）
+    rank_prev / rank_delta / is_new                     环比上一期（无历史 → 全 None/False）
     metrics    收益·回撤·波动·夏普·LVI·胜率等（share 级，排序所选份额口径）
     stages     阶段累计收益 1m/3m/6m/1y/3y/5y（现算）
     yearly     近 5 自然年收益
     manager    经理姓名/从业年限/任本基金/全产品年化
-    fund_info  规模(基金级合并)/份额数/成立/费率/晨星/机构占比/基准
+    fund_info  规模(基金级合并)/份额数/成立/费率(申购原价+优惠价+管理等)/晨星/机构占比/基准
     screening  透明化"为什么入选"：综合分位/年度中位/近5年最大单日涨幅
     score_detail / sub_scores / redlines                评分明细与红线
-    trend      净值曲线（1y/3y/5y，按 trend_max_points 降采样）
+    trend      净值曲线（仅 1y+5y；3y 由前端从 5y 按日期切片，省 60% trend 体积）
 分类 tab：payload.categories 来自 config.CARD（框架占位，未启用分类禁用态）。
 """
 from __future__ import annotations
@@ -69,6 +70,12 @@ def _r(v, nd: int = 6):
     return round(f, nd)
 
 
+def _i(v):
+    """整数透传；NaN/None/inf → None（环比字段用）。"""
+    f = _r(v, 0)
+    return None if f is None else int(f)
+
+
 def _rec_metric(rec: dict, key: str, nd: int = 6):
     return _r(rec.get(key), nd)
 
@@ -87,6 +94,10 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         "base": row["base"],
         "category": "short_bond",
         "score": _r(row["score"], 2),
+        # 环比上一期：prev_rank=None 表示无历史（首期），is_new 仅在有历史且上期缺席时为 True
+        "rank_prev": _i(row.get("rank_prev")),
+        "rank_delta": _i(row.get("rank_delta")),
+        "is_new": bool(row.get("is_new", False)),
         "metrics": {
             "ret_1y": _rec_metric(rec, "ret_1y"),
             "ret_3y": _rec_metric(rec, "ret_3y"),
@@ -123,6 +134,12 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
             "establish_date": rec.get("establish_date", ""),
             "age": _rec_metric(rec, "age", 2),
             "nav_years": _r(row["nav_years"], 2),
+            # 费率（A 类=排序份额口径）：申购原价/天天基金优惠价 + 管理/托管/销售服务
+            "purchase_fee": _rec_metric(rec, "purchase_fee", 4),
+            "purchase_fee_disc": _rec_metric(rec, "purchase_fee_disc", 4),
+            "mgmt_fee": _rec_metric(rec, "mgmt_fee", 4),
+            "custody_fee": _rec_metric(rec, "custody_fee", 4),
+            "sales_fee": _rec_metric(rec, "sales_fee", 4),
             "fee_total": _rec_metric(rec, "fee_total", 4),
             "ms_rating": _rec_metric(rec, "ms_rating", 1),
             "inst_ratio": _rec_metric(rec, "inst_ratio", 4),
@@ -142,8 +159,15 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
 
 
 def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
-                  funnel: dict | None = None, asof: str | None = None) -> dict:
-    """榜单 → 完整卡片数据契约（TOP-N 榜单 + 每只的详情数据）。"""
+                  funnel: dict | None = None, asof: str | None = None,
+                  prev_ranks: dict | None = None,
+                  n_screened: int | None = None) -> dict:
+    """榜单 → 完整卡片数据契约（TOP-N 榜单 + 每只的详情数据）。
+
+    prev_ranks  上一期 {base: rank}；None=无历史（首期，全部不算新增、不显示环比）。
+                有历史时：本期 base 不在其中 → is_new=True；rank_delta=上期名次−本期名次。
+    n_screened  筛后候选数（列表头部"筛出 N 只"显式字段，替代脆弱的漏斗键名）。
+    """
     max_points = C.CARD["trend_max_points"]
     funds = []
     for _, row in res.iterrows():
@@ -161,6 +185,8 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         "category": "short_bond",
         "top_n": C.TOP_N,
         "n": len(funds),
+        "n_screened": n_screened,
+        "has_prev": prev_ranks is not None,
         "sharpe_rf": C.SHARPE_RF,
         "categories": C.CARD["categories"],
         "funnel": funnel or {},
@@ -170,7 +196,7 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
 
 
 def write_payload(payload: dict, json_path, js_path=None) -> None:
-    """原子写出 top20.json 与 web/data.js（data.js = window.CARD_DATA 赋值）。"""
+    """原子写出 top20.json（indent 便于人工 diff）与 web/data.js（紧凑省体积）。"""
     import json
     from pathlib import Path
 
@@ -181,8 +207,11 @@ def write_payload(payload: dict, json_path, js_path=None) -> None:
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(jp)
     if js_path:
+        # data.js 用紧凑分隔符：周更每周提交+手机弱网加载，体积敏感（实测可省 ~45%）
+        compact = json.dumps(payload, ensure_ascii=False, separators=(",", ":"),
+                             default=str)
         wp = Path(js_path)
         wp.parent.mkdir(parents=True, exist_ok=True)
         tmpj = Path(str(wp) + ".tmp")
-        tmpj.write_text("window.CARD_DATA = " + text + ";\n", encoding="utf-8")
+        tmpj.write_text("window.CARD_DATA = " + compact + ";\n", encoding="utf-8")
         tmpj.replace(wp)

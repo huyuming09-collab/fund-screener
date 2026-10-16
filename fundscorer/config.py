@@ -203,7 +203,9 @@ SHARPE_RF = 0.015   # 夏普无风险利率（年化 1.5%，近似 1 年期利�
 # 卡片/详情页展示配置
 CARD = {
     "stage_windows": ["1m", "3m", "6m", "1y", "3y", "5y"],   # 详情页阶段收益窗口
-    "trend_windows": ["1y", "3y", "5y"],                      # 净值走势 tab
+    # 净值走势只下发 1y+5y（1y⊂5y 按日期完全重叠）；前端把 3y 从 5y 按日期切片，
+    # 省 60% trend 体积（实测 data.js 1.07MB → ~300KB）。1y 保全量采样点保真。
+    "trend_windows": ["1y", "5y"],
     "trend_max_points": 360,                                  # 走势每条曲线最大采样点（内嵌 JSON 体积控制）
     "categories": [   # 分类 tab（框架占位，只有启用的分类有数据）
         {"id": "short_bond", "name": "短债", "enabled": True},

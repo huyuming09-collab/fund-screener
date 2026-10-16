@@ -1,0 +1,91 @@
+name: staleness
+
+# 站点新鲜度守护：web/data.js 超过 9 天未更新 → 自动开 issue 提醒。
+# 覆盖本机侧的静默失败：token 过期、机器离线、crontab/管线故障。
+# 数据更新由 scripts/weekly_update.sh 每周五推送；正常情况下 data.js 每周变一次。
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'   # 每周一 09:00 北京时间（UTC 01:00）检查
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # 需要完整历史才能拿到 data.js 最后提交时间
+
+      - name: Check data.js age
+        id: check
+        run: |
+          ts=$(git log -1 --format=%ct -- web/data.js)
+          if [ -z "$ts" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "age=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          age=$(( ( $(date +%s) - ts ) / 86400 ))
+          echo "age=$age" >> "$GITHUB_OUTPUT"
+          if [ "$age" -gt 9 ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update issue
+        if: steps.check.outputs.stale == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '⚠️ 周榜数据已过期：web/data.js 超过 9 天未更新';
+            const age = '${{ steps.check.outputs.age }}';
+            const body = [
+              '自动检查发现 `web/data.js` 已 **' + age + ' 天**未更新（阈值 9 天）。',
+              '',
+              '可能原因（按概率排序）：',
+              '1. 本机 `~/.git-credentials` 中的 GitHub token 过期或被吊销（推送失败）',
+              '2. 运行周更的机器在周五 23:00 未开机',
+              '3. 周更管线异常（查本机 `data/pipeline_*.log`）',
+              '',
+              '处理：在数据机上检查 crontab 与 `data/pipeline_cron.log`，',
+              '修复后手动跑一次 `scripts/weekly_update.sh`，下次周一检查通过会自动关闭本 issue。',
+            ].join('\n');
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100 });
+            const open = issues.find(i => i.title === title && !i.pull_request);
+            if (open) {
+              const last = open.body.match(/已 \*\*(\d+) 天\*\*/);
+              if (!last || last[1] !== age) {   // 天数变了才更新，避免每天空评论
+                await github.rest.issues.update({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: open.number, body });
+              }
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body });
+            }
+
+      - name: Close stale issue when fresh again
+        if: steps.check.outputs.stale == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '⚠️ 周榜数据已过期：web/data.js 超过 9 天未更新';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100 });
+            const open = issues.find(i => i.title === title && !i.pull_request);
+            if (open) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: open.number,
+                body: '数据已恢复更新（web/data.js 在 9 天内有新提交），自动关闭。' });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: open.number, state: 'closed' });
+            }

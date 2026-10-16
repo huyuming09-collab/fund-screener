@@ -59,8 +59,14 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .m .v{font-size:14px;font-weight:650;letter-spacing:-.2px;}
 .m .l{font-size:10.5px;color:var(--sub);margin-top:3px;}
 .pos{color:var(--up);} .neg{color:var(--down);}
-.fc-foot{display:flex;gap:10px;margin-top:9px;font-size:11.5px;color:var(--sub);align-items:center;}
-.fc-foot .ok{color:var(--down);}
+.fc-foot{display:flex;gap:10px;margin-top:9px;font-size:11.5px;color:var(--sub);
+         align-items:center;flex-wrap:wrap;row-gap:3px;}
+.fc-foot .fee{color:var(--sub);}
+/* 环比：升红/降绿/平灰（涨红跌绿约定）；新增橙标 */
+.rk{font-weight:600;margin-left:4px;}
+.rk.up{color:var(--up);} .rk.dn{color:var(--down);} .rk.flat{color:#9aa0a6;}
+.rk.new{color:#ff8a3d;background:#fff4ec;border-radius:5px;padding:0 5px;
+        font-size:10.5px;margin-left:5px;}
 .empty-tip{color:var(--sub);text-align:center;font-size:13px;padding:30px 0;}
 
 /* ---------- 详情页 ---------- */
@@ -163,6 +169,35 @@ const cls = v => v==null ? '' : (v>=0 ? 'pos' : 'neg');
 const pctCls = v => v==null ? '' : (v>=0 ? 'pos' : 'neg');   /* 收益红、回撤本身用中性展示 */
 const yi  = v => v==null ? '—' : v.toFixed(2)+'亿';
 const $ = id => document.getElementById(id);
+/* 分类标签（分类扩展时此处一处维护；未启用分类的 id 回退原样显示） */
+const CATEGORY_LABELS = {short_bond:'短债', long_bond:'中长债', fixed_plus:'固收+', index:'指数'};
+const catLabel = c => CATEGORY_LABELS[c] || c || '';
+/* 费率百分数：0.0025 → "0.25%"（去尾零）；0 → "0"；null → "—" */
+const fpct = v => v==null ? '—' : ((v*100).toFixed(2).replace(/\.?0+$/,''))+'%';
+/* 列表卡费率行：买入费率(天天基金优惠价，无优惠取原价) + 每年管理费率 */
+function feeLine(fi){
+  const buy = fi.purchase_fee_disc ?? fi.purchase_fee;   /* 优惠价优先 */
+  if(buy==null && fi.mgmt_fee==null) return '费率 —';
+  const parts = [];
+  if(buy!=null) parts.push(`买入${fpct(buy)}`);
+  if(fi.mgmt_fee!=null) parts.push(`管理${fpct(fi.mgmt_fee)}/年`);
+  return '费率 ' + parts.join(' · ');
+}
+/* 详情页买入费率行：原价 + 天天基金优惠价（无优惠行只显原价） */
+function feePurchase(fi){
+  const o = fi.purchase_fee, d = fi.purchase_fee_disc;
+  if(o==null && d==null) return '—';
+  if(o!=null && d!=null && d<o) return `${fpct(o)}（天天基金优惠 ${fpct(d)}）`;
+  return fpct(o ?? d);
+}
+/* 环比徽标：升↑红 / 降↓绿 / 平—灰 / 新增橙标；无历史（首期）→ 空 */
+function rkHTML(f){
+  if(f.is_new) return '<span class="rk new">新增</span>';
+  if(f.rank_delta==null) return '';
+  if(f.rank_delta>0) return `<span class="rk up">↑${f.rank_delta}</span>`;
+  if(f.rank_delta<0) return `<span class="rk dn">↓${-f.rank_delta}</span>`;
+  return '<span class="rk flat">—</span>';
+}
 
 /* ============ 分类 tab（框架占位） ============ */
 function renderTabs(active){
@@ -183,7 +218,7 @@ const METRIC_CELLS = f => [
 
 function renderList(){
   const funds = D.funds || [];
-  $('meta').innerHTML = `数据基准 ${D.asof} · 模型 ${D.model_version} · 筛出 ${D.funnel['P2 年度分位中位≥55%'] ?? D.n} 只取前 ${D.top_n} 名`
+  $('meta').innerHTML = `数据基准 ${D.asof} · 模型 ${D.model_version} · 筛出 ${D.n_screened ?? D.n} 只取前 ${D.top_n} 名`
     + ` · 本期上榜 <b>${funds.length}</b> 只`;
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
   $('list').innerHTML = funds.map(f => `
@@ -192,17 +227,17 @@ function renderList(){
         <div class="rank ${f.rank<=3?'top'+f.rank:''}">${f.rank}</div>
         <div style="flex:1;min-width:0">
           <div class="fc-name">${f.name}</div>
-          <div class="fc-code">${f.code}<span class="dot">·</span>短债
-            <span class="dot">·</span><span class="score">评分 ${f.score}</span></div>
+          <div class="fc-code">${f.code}<span class="dot">·</span>${catLabel(f.category)}
+            <span class="dot">·</span><span class="score">评分 ${f.score}</span>${rkHTML(f)}</div>
         </div>
       </div>
       <div class="fc-metrics">
         ${METRIC_CELLS(f).map(([l,v,c])=>`<div class="m"><div class="v ${c}">${v}</div><div class="l">${l}</div></div>`).join('')}
       </div>
       <div class="fc-foot">
-        <span>规模 ${yi(f.fund_info.scale_yi)}</span><span>·</span>
+        <span>合并规模 ${yi(f.fund_info.scale_yi)}</span><span>·</span>
         <span>经理从业 ${f.manager.career_years==null?'—':f.manager.career_years+'年'}</span><span>·</span>
-        <span class="${f.redlines.length?'':'ok'}">${f.redlines.length?'有红线项':'无红线'}</span>
+        <span class="fee">${feeLine(f.fund_info)}</span>
       </div>
     </div>`).join('');
 }
@@ -215,8 +250,13 @@ function openDetail(code){
   WIN = '1y';
   $('d-name').textContent = CUR.name;
   $('d-score').textContent = CUR.score;
-  $('d-rank').textContent  = `第 ${CUR.rank} 名 / ${D.n}`;
-  $('d-code').textContent  = CUR.code + ' · 短债';
+  /* 头部名次：含环比后缀（无历史 → 不显示后缀） */
+  let rk = `第 ${CUR.rank} 名 / ${D.n}`;
+  if(CUR.is_new) rk += '（新增）';
+  else if(CUR.rank_delta!=null) rk += CUR.rank_delta>0 ? `（较上期 ↑${CUR.rank_delta}）`
+      : CUR.rank_delta<0 ? `（较上期 ↓${-CUR.rank_delta}）` : '（较上期 持平）';
+  $('d-rank').textContent  = rk;
+  $('d-code').textContent  = CUR.code + ' · ' + catLabel(CUR.category);
   $('d-disc').textContent  = D.disclaimer;
   $('d-body').innerHTML = bodyHTML(CUR);
   const el = $('detail'); el.style.display='block';
@@ -278,7 +318,7 @@ function bodyHTML(f){
   </div>
 
   <!-- 同类分位 -->
-  <div class="sec"><h3>同类分位（短债池）<span class="hint">越高越靠前</span></h3>
+  <div class="sec"><h3>同类分位（${catLabel(f.category)}池）<span class="hint">越高越靠前</span></h3>
     <div class="l" style="font-size:12px;color:var(--sub)">业绩综合分位</div>
     <div class="pctbar"><div class="fill" style="width:${(f.screening.comp_pct*100).toFixed(1)}%"></div>
       <div class="lbl">超过 ${(f.screening.comp_pct*100).toFixed(1)}% 的同类基金</div></div>
@@ -303,10 +343,13 @@ function bodyHTML(f){
 
   <!-- 基本信息 -->
   <div class="sec"><h3>基本信息</h3>
-    <div class="kv"><span class="k">基金规模</span><span>${yi(fi.scale_yi)}（${fi.n_classes}类份额合并）</span></div>
+    <div class="kv"><span class="k">基金合并规模</span><span>${yi(fi.scale_yi)}（${fi.n_classes}类份额合并）</span></div>
     <div class="kv"><span class="k">成立日期</span><span>${fi.establish_date}（${fi.age}年）</span></div>
     <div class="kv"><span class="k">累计净值年限</span><span>${fi.nav_years}年</span></div>
-    <div class="kv"><span class="k">申购+托管费</span><span>${(fi.fee_total*100).toFixed(2)}%/年</span></div>
+    <div class="kv"><span class="k">买入费率</span><span>${feePurchase(fi)}</span></div>
+    <div class="kv"><span class="k">管理费率</span><span>${fpct(fi.mgmt_fee)}/年</span></div>
+    <div class="kv"><span class="k">托管费率</span><span>${fpct(fi.custody_fee)}/年</span></div>
+    <div class="kv"><span class="k">销售服务费率</span><span>${fpct(fi.sales_fee)}/年</span></div>
     <div class="kv"><span class="k">晨星评级</span><span>${fi.ms_rating?fi.ms_rating+'星':'—'}</span></div>
     <div class="kv"><span class="k">机构持有占比</span><span>${pct(fi.inst_ratio,1)}</span></div>
     <div class="kv"><span class="k">业绩基准</span><span style="max-width:60%;text-align:right">${fi.benchmark||'—'}</span></div>
@@ -324,7 +367,7 @@ function bodyHTML(f){
     <div style="margin-top:8px;font-size:11.5px;color:var(--sub)">
       入选依据：业绩综合分位 ${pct(f.screening.comp_pct)}（≥45%）·
       年度分位中位 ${pct(f.screening.yearly_med)}（≥55%）·
-      规模 ${yi(f.screening.scale_sum)}（≥5亿）</div>
+      合并规模 ${yi(f.screening.scale_sum)}（≥5亿）</div>
   </div>`;
 }
 
@@ -334,7 +377,7 @@ const LABELS = {
   repair_5y:'回撤修复', lvi_5y:'下跌修复5年', lvi_3y:'下跌修复3年',
   q_excess_20q:'超额胜率', winrate_m_5y:'月度胜率', rank_stab:'排名稳定性',
   mgr_tenure:'经理任期', mgr_career:'经理从业', mgr_products_ann:'经理业绩',
-  fee:'费率', ms_rating:'晨星评级', inst_ratio:'机构占比', fund_scale:'基金规模',
+  fee:'费率（A类）', ms_rating:'晨星评级', inst_ratio:'机构占比', fund_scale:'基金合并规模',
   age:'成立年限', company_scale:'公司规模',
 };
 
@@ -342,11 +385,35 @@ const LABELS = {
 function setWin(k){ WIN=k; document.querySelectorAll('.win').forEach(b=>
     b.classList.toggle('on', b.textContent==={'1y':'近1年','3y':'近3年','5y':'近5年'}[k])); drawTrend(); }
 
+/* 取指定窗口曲线：data.js 只发 1y+5y；3y 从 5y 按日期切片（1y⊂3y⊂5y 完全重叠）。
+   旧版 data.js 仍含 3y 键 → 直接命中，前向兼容。 */
+function trendSeries(f, win){
+  const t = f.trend || {};
+  if((t[win]||[]).length) return t[win];
+  if(win==='3y' && (t['5y']||[]).length){
+    const pts = t['5y'];
+    const end = new Date(pts[pts.length-1][0]+'T00:00:00');
+    const cut = new Date(end); cut.setFullYear(cut.getFullYear()-3);
+    const iso = cut.toISOString().slice(0,10);
+    const sub = pts.filter(p=>p[0]>=iso);
+    if(sub.length>=2) return sub;
+  }
+  return [];
+}
+
 function drawTrend(){
   const cv = $('trend'); if(!cv || !CUR) return;
-  const pts = CUR.trend[WIN] || []; if(pts.length<2) return;
+  const pts = trendSeries(CUR, WIN); if(pts.length<2) return;
   const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height, PADL=54, PADR=12, PADT=14, PADB=24;
+  /* 逻辑坐标固定 710×300（视觉口径不变），按设备像素比放大内部分辨率防发糊 */
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dispW = cv.clientWidth || 710, dispH = cv.clientHeight || 300;
+  const LW = 710, LH = 300;
+  if(cv.width !== Math.round(dispW*dpr) || cv.height !== Math.round(dispH*dpr)){
+    cv.width = Math.round(dispW*dpr); cv.height = Math.round(dispH*dpr);
+  }
+  ctx.setTransform(dpr*dispW/LW, 0, 0, dpr*dispH/LH, 0, 0);
+  const W = LW, H = LH, PADL=54, PADR=12, PADT=14, PADB=24;
   ctx.clearRect(0,0,W,H);
   // 归一化为累计收益率
   const base = pts[0][1];

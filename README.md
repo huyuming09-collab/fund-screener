@@ -1,5 +1,9 @@
 # 基金选择指南 · 分类型基金评分框架
 
+[![Deploy Pages](https://github.com/huyuming09-collab/fund-screener/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/huyuming09-collab/fund-screener/actions/workflows/deploy-pages.yml)
+[![Staleness](https://github.com/huyuming09-collab/fund-screener/actions/workflows/staleness.yml/badge.svg)](https://github.com/huyuming09-collab/fund-screener/actions/workflows/staleness.yml)
+[![Tests](https://img.shields.io/badge/tests-92%20passed-brightgreen)](tests/)
+
 基金评分后端 + **静态网页周榜**（原计划微信小程序，因小程序对投研/荐基类内容有合规限制，改为普通网页展示）。**先做债券类**（纯债型 / 固收+），后续扩展到指数、混合、股票等全类型。
 核心不是"罗列指标"，而是**一套经过方法论论证、可回测验证、能定期自动重评**的评分体系。
 

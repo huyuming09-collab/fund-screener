@@ -10,6 +10,7 @@ import datetime as dt
 import json
 import re
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -43,11 +44,25 @@ def _save_cache(key: str, obj) -> None:
 
 
 def _http(url: str, encoding: str = "gbk", referer: str | None = None) -> str:
+    """GET + 轻量重试（仅网络类异常重试 2 次，退避 1s/3s；4xx 不重试）。"""
     headers = dict(_UA)
     if referer:
         headers["Referer"] = referer
     req = urllib.request.Request(url, headers=headers)
-    return urllib.request.urlopen(req, timeout=20).read().decode(encoding, errors="ignore")
+    last: Exception | None = None
+    for i in range(3):
+        try:
+            return urllib.request.urlopen(req, timeout=20).read().decode(
+                encoding, errors="ignore")
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500:        # 请求错误重试无意义
+                raise
+            last = e
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = e
+        if i < 2:
+            time.sleep(1 if i == 0 else 3)
+    raise last  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------- 1. 净值序列（复权）
@@ -102,9 +117,32 @@ def fetch_nav(code: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------- 2. F10 基本概况
+def _parse_purchase_fee(html: str) -> tuple[float | None, float | None]:
+    """F10“最高申购费率”行 → (原价, 天天基金优惠价)。
+
+    行结构（实测 002438/003547/519724 一致）：
+      <th>最高申购费率</th><td><span划线>0.80%（前端）</span><br>
+      <span>天天基金优惠费率：<span红字>0.08%（前端）</span></span></td>
+    优惠行可能缺失（仅原价）；无申购费显示 0%。
+    """
+    m = re.search(r"最高申购费率</th>\s*<td[^>]*>(.*?)</td>", html, re.S)
+    if not m:
+        return None, None
+    block = m.group(1)
+    nums = re.findall(r"([\d.]+)\s*%", block)
+    if not nums:
+        return None, None
+    orig = float(nums[0]) / 100
+    disc = float(nums[1]) / 100 if ("优惠费率" in block and len(nums) > 1) else None
+    return orig, disc
+
+
 def fetch_f10(code: str) -> dict:
-    """基金基本概况：类型、成立日期、规模、费率、经理、基准、经理任职起始。缓存 7 天。"""
-    cached = _load_cache(f"f10_{code}", 24 * 7)
+    """基金基本概况：类型、成立日期、规模、费率（含申购原价/优惠价）、经理、基准。
+
+    缓存 7 天；key 含 v2：旧缓存字典缺 purchase_fee 字段，换 key 强制一次性重抓。
+    """
+    cached = _load_cache(f"f10_v2_{code}", 24 * 7)
     if cached is not None:
         return cached.to_dict() if isinstance(cached, pd.Series) else cached
     html = _http(f"https://fundf10.eastmoney.com/jbgk_{code}.html", encoding="utf-8")
@@ -113,6 +151,7 @@ def fetch_f10(code: str) -> dict:
         m = re.search(pat, html)
         return m.group(1).strip() if m else default
 
+    _pf, _pd = _parse_purchase_fee(html)
     info = {
         "code": code,
         "name": grab(r"基金简称</th><td>([^<]+)<"),
@@ -122,6 +161,8 @@ def fetch_f10(code: str) -> dict:
         "mgmt_fee": _parse_pct(grab(r"管理费率</th>\s*<td[^>]*>([\d.<>%—\-]+)")),
         "custody_fee": _parse_pct(grab(r"托管费率</th>\s*<td[^>]*>([\d.<>%—\-]+)")),
         "sales_fee": _parse_pct(grab(r"销售服务费率</th>\s*<td[^>]*>([\d.<>%—\-]+)")),
+        "purchase_fee": _pf,          # 申购原价（划线价）
+        "purchase_fee_disc": _pd,     # 天天基金优惠价（无优惠行 → None）
         "manager": grab(r"基金经理人</th>\s*<td[^>]*>\s*<a[^>]*>([^<]+)<"),
         "manager_id": grab(r"fund\.eastmoney\.com/manager/(\d+)\.html"),
         "benchmark": grab(r"业绩比较基准</th>\s*<td[^>]*>([^<]+)<"),
@@ -133,7 +174,7 @@ def fetch_f10(code: str) -> dict:
         info["manager_start"] = m.group(1) if m else ""
     except Exception:
         info["manager_start"] = ""
-    _save_cache(f"f10_{code}", info)
+    _save_cache(f"f10_v2_{code}", info)
     return info
 
 
