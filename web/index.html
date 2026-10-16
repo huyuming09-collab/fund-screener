@@ -127,6 +127,10 @@ table.yr tr:last-child td{border-bottom:none;}
 .page-disc{flex:0 0 auto;font-size:10.5px;color:#a8adb5;line-height:1.6;text-align:center;
            padding:8px 14px calc(8px + env(safe-area-inset-bottom));background:var(--bg);
            border-top:1px solid var(--line);}
+/* 公众号引流位（列表页底部，免责声明上方） */
+.page-mp{flex:0 0 auto;text-align:center;font-size:11.5px;color:var(--sub);
+         padding:9px 14px 1px;background:var(--bg);}
+.page-mp b{color:var(--accent);font-weight:650;}
 .redline-tag{display:inline-block;background:#fff0f0;color:var(--up);border-radius:6px;
              font-size:11px;padding:1px 6px;margin-left:6px;}
 </style>
@@ -140,6 +144,9 @@ table.yr tr:last-child td{border-bottom:none;}
   </header>
 
   <main id="list"></main>
+
+  <!-- 公众号引流位（免责声明上方常显） -->
+  <div class="page-mp">公众号 <b>@班马成长日记</b> · 每周榜单解读与更新通知</div>
 
   <!-- 列表页常显免责声明（data.js 缺失时用同文案兜底） -->
   <div class="page-disc" id="p-disc"></div>
