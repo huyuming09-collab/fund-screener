@@ -589,11 +589,13 @@ function drawExport(canvas, pool, sizeKey, rows){
   ctx.fillStyle = '#efe7dc'; ctx.fillRect(PAD, rowsTop - 46, W - PAD * 2, 2);
   ctx.fillStyle = '#a8a094'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
   const xScore = W - PAD - 16;
-  const xR5 = xScore - (wide ? 190 : 175), xA5 = xR5 - (wide ? 190 : 175), xR1 = xA5 - (wide ? 175 : 165);
+  const xSharpe = xScore - (wide ? 150 : 130), xR5 = xSharpe - (wide ? 190 : 175),
+        xA5 = xR5 - (wide ? 190 : 175), xR1 = xA5 - (wide ? 175 : 165);
   const nameX = PAD + 16 + (wide ? 32 : 36) + 12;
   ctx.fillText('基金', nameX, rowsTop - 16);
   right('近一年收益', xR1, rowsTop - 16); right('近五年年化', xA5, rowsTop - 16);
-  right('近五年回撤', xR5, rowsTop - 16); right('评分', xScore, rowsTop - 16);
+  right('近五年最大回撤', xR5, rowsTop - 16); right('夏普比率', xSharpe, rowsTop - 16);
+  right('评分', xScore, rowsTop - 16);
 
   // ---- 榜单：单张白卡 + 行内分隔线（列对齐） ----
   const FOOT = Math.round(H * (wide ? 0.21 : 0.14));
@@ -640,6 +642,8 @@ function drawExport(canvas, pool, sizeKey, rows){
     right(m.ret_5y == null ? '—' : (m.ret_5y * 100).toFixed(2) + '%', xA5, y + Math.round(h * 0.78));
     ctx.fillStyle = '#12a150';
     right(m.mdd_5y == null ? '—' : (m.mdd_5y * 100).toFixed(2) + '%', xR5, y + Math.round(h * 0.78));
+    ctx.fillStyle = '#44403a';   // 夏普比率：中性深灰
+    right(m.sharpe_5y == null ? '—' : (+m.sharpe_5y).toFixed(2), xSharpe, y + Math.round(h * 0.78));
     if (dt) {
       ctx.fillStyle = f.is_new ? '#ff8a3d' : (f.rank_delta > 0 ? '#e53935' : (f.rank_delta < 0 ? '#12a150' : '#9aa0a6'));
       ctx.font = (fCode + 1) + 'px sans-serif';
