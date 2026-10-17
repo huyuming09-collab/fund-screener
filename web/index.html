@@ -588,10 +588,12 @@ function drawExport(canvas, pool, sizeKey, rows){
   ctx.fillStyle = '#efe7dc'; ctx.fillRect(PAD, rowsTop - 46, W - PAD * 2, 2);
   ctx.fillStyle = '#a8a094'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
   const xScore = W - PAD - 16;
-  const xSharpe = xScore - (wide ? 126 : 116), xR5 = xSharpe - (wide ? 130 : 120),
-        xA5 = xR5 - (wide ? 150 : 140), xR1 = xA5 - (wide ? 142 : 132);
+  const xSharpe = xScore - (wide ? 110 : 100), xR5 = xSharpe - (wide ? 95 : 88),
+        xA5 = xR5 - (wide ? 128 : 118), xR1 = xA5 - (wide ? 98 : 90),
+        xCode = xR1 - (wide ? 62 : 57);   // 代码列：右对齐独立小列（灰色）
   const nameX = PAD + 16 + (wide ? 32 : 36) + 12;
   ctx.fillText('基金', nameX, rowsTop - 16);
+  right('代码', xCode, rowsTop - 16);
   right('近一年收益', xR1, rowsTop - 16); right('近五年年化', xA5, rowsTop - 16);
   right('近五年最大回撤', xR5, rowsTop - 16); right('夏普比率', xSharpe, rowsTop - 16);
   right('评分', xScore, rowsTop - 16);
@@ -623,8 +625,10 @@ function drawExport(canvas, pool, sizeKey, rows){
     ctx.fillText(String(rk), bx + bSize / 2, by + Math.round(bSize * 0.68)); ctx.textAlign = 'left';
     // 单行行体：名称（左）+ 四列数值（右对齐）+ 评分块（大分数 + 正下方小环比）
     const base = y + Math.round(h * 0.60);
-    const nameAvail = xR1 - (wide ? 74 : 62) - nameX;   // 几何保证：名字终止线距数值区 ≥8px 硬间隔
+    const nameAvail = xCode - (wide ? 66 : 58) - nameX;   // 几何保证：名字终止线距代码列 ≥8px 硬间隔
     const m = (f.metrics || {});
+    ctx.fillStyle = '#a8a094'; ctx.font = (wide ? 13 : 14) + 'px sans-serif';
+    right(f.code || '', xCode, base);   // 基金代码：独立列右对齐，与名称/数值均有硬间隔
     const v1y = m.ret_1y;
     ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
     ctx.fillText(_fitText(ctx, f.name || '', nameAvail), nameX, base);
