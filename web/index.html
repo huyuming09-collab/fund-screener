@@ -23,6 +23,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 #phone{width:100%;max-width:480px;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);position:relative;overflow:hidden;
        display:flex;flex-direction:column;}
 @media (min-width:640px){ #phone{box-shadow:0 0 24px rgba(0,0,0,.12);} }
+/* 桌面（≥1024px）：宽版布局——容器放宽、榜单双列卡片、详情居中面板（不再整屏滑入） */
+@media (min-width:1024px){
+  body{background:#e4e7ec;}
+  #phone{max-width:1180px;box-shadow:0 0 30px rgba(0,0,0,.10);}
+  main{padding:18px 22px 40px;}
+  #list{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;}
+  #list .fundcard{margin-bottom:0;}
+  #list .fundcard:hover{box-shadow:0 4px 14px rgba(20,24,40,.10);transform:translateY(-1px);}
+  .fc-name{font-size:16px;}
+  .m .v{font-size:15px;}
+  /* 详情：居中面板（宽 880px），保留内部滚动 */
+  #detail{left:50%;right:auto;width:min(880px,92vw);transform:translate(-50%,100%);
+          box-shadow:0 0 40px rgba(0,0,0,.18);}
+  #detail.show{transform:translate(-50%,0);}
+}
 #phone>header{flex:0 0 auto;}
 
 /* ---------- 顶部 ---------- */
@@ -133,7 +148,20 @@ table.yr tr:last-child td{border-bottom:none;}
 .page-mp b{color:var(--accent);font-weight:650;}
 .redline-tag{display:inline-block;background:#fff0f0;color:var(--up);border-radius:6px;
              font-size:11px;padding:1px 6px;margin-left:6px;}
+/* ---------- 隐藏导出模式：?export=<pool>（仅 URL 触发，页面无入口） ----------
+   把当期榜单画成社媒海报 PNG：小红书 3:4 / 公众号宽图 3:2，深色工作台背景 */
+body.exp{display:block;overflow:auto;background:#20242c;}
+.exp-wrap{max-width:1240px;margin:0 auto;padding:20px 16px 60px;color:#e8eaee;}
+.exp-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px;font-size:13px;}
+.exp-bar .t{font-size:16px;font-weight:600;margin-right:auto;}
+.exp-bar button{padding:7px 14px;border-radius:9px;border:1px solid #3a4048;background:#2a2f38;
+                color:#e8eaee;font-size:13px;cursor:pointer;}
+.exp-bar button.on{background:#ff6a00;border-color:#ff6a00;color:#fff;font-weight:600;}
+.exp-hint{color:#9aa3ad;font-size:12px;margin-bottom:12px;}
+.exp-canvas-box{background:#fff;border-radius:12px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,.35);}
+#exp-canvas{width:100%;height:auto;display:block;}
 </style>
+
 </head>
 <body>
 <div id="phone">
@@ -477,13 +505,181 @@ function drawTrend(){
      Math.max(PADL, X(ys.length-1)-90), Math.max(PADT+14, Y(ys[ys.length-1])-10));
 }
 
+/* ============ 隐藏导出模式（?export=<pool>，页面无入口，仅 URL 触发） ============
+   用法：web/index.html?export=short_bond[&size=xhs|wide][&rows=N]
+     size 默认 xhs（小红书 3:4 1080×1440，20 行）；wide = 公众号宽图 3:2 1200×800（10 行）
+   产出：当期榜单 → 社媒海报 PNG（canvas 绘制，可直接下载发小红书/公众号）。
+   数字全部取自 data.js（与页面同源），杜绝"旧图新发"。 */
+const EXPORT_SIZES = {
+  xhs:  {w:1080, h:1440, rows:20, label:'小红书 3:4（1080×1440，TOP20）'},
+  wide: {w:1200, h:800,  rows:10, label:'公众号宽图 3:2（1200×800，TOP10）'},
+};
+function exportRows(pool, rows){
+  const list = ((D && D.funds) || [])
+    .filter(f => (f.category || (D && D.category) || 'short_bond') === pool)
+    .sort((a,b) => (a.rank||0) - (b.rank||0));
+  return rows ? list.slice(0, rows) : list;
+}
+function _fitText(ctx, text, maxW){
+  text = String(text == null ? '' : text);
+  if (ctx.measureText(text).width <= maxW) return text;
+  while (text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0, -1);
+  return text + '…';
+}
+function _wrapText(ctx, text, maxW, maxLines){
+  const out = []; let cur = '';
+  for (const ch of String(text)) {
+    if (ctx.measureText(cur + ch).width > maxW) { out.push(cur); cur = ch; if (out.length === maxLines) break; }
+    else cur += ch;
+  }
+  if (out.length < maxLines && cur) out.push(cur);
+  return out;
+}
+function _deltaTxt(f, hasPrev){
+  if (!hasPrev) return '';
+  if (f.is_new) return '新增';
+  const d = f.rank_delta;
+  if (d == null) return '—';
+  return d > 0 ? '↑' + d : (d < 0 ? '↓' + (-d) : '—');
+}
+function drawExport(canvas, pool, sizeKey, rows){
+  const S = EXPORT_SIZES[sizeKey] || EXPORT_SIZES.xhs;
+  const ps = (D && D.pools && D.pools[pool]) || {};
+  const hasPrev = ps.has_prev != null ? !!ps.has_prev : !!(D && D.has_prev);
+  const funds = exportRows(pool, rows || S.rows);
+  const label = catLabel(pool);
+  const W = S.w, H = S.h, PAD = 48;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#f4f6f8'; ctx.fillRect(0, 0, W, H);
+  const wide = W > H;                                   // wide=公众号横图，否则小红书竖图
+  // ---- 头部：橙色渐变 + 标题 + 口径行 ----
+  const HH = Math.round(H * (wide ? 0.16 : 0.115));
+  const g = ctx.createLinearGradient(0, 0, W, HH);
+  g.addColorStop(0, '#ff8a3d'); g.addColorStop(1, '#ff6a00');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, HH);
+  ctx.fillStyle = '#fff';
+  ctx.font = '600 ' + (wide ? 40 : 44) + 'px sans-serif';
+  ctx.fillText(label + '基金周榜 TOP' + funds.length, PAD, Math.round(HH * (wide ? 0.46 : 0.50)));
+  ctx.font = (wide ? 24 : 22) + 'px sans-serif'; ctx.globalAlpha = .92;
+  ctx.fillText('数据基准 ' + ((D && D.asof) || '—') + ' · 模型 ' + ((D && D.model_version) || '')
+    + ' · 筛出 ' + (ps.n_screened != null ? ps.n_screened : (D && D.n_screened)) + ' 只取前 '
+    + (ps.top_n || (D && D.top_n) || 20) + ' 名', PAD, Math.round(HH * (wide ? 0.78 : 0.82)));
+  ctx.globalAlpha = 1;
+  // ---- 榜单行：每行两行文字（名称+评分 / 指标串+环比），按行高自适应字号 ----
+  const FOOT = Math.round(H * (wide ? 0.14 : 0.10));
+  const top = HH + 16, bottom = H - FOOT - 8;
+  const rowH = funds.length ? Math.floor((bottom - top) / funds.length) : bottom - top;
+  const h = Math.max(38, rowH - 8);
+  const fName = Math.min(wide ? 24 : 26, Math.round(h * 0.44));
+  const fSub  = Math.round(fName * 0.66);
+  const scoreW = 130, padR = 14;
+  funds.forEach((f, i) => {
+    const y = top + i * rowH, x0 = PAD, x1 = W - PAD, r = 12;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(x0 + r, y); ctx.lineTo(x1 - r, y); ctx.quadraticCurveTo(x1, y, x1, y + r);
+    ctx.lineTo(x1, y + h - r); ctx.quadraticCurveTo(x1, y + h, x1 - r, y + h);
+    ctx.lineTo(x0 + r, y + h); ctx.quadraticCurveTo(x0, y + h, x0, y + h - r);
+    ctx.lineTo(x0, y + r); ctx.quadraticCurveTo(x0, y, x0 + r, y); ctx.closePath(); ctx.fill();
+    // 名次徽标
+    const rk = (f.rank || i + 1);
+    ctx.fillStyle = rk === 1 ? '#ffe9e9' : rk === 2 ? '#fff1e0' : rk === 3 ? '#fff8dd' : '#f1f3f6';
+    const bSize = Math.min(40, h - 8), bx = PAD + 14, by = y + Math.round((h - bSize) / 2);
+    ctx.fillRect(bx, by, bSize, bSize);
+    ctx.fillStyle = rk === 1 ? '#e53935' : rk === 2 ? '#ff9800' : rk === 3 ? '#c89400' : '#5f6673';
+    ctx.font = '700 ' + Math.round(bSize * 0.55) + 'px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(rk), bx + bSize / 2, by + Math.round(bSize * 0.72)); ctx.textAlign = 'left';
+    // 名称（左）+ 评分（右）
+    const tx = bx + bSize + 12, avail = W - PAD - padR - scoreW - tx;
+    ctx.fillStyle = '#1f2430'; ctx.font = '600 ' + fName + 'px sans-serif';
+    ctx.fillText(_fitText(ctx, f.name || '', avail), tx, y + Math.round(h * 0.42));
+    const score = '评分 ' + (f.score == null ? '—' : (+f.score).toFixed(1));
+    ctx.fillStyle = '#ff6a00'; ctx.font = '600 ' + (fName - 1) + 'px sans-serif';
+    ctx.fillText(score, (W - PAD - padR) - ctx.measureText(score).width, y + Math.round(h * 0.42));
+    // 指标串（左）+ 环比（右）
+    const m = (f.metrics || {}), sc = (f.screening || {});
+    const v1y = m.ret_1y, dt = _deltaTxt(f, hasPrev);
+    ctx.font = fSub + 'px sans-serif';
+    const parts = [
+      f.code || '',
+      '近1年 ' + (v1y == null ? '—' : (v1y * 100).toFixed(2) + '%'),
+      '回撤 ' + (m.mdd_5y == null ? '—' : (m.mdd_5y * 100).toFixed(2) + '%'),
+      '夏普 ' + (m.sharpe_5y == null ? '—' : (+m.sharpe_5y).toFixed(2)),
+      '规模 ' + (sc.scale_sum == null ? '—' : (+sc.scale_sum).toFixed(1) + '亿'),
+    ];
+    let px = tx;
+    parts.forEach((p, j) => {
+      ctx.fillStyle = j === 1 ? (v1y == null ? '#8a919c' : (v1y >= 0 ? '#e53935' : '#12a150'))
+                    : j === 2 ? '#12a150' : '#8a919c';           // 涨红跌绿；回撤=风险用绿
+      ctx.fillText(p, px, y + Math.round(h * 0.80));
+      px += ctx.measureText(p).width + 12;
+    });
+    if (dt) {
+      ctx.fillStyle = f.is_new ? '#ff8a3d' : (f.rank_delta > 0 ? '#e53935' : (f.rank_delta < 0 ? '#12a150' : '#9aa0a6'));
+      ctx.fillText('环比 ' + dt, (W - PAD - padR) - ctx.measureText('环比 ' + dt).width, y + Math.round(h * 0.80));
+    }
+  });
+  // ---- 页脚：免责声明（自动折行）+ 来源 ----
+  ctx.fillStyle = '#8a919c'; ctx.font = (wide ? 18 : 17) + 'px sans-serif';
+  const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
+  lines.forEach((ln, i) => ctx.fillText(ln, PAD, H - FOOT + 22 + i * 22));
+  ctx.fillStyle = '#ff6a00';
+  ctx.fillText('github.com/huyuming09-collab/fund-screener', PAD, H - 14);
+  return {width: W, height: H, rows: funds.length, rowH: rowH};
+}
+function exportDownload(canvas, pool, sizeKey){
+  const name = '基金周榜-' + catLabel(pool) + '-' + ((D && D.asof) || '') + '-' + sizeKey + '.png';
+  const done = (url, revoke) => {
+    const a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    if (revoke) setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+  if (canvas.toBlob) canvas.toBlob(b => done(URL.createObjectURL(b), true), 'image/png');
+  else done(canvas.toDataURL('image/png'), false);
+}
+function initExport(){
+  if (typeof location === 'undefined' || !location.search) return false;
+  let pool = null, sizeKey = null, rows = null;
+  try {
+    const q = new URLSearchParams(location.search);
+    pool = q.get('export'); sizeKey = q.get('size'); rows = parseInt(q.get('rows') || '', 10) || null;
+  } catch (e) { return false; }
+  if (!pool || !(D && D.funds)) return false;
+  if (!EXPORT_SIZES[sizeKey]) sizeKey = 'xhs';
+  document.body.innerHTML = '';
+  document.body.classList.add('exp');
+  const wrap = document.createElement('div'); wrap.className = 'exp-wrap';
+  wrap.innerHTML = '<div class="exp-bar"><span class="t"></span>'
+    + '<button data-size="xhs">小红书 3:4</button><button data-size="wide">公众号宽图 3:2</button>'
+    + '<button class="dl">下载 PNG</button></div><div class="exp-hint"></div>'
+    + '<div class="exp-canvas-box"><canvas id="exp-canvas"></canvas></div>';
+  document.body.appendChild(wrap);
+  const cv = document.getElementById('exp-canvas');
+  const hint = wrap.querySelector('.exp-hint'), title = wrap.querySelector('.t');
+  title.textContent = catLabel(pool) + '基金周榜 · 社媒导出';
+  const draw = () => {
+    const info = drawExport(cv, pool, sizeKey, rows);
+    hint.textContent = EXPORT_SIZES[sizeKey].label + ' · ' + info.rows + ' 行 · 数据基准 '
+      + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）';
+    wrap.querySelectorAll('button[data-size]').forEach(b =>
+      b.classList.toggle('on', b.getAttribute('data-size') === sizeKey));
+  };
+  wrap.querySelectorAll('button[data-size]').forEach(b => b.onclick = () => { sizeKey = b.getAttribute('data-size'); draw(); });
+  wrap.querySelector('.dl').onclick = () => exportDownload(cv, pool, sizeKey);
+  draw();
+  return true;
+}
+
 /* ============ 启动 ============ */
 /* 免责声明：优先取 data.js，缺失时用与 cards.DISCLAIMER 同口径的静态兜底 */
 const DISCLAIMER_FALLBACK = '本页榜单由程序基于公开历史数据自动生成，仅为数据分析研究结论，'
   + '不构成任何投资建议或基金推介；数据源（天天基金/AkShare 等）可能存在延迟与错误；'
   + '历史业绩与评分不代表未来表现，基金有风险，投资须谨慎，据此操作风险自担。';
 $('p-disc').textContent = (D && D.disclaimer) || DISCLAIMER_FALLBACK;
-if(!D || !D.funds){
+if (initExport()){
+  /* 隐藏导出模式：海报已渲染，跳过常规榜单渲染 */
+} else if(!D || !D.funds){
   document.getElementById('list').innerHTML =
     '<div class="empty-tip">数据未加载：请先运行 <b>python -m fundscorer.pipeline</b> 生成 data.js</div>';
 }else{

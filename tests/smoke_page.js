@@ -174,6 +174,40 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
       document.getElementById('list').innerHTML.includes(shortFunds[0].code));
 }
 
+// 10. 桌面适配（≥1024px）+ 隐藏导出模式（?export=，页面无入口）
+chk('桌面断点 ≥1024px：宽容器 + 榜单双列 + 详情居中面板',
+  /@media \\(min-width:1024px\\)/.test(${JSON.stringify(html)})
+  && /#phone\\{max-width:1180px/.test(${JSON.stringify(html)})
+  && /#list\\{display:grid;grid-template-columns:1fr 1fr/.test(${JSON.stringify(html)})
+  && /#detail\\{left:50%;right:auto;width:min\\(880px,92vw\\)/.test(${JSON.stringify(html)}));
+const bodyOnly = ${JSON.stringify(html)}.replace(/<script>[\\s\\S]*?<\\/script>/g,'')
+  .replace(/<style>[\\s\\S]*?<\\/style>/g,'').replace(/<!--([\\s\\S]*?)-->/g,'');
+chk('导出模式在页面上无可见入口（无 ?export 链接/按钮）',
+  !/\\?export=/.test(bodyOnly) && !/(href|onclick)=[^>]*export/i.test(bodyOnly));
+chk('EXPORT_SIZES 契约（xhs 1080×1440/20行，wide 1200×800/10行）',
+  EXPORT_SIZES.xhs.w===1080 && EXPORT_SIZES.xhs.h===1440 && EXPORT_SIZES.xhs.rows===20
+  && EXPORT_SIZES.wide.w===1200 && EXPORT_SIZES.wide.h===800 && EXPORT_SIZES.wide.rows===10);
+const xsAll = exportRows('short_bond'), lgAll = exportRows('long_bond');
+chk('exportRows 按池过滤并按名次升序',
+  xsAll.length>0 && xsAll.every(f=>(f.category||'short_bond')==='short_bond')
+  && xsAll.every((f,i)=>i===0 || xsAll[i-1].rank<=f.rank)
+  && exportRows('short_bond',5).length===5);
+const cv2 = {width:0, height:0, getContext:()=>ctxStub};
+const infoW = drawExport(cv2,'long_bond','wide');
+chk('drawExport wide：画布 1200×800、行数=min(10, 池内数)',
+  cv2.width===1200 && cv2.height===800 && infoW.rows===Math.min(10, lgAll.length) && infoW.rowH>30);
+const infoP = drawExport(cv2,'short_bond','xhs');
+chk('drawExport xhs：画布 1080×1440、行数=min(20, 池内数)、行高足够两行文字',
+  cv2.width===1080 && cv2.height===1440 && infoP.rows===Math.min(20, xsAll.length) && infoP.rowH>=46);
+chk('_deltaTxt 环比分支（↑/↓/新增/—/无历史空串）',
+  _deltaTxt({rank_delta:2},true)==='↑2' && _deltaTxt({rank_delta:-1},true)==='↓1'
+  && _deltaTxt({is_new:true,rank_delta:null},true)==='新增'
+  && _deltaTxt({rank_delta:null},true)==='—' && _deltaTxt({rank_delta:3},false)==='');
+let drawOK = true;
+try { drawExport(cv2,'long_bond','xhs'); drawExport(cv2,'not_a_pool','wide'); } catch(e){ drawOK = false; }
+chk('drawExport 容错：未知池/空池不抛异常', drawOK);
+chk('initExport 无 URL 参数时不进入导出模式', initExport() === false);
+
 console.log(fail ? 'SMOKE FAIL: '+fail : 'SMOKE PASS');
 process.exit(fail);
 `);
