@@ -590,7 +590,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   const xScore = W - PAD - 16;
   const xSharpe = xScore - (wide ? 110 : 100), xR5 = xSharpe - (wide ? 95 : 88),
         xA5 = xR5 - (wide ? 128 : 118), xR1 = xA5 - (wide ? 98 : 90),
-        xCode = xR1 - (wide ? 62 : 57);   // 代码列：右对齐独立小列（灰色）
+        xCode = xR1 - (wide ? 68 : 63);   // 代码列：右对齐独立小列（灰色），与数值区保持 ≥12px
   const nameX = PAD + 16 + (wide ? 32 : 36) + 12;
   ctx.fillText('基金', nameX, rowsTop - 16);
   right('代码', xCode, rowsTop - 16);
