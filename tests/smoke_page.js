@@ -185,8 +185,8 @@ const bodyOnly = ${JSON.stringify(html)}.replace(/<script>[\\s\\S]*?<\\/script>/
   .replace(/<style>[\\s\\S]*?<\\/style>/g,'').replace(/<!--([\\s\\S]*?)-->/g,'');
 chk('导出模式在页面上无可见入口（无 ?export 链接/按钮）',
   !/\\?export=/.test(bodyOnly) && !/(href|onclick)=[^>]*export/i.test(bodyOnly));
-chk('EXPORT_SIZES 契约（xhs 1080×1440/20行，wide 1200×800/10行）',
-  EXPORT_SIZES.xhs.w===1080 && EXPORT_SIZES.xhs.h===1440 && EXPORT_SIZES.xhs.rows===20
+chk('EXPORT_SIZES 契约（xhs 1080×1620/20行，wide 1200×800/10行）',
+  EXPORT_SIZES.xhs.w===1080 && EXPORT_SIZES.xhs.h===1620 && EXPORT_SIZES.xhs.rows===20
   && EXPORT_SIZES.wide.w===1200 && EXPORT_SIZES.wide.h===800 && EXPORT_SIZES.wide.rows===10);
 const xsAll = exportRows('short_bond'), lgAll = exportRows('long_bond');
 chk('exportRows 按池过滤并按名次升序',
@@ -198,8 +198,8 @@ const infoW = drawExport(cv2,'long_bond','wide');
 chk('drawExport wide：画布 1200×800、行数=min(10, 池内数)',
   cv2.width===1200 && cv2.height===800 && infoW.rows===Math.min(10, lgAll.length) && infoW.rowH>30);
 const infoP = drawExport(cv2,'short_bond','xhs');
-chk('drawExport xhs：画布 1080×1440、行数=min(20, 池内数)、行高足够两行文字',
-  cv2.width===1080 && cv2.height===1440 && infoP.rows===Math.min(20, xsAll.length) && infoP.rowH>=46);
+chk('drawExport xhs：画布 1080×1620、行数=min(20, 池内数)、行高足够两行文字',
+  cv2.width===1080 && cv2.height===1620 && infoP.rows===Math.min(20, xsAll.length) && infoP.rowH>=46);
 chk('_deltaTxt 环比分支（↑/↓/新增/—/无历史空串）',
   _deltaTxt({rank_delta:2},true)==='↑2' && _deltaTxt({rank_delta:-1},true)==='↓1'
   && _deltaTxt({is_new:true,rank_delta:null},true)==='新增'
@@ -210,7 +210,7 @@ chk('exportPools：启用且有数据的池（多池=短债+中长债，旧单�
   && (!D.pools || (poolsExp.some(p=>p.id==='short_bond') && poolsExp.some(p=>p.id==='long_bond'))));
 chk('drawExport 遍历全部可导出池：每池都有行且画布为请求尺寸',
   poolsExp.every(p => { const info = drawExport(cv2, p.id, 'xhs');
-    return info.rows > 0 && cv2.width === 1080 && cv2.height === 1440; }));
+    return info.rows > 0 && cv2.width === 1080 && cv2.height === 1620; }));
 let drawOK = true;
 try { drawExport(cv2,'long_bond','xhs'); drawExport(cv2,'not_a_pool','wide'); } catch(e){ drawOK = false; }
 chk('drawExport 容错：未知池/空池不抛异常', drawOK);
