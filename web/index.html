@@ -280,8 +280,7 @@ function renderList(){
   /* 按 tab 过滤；旧 data.js 的 funds 无 category → 按顶层 category（单池）归类 */
   const funds = (D.funds || []).filter(f => (f.category || D.category || 'short_bond') === cat);
   $('meta').innerHTML = `数据基准 ${D.asof} · 模型 ${D.model_version} · `
-    + `${catLabel(cat)}池 筛出 ${ps ? ps.n_screened : (D.n_screened ?? D.n)} 只取前 `
-    + `${ps ? ps.top_n : D.top_n} 名 · 本期上榜 <b>${funds.length}</b> 只`;
+    + `${catLabel(cat)}池 本期上榜 <b>${funds.length}</b> 只`;
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
   $('list').innerHTML = funds.map(f => `
     <div class="fundcard" onclick='openDetail(${JSON.stringify(f.code)})'>
@@ -560,11 +559,19 @@ function drawExport(canvas, pool, sizeKey, rows){
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#f4f6f8'; ctx.fillRect(0, 0, W, H);
   const wide = W > H;                                   // wide=公众号横图，否则小红书竖图
-  // ---- 无头部版：直接从榜单行开始（发布用图不带解释性横幅），口径信息沉到页脚 ----
-const WX_ACCOUNT = '班马成长日记';   // 公众号引流用，取得名字后替换
+  // ---- 顶部标题行：xx排名 · 数据基准时间 · 模型（自页脚提上来，无色块横幅） ----
+const WX_ACCOUNT = '班马成长日记';   // 公众号引流用
+  const HH = wide ? 96 : 88;
+  const t1 = label + '排名';
+  ctx.fillStyle = '#1f2430'; ctx.font = '700 ' + (wide ? 40 : 44) + 'px sans-serif';
+  ctx.fillText(t1, PAD, Math.round(HH * 0.58));
+  const t1w = ctx.measureText(t1).width;
+  ctx.fillStyle = '#8a919c'; ctx.font = (wide ? 22 : 24) + 'px sans-serif';
+  ctx.fillText(' · 数据基准 ' + ((D && D.asof) || '—') + ' · 模型 ' + ((D && D.model_version) || '—'),
+    PAD + t1w + 14, Math.round(HH * 0.58));
   // ---- 榜单行：每行两行文字（名称+评分 / 指标串+环比），按行高自适应字号 ----
-  const FOOT = Math.round(H * (wide ? 0.24 : 0.146));
-  const top = 24, bottom = H - FOOT - 8;
+  const FOOT = Math.round(H * (wide ? 0.205 : 0.135));
+  const top = HH + 16, bottom = H - FOOT - 8;
   const rowH = funds.length ? Math.floor((bottom - top) / funds.length) : bottom - top;
   const h = Math.max(38, rowH - 8);
   const fName = Math.min(wide ? 24 : 26, Math.round(h * 0.44));
@@ -626,19 +633,13 @@ const WX_ACCOUNT = '班马成长日记';   // 公众号引流用，取得名字�
       ctx.fillText(环比, (W - PAD - padR) - ctx.measureText(环比).width, y + Math.round(h * 0.80));
     }
   });
-  // ---- 页脚：公众号引流 + 口径一行 + 免责声明（自动折行）+ 来源 ----
+  // ---- 页脚：公众号引流 + 免责声明（自动折行）+ 来源（标题与时间已上移至顶部） ----
   const fy = H - FOOT;
   ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 24 : 22) + 'px sans-serif';
   ctx.fillText('完整榜单与逐期复盘 → 公众号「' + WX_ACCOUNT + '」', PAD, fy + 32);
-  const meta = label + '基金周榜 TOP' + funds.length + ' · 数据基准 ' + ((D && D.asof) || '—')
-    + ' · 模型 ' + ((D && D.model_version) || '')
-    + ' · 筛出 ' + (ps.n_screened != null ? ps.n_screened : (D && D.n_screened)) + ' 只取前 '
-    + (ps.top_n || (D && D.top_n) || 20) + ' 名';
-  ctx.fillStyle = '#5f6673'; ctx.font = '600 ' + (wide ? 18 : 17) + 'px sans-serif';
-  ctx.fillText(_fitText(ctx, meta, W - PAD * 2), PAD, fy + 66);
   ctx.fillStyle = '#8a919c'; ctx.font = (wide ? 17 : 16) + 'px sans-serif';
   const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
-  lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 96 + i * 21));
+  lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 76 + i * 21));
   ctx.fillStyle = '#ff6a00'; ctx.font = (wide ? 17 : 16) + 'px sans-serif';
   ctx.fillText('github.com/huyuming09-collab/fund-screener', PAD, H - 18);
   return {width: W, height: H, rows: funds.length, rowH: rowH};

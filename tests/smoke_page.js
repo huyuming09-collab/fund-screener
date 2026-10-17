@@ -130,8 +130,9 @@ const cv = document.getElementById('trend');
 openDetail(D.funds[0].code);
 chk('canvas DPR 放大（448×150 ×2）', cv.width === 896 && cv.height === 300);
 
-// 8. meta 头部 n_screened（与 data.js 契约字段一致，不硬编码具体数值）
-chk('meta 显式 n_screened', document.getElementById('meta').innerHTML.includes('筛出 ' + D.n_screened + ' 只取前 ' + D.top_n + ' 名'));
+// 8. meta 不再展示"筛出 N 只取前 M 名"（2026-10-17 改版：网页与导出图均删除该条）；data.js 契约字段保留
+chk('meta 无"筛出…取前…名"', !document.getElementById('meta').innerHTML.includes('筛出'));
+chk('data.js 契约 n_screened/top_n 字段保留', D.n_screened != null && D.top_n != null);
 
 // 9. 分类 tab：处理器绑定 + 多池切换过滤（单池旧 data.js 只断言处理器与回退）
 const tabsHTML = document.getElementById('tabs').innerHTML;
@@ -148,9 +149,9 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
   const seg = document.getElementById('tabs').innerHTML.split('<button').find(s=>s.includes('中长债')) || '';
   chk('中长债 tab 激活态', /class="tab active/.test(seg));
   const m = document.getElementById('meta').innerHTML;
-  chk('meta 显示中长债池口径',
-      m.includes('中长债池 筛出 '+D.pools.long_bond.n_screened+' 只取前 '+D.pools.long_bond.top_n+' 名')
-      && m.includes('本期上榜 <b>'+longFunds.length+'</b> 只'));
+  chk('meta 显示中长债池口径（无筛出条）',
+      m.includes('中长债池 本期上榜 <b>'+longFunds.length+'</b> 只')
+      && !m.includes('筛出'));
   openDetail(longFunds[0].code);
   chk('长债详情分母 = 池内 n',
       document.getElementById('d-rank').textContent.includes('第 '+longFunds[0].rank+' 名 / '+D.pools.long_bond.n));
