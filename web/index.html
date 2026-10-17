@@ -279,7 +279,7 @@ function renderList(){
   const ps = poolStat(cat);
   /* 按 tab 过滤；旧 data.js 的 funds 无 category → 按顶层 category（单池）归类 */
   const funds = (D.funds || []).filter(f => (f.category || D.category || 'short_bond') === cat);
-  $('meta').innerHTML = `数据基准 ${D.asof} · 模型 ${D.model_version} · `
+  $('meta').innerHTML = `数据基准 ${D.asof} · `
     + `${catLabel(cat)}池 本期上榜 <b>${funds.length}</b> 只`;
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
   $('list').innerHTML = funds.map(f => `
@@ -569,7 +569,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   // ---- 背景：暖米色 ----
   ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
 
-  // ---- 顶部标题区：橙色竖条 + 「xx排名」+ 右侧日期/模型胶囊 + 分隔线 + 列头 ----
+  // ---- 顶部标题区：橙色竖条 + 「xx排名」+ 右侧日期胶囊 + 分隔线 + 列头 ----
   const rowsTop = wide ? 140 : 156;
   const barH = wide ? 42 : 46;
   ctx.fillStyle = '#ff6a00'; rr(PAD, (wide ? 34 : 38), 10, barH, 5); ctx.fill();
@@ -578,7 +578,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   const t1 = label + '排名';
   ctx.fillText(t1, tX, tBase);
   // 日期胶囊（右对齐）
-  const pillTxt = '数据基准 ' + ((D && D.asof) || '—') + ' · 模型 ' + ((D && D.model_version) || '—');
+  const pillTxt = '数据基准 ' + ((D && D.asof) || '—');
   ctx.font = (wide ? 18 : 20) + 'px sans-serif';
   const pw = ctx.measureText(pillTxt).width + 36, ph = wide ? 36 : 40;
   const px = W - PAD - pw, py = (wide ? 36 : 40);
@@ -592,7 +592,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   const xR5 = xScore - (wide ? 190 : 175), xA5 = xR5 - (wide ? 190 : 175), xR1 = xA5 - (wide ? 175 : 165);
   const nameX = PAD + 16 + (wide ? 32 : 36) + 12;
   ctx.fillText('基金', nameX, rowsTop - 16);
-  right('近1年', xR1, rowsTop - 16); right('近五年年化', xA5, rowsTop - 16);
+  right('近一年收益', xR1, rowsTop - 16); right('近五年年化', xA5, rowsTop - 16);
   right('近五年回撤', xR5, rowsTop - 16); right('评分', xScore, rowsTop - 16);
 
   // ---- 榜单：单张白卡 + 行内分隔线（列对齐） ----
@@ -634,9 +634,9 @@ function drawExport(canvas, pool, sizeKey, rows){
     ctx.fillStyle = '#a8a094'; ctx.font = fCode + 'px sans-serif';
     ctx.fillText(f.code || '', nameX, y + Math.round(h * 0.78));
     ctx.font = fVal + 'px sans-serif';
-    ctx.fillStyle = v1y == null ? '#a8a094' : (v1y >= 0 ? '#e53935' : '#12a150');
+    ctx.fillStyle = v1y == null ? '#a8a094' : '#e53935';   // 近一年收益固定红（2026-10-17 口径）
     right(v1y == null ? '—' : (v1y * 100).toFixed(2) + '%', xR1, y + Math.round(h * 0.78));
-    ctx.fillStyle = '#44403a';
+    ctx.fillStyle = '#e53935';   // 近五年年化同红（2026-10-17 口径）
     right(m.ret_5y == null ? '—' : (m.ret_5y * 100).toFixed(2) + '%', xA5, y + Math.round(h * 0.78));
     ctx.fillStyle = '#12a150';
     right(m.mdd_5y == null ? '—' : (m.mdd_5y * 100).toFixed(2) + '%', xR5, y + Math.round(h * 0.78));
