@@ -285,7 +285,9 @@ def fetch_manager_career_years(manager_name: str, code: str | None = None) -> fl
 
 
 def fetch_manager_products_ann(manager_id: str) -> list[float]:
-    """经理全部在管产品的任职年化收益列表（剔除任职<2年产品）。缓存 7 天。"""
+    """经理职业生涯全部产品（含已离任）的任职年化收益列表。
+    剔除：任职 <2 年的产品（年化无意义）、货币基金（与目标池无可比性）。
+    调用方对列表取中位数（scorer.collect_metrics），理由见 docs/01 §5.5。缓存 7 天。"""
     cached = _load_cache(f"mgrprod_{manager_id}", 24 * 7)
     if cached is not None:
         return list(cached)

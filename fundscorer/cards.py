@@ -15,7 +15,10 @@
     screening  透明化"为什么入选"：综合分位/年度中位/近5年最大单日涨幅
     score_detail / sub_scores / redlines                评分明细与红线
     trend      净值曲线（仅 1y+5y；3y 由前端从 5y 按日期切片，省 60% trend 体积）
-分类 tab：payload.categories 来自 config.CARD（框架占位，未启用分类禁用态）。
+分类 tab：payload.categories 来自 config.CARD（未启用分类禁用态）；
+    多池时 payload.pools = {pool_id: {n, n_screened, top_n, has_prev, funnel, screen}}，
+    逐只 category 随 res 列写入，页面按 tab 过滤 funds（screen = 该池筛选阈值，
+    详情页"入选依据/筛选阈值"按池取值）。顶层单池字段取主池（旧页面前向兼容）。
 """
 from __future__ import annotations
 
@@ -81,7 +84,7 @@ def _rec_metric(rec: dict, key: str, nd: int = 6):
 
 
 def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
-               max_points: int) -> dict:
+               max_points: int, category: str = "short_bond") -> dict:
     """单只基金的卡片+详情数据（row=榜单行，rec=排序份额的指标记录）。"""
     stages = {w: _r(metrics.stage_return(nav, w), 6) if nav is not None else None
               for w in C.CARD["stage_windows"]}
@@ -92,7 +95,7 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         "code": row["code"],
         "name": row["name"],
         "base": row["base"],
-        "category": "short_bond",
+        "category": category,
         "score": _r(row["score"], 2),
         # 环比上一期：prev_rank=None 表示无历史（首期），is_new 仅在有历史且上期缺席时为 True
         "rank_prev": _i(row.get("rank_prev")),
@@ -127,6 +130,7 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
             "career_years": _r(row["career"], 1),
             "tenure_days": _r(row.get("tenure"), 0),  # 基金级：同经理份额最大任期
             "products_ann": _rec_metric(rec, "mgr_products_ann", 4),
+            "products_n": _rec_metric(rec, "mgr_products_n", 0),  # 计入中位数的产品数（透明化）
         },
         "fund_info": {
             "scale_yi": _r(row["scale_sum"], 2),            # 基金级合并规模
@@ -161,12 +165,18 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
 def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
                   funnel: dict | None = None, asof: str | None = None,
                   prev_ranks: dict | None = None,
-                  n_screened: int | None = None) -> dict:
+                  n_screened: int | None = None,
+                  pool_stats: dict | None = None) -> dict:
     """榜单 → 完整卡片数据契约（TOP-N 榜单 + 每只的详情数据）。
 
     prev_ranks  上一期 {base: rank}；None=无历史（首期，全部不算新增、不显示环比）。
                 有历史时：本期 base 不在其中 → is_new=True；rank_delta=上期名次−本期名次。
     n_screened  筛后候选数（列表头部"筛出 N 只"显式字段，替代脆弱的漏斗键名）。
+    pool_stats  多池：{pool_id: {n, n_screened, top_n, has_prev, funnel, screen}} → payload["pools"]。
+                res 需携带 category 列（pipeline 逐池附加；缺省按 short_bond 处理）。
+    顶层字段（category/top_n/n/n_screened/has_prev/funnel）在给定 pool_stats 时取**首个池**
+                （= PIPELINE.pools 主池）的统计——旧 data.js/旧页面的单池语义不变，
+                逐池真值走 pools 映射；不给 pool_stats 时按传入参数（单池调用）原样输出。
     """
     max_points = C.CARD["trend_max_points"]
     funds = []
@@ -177,19 +187,23 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         nav = navs.get(row["code"])
         if nav is None:
             nav = navs.get(row["src_code"])
-        funds.append(build_fund(row, rec, nav, max_points))
+        cat = row.get("category") or row.get("pool") or "short_bond"
+        funds.append(build_fund(row, rec, nav, max_points, category=cat))
+    primary = next(iter(pool_stats), None) if pool_stats else None
+    ps = pool_stats.get(primary, {}) if primary else {}
     return {
         "model_version": C.MODEL_VERSION,
         "generated_at": str(dt.datetime.now()),
         "asof": asof or str(dt.date.today()),
-        "category": "short_bond",
-        "top_n": C.TOP_N,
-        "n": len(funds),
-        "n_screened": n_screened,
-        "has_prev": prev_ranks is not None,
+        "category": primary or "short_bond",
+        "top_n": ps.get("top_n", C.TOP_N),
+        "n": ps.get("n", len(funds)),
+        "n_screened": ps.get("n_screened", n_screened),
+        "has_prev": ps.get("has_prev", prev_ranks is not None),
         "sharpe_rf": C.SHARPE_RF,
         "categories": C.CARD["categories"],
-        "funnel": funnel or {},
+        "funnel": funnel or ps.get("funnel", {}),
+        "pools": pool_stats or {},
         "funds": funds,
         "disclaimer": DISCLAIMER,
     }

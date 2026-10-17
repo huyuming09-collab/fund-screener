@@ -206,12 +206,29 @@ function rkHTML(f){
   return '<span class="rk flat">—</span>';
 }
 
-/* ============ 分类 tab（框架占位） ============ */
+/* ============ 分类 tab（启用分类由 data.pools 供数，点击切换榜单） ============ */
+let ACTIVE = (window.CARD_DATA && window.CARD_DATA.category) || 'short_bond';
+/* 逐池统计：pools 缺失（旧 data.js）→ 回退顶层单池字段 */
+const poolStat = cat => (D.pools && D.pools[cat]) || null;
+/* 该池筛选阈值（详情页文案按池显示）；旧 data.js 无 screen → 按分类回退默认口径 */
+function screenOf(cat){
+  const s = poolStat(cat);
+  if (s && s.screen) return s.screen;
+  return {scale_min_yi:5, comp_pct_min:0.45, yearly_median_min:0.55,
+          spike_max_gain: cat==='long_bond' ? 0.02 : 0.01};
+}
 function renderTabs(active){
   $('tabs').innerHTML = D.categories.map(c =>
     `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
-      ${c.enabled?'':'disabled onclick="toast()"'}>${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
+      ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast()"'}>
+      ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
   ).join('');
+}
+function switchTab(id){
+  const c = (D.categories||[]).find(x=>x.id===id);
+  if(!c || !c.enabled) return;
+  ACTIVE = id; renderTabs(ACTIVE); renderList();
+  document.getElementById('list').scrollTop = 0;
 }
 function toast(){ /* 占位分类 */ }
 
@@ -224,9 +241,13 @@ const METRIC_CELLS = f => [
 ];
 
 function renderList(){
-  const funds = D.funds || [];
-  $('meta').innerHTML = `数据基准 ${D.asof} · 模型 ${D.model_version} · 筛出 ${D.n_screened ?? D.n} 只取前 ${D.top_n} 名`
-    + ` · 本期上榜 <b>${funds.length}</b> 只`;
+  const cat = ACTIVE;
+  const ps = poolStat(cat);
+  /* 按 tab 过滤；旧 data.js 的 funds 无 category → 按顶层 category（单池）归类 */
+  const funds = (D.funds || []).filter(f => (f.category || D.category || 'short_bond') === cat);
+  $('meta').innerHTML = `数据基准 ${D.asof} · 模型 ${D.model_version} · `
+    + `${catLabel(cat)}池 筛出 ${ps ? ps.n_screened : (D.n_screened ?? D.n)} 只取前 `
+    + `${ps ? ps.top_n : D.top_n} 名 · 本期上榜 <b>${funds.length}</b> 只`;
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
   $('list').innerHTML = funds.map(f => `
     <div class="fundcard" onclick='openDetail(${JSON.stringify(f.code)})'>
@@ -257,8 +278,9 @@ function openDetail(code){
   WIN = '1y';
   $('d-name').textContent = CUR.name;
   $('d-score').textContent = CUR.score;
-  /* 头部名次：含环比后缀（无历史 → 不显示后缀） */
-  let rk = `第 ${CUR.rank} 名 / ${D.n}`;
+  /* 头部名次：分母 = 该基金所在池的 n（pools 缺失回退顶层 n）；含环比后缀 */
+  const ps = poolStat(CUR.category);
+  let rk = `第 ${CUR.rank} 名 / ${(ps && ps.n) || D.n}`;
   if(CUR.is_new) rk += '（新增）';
   else if(CUR.rank_delta!=null) rk += CUR.rank_delta>0 ? `（较上期 ↑${CUR.rank_delta}）`
       : CUR.rank_delta<0 ? `（较上期 ↓${-CUR.rank_delta}）` : '（较上期 持平）';
@@ -333,7 +355,7 @@ function bodyHTML(f){
     <div class="pctbar"><div class="fill" style="width:${(f.screening.yearly_med*100).toFixed(1)}%"></div>
       <div class="lbl">超过 ${(f.screening.yearly_med*100).toFixed(1)}% 的同类基金</div></div>
     <div style="font-size:11.5px;color:var(--sub);margin-top:8px">
-      近5年最大单日涨幅 ${pct(f.screening.max_gain_5y)}（筛选阈值 &lt;1%）</div>
+      近5年最大单日涨幅 ${pct(f.screening.max_gain_5y)}（筛选阈值 &lt;${fpct(screenOf(f.category).spike_max_gain)}）</div>
   </div>
 
   <!-- 基金经理 -->
@@ -343,7 +365,7 @@ function bodyHTML(f){
       ${mg.tenure_days==null?'—':(mg.tenure_days/365).toFixed(1)+' 年'}</div>
     <div class="mgr-cards">
       <div class="mc"><div class="v">${mg.career_years==null?'—':mg.career_years+'年'}</div><div class="l">从业年限</div></div>
-      <div class="mc"><div class="v">${mg.products_ann==null?'—':(mg.products_ann*100).toFixed(2)+'%'}</div><div class="l">在管产品年化均值</div></div>
+      <div class="mc"><div class="v">${mg.products_ann==null?'—':(mg.products_ann*100).toFixed(2)+'%'}</div><div class="l">在管产品年化中位数${mg.products_n?'（'+mg.products_n+'只）':''}</div></div>
       <div class="mc"><div class="v">${mg.tenure_days==null?'—':(mg.tenure_days/365).toFixed(1)+'年'}</div><div class="l">任本基金</div></div>
     </div>
   </div>
@@ -372,9 +394,9 @@ function bodyHTML(f){
       ? `<div style="margin-top:6px;font-size:12px">红线：${f.redlines.map(r=>`<span class="redline-tag">${r}</span>`).join('')}</div>`
       : `<div style="margin-top:6px;font-size:12px;color:var(--down)">✓ 未触碰任何红线项</div>`}
     <div style="margin-top:8px;font-size:11.5px;color:var(--sub)">
-      入选依据：业绩综合分位 ${pct(f.screening.comp_pct)}（≥45%）·
-      年度分位中位 ${pct(f.screening.yearly_med)}（≥55%）·
-      合并规模 ${yi(f.screening.scale_sum)}（≥5亿）</div>
+      入选依据：业绩综合分位 ${pct(f.screening.comp_pct)}（≥${fpct(screenOf(f.category).comp_pct_min)}）·
+      年度分位中位 ${pct(f.screening.yearly_med)}（≥${fpct(screenOf(f.category).yearly_median_min)}）·
+      合并规模 ${yi(f.screening.scale_sum)}（≥${screenOf(f.category).scale_min_yi}亿）</div>
   </div>`;
 }
 
@@ -465,7 +487,7 @@ if(!D || !D.funds){
   document.getElementById('list').innerHTML =
     '<div class="empty-tip">数据未加载：请先运行 <b>python -m fundscorer.pipeline</b> 生成 data.js</div>';
 }else{
-  renderTabs(D.category); renderList();
+  ACTIVE = D.category || ACTIVE; renderTabs(ACTIVE); renderList();
 }
 </script>
 </body>

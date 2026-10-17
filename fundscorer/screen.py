@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""短债两段式筛选：先筛后评（docs/07-短债筛选标准.md，用户 2026-10-15 基金级口径）。
+"""两段式筛选：先筛后评（按池；docs/07-短债筛选标准.md / docs/09-中长债筛选与评分.md）。
+
+阈值来自 config.SCREENS[pool]（短债 = config.SCREEN 默认，中长债 = SCREENS["long_bond"]）；
+漏斗键名中的阈值随 cfg 显示，故两池文案天然不同（短债 S5 标 >1%，长债标 >2%）。
+下文以短债池（用户 2026-10-15 基金级口径）为例描述流程：
 
 流程：
   1. 份额合并（基金级口径）：同基金 A/B/C/D… 份额按基础名合并。
@@ -13,7 +17,7 @@
        S2 现任基金经理从业 ≥ 5 年
        S3 现任经理任本基金 ≥ 3 年（1095 天）
        S4 成立 ≥ 5 年（保证近五年数据完整）
-       S5 剔除近 5 年任一份额单日涨幅 > 1% 的异常基金
+       S5 剔除近 5 年任一份额        S5 剔除近 5 年任一份额单日涨幅超过阈值的异常基金（短债 >1% / 长债 >2%，池别化）
   3. 性能条件（方案甲；字面规则"四项前40%×每年>55%"全阈值空集后的放宽决策）：
        P1 近5y/3y 收益与回撤四项池内分位的均值，其池内分位 ≥ 45%（综合前 55%）
        P2 近 5 个完整自然年收益分位的中位数 ≥ 55%（可比完整年 ≥ 4）
@@ -24,7 +28,8 @@
        分位基准仍是短债全池，分数与全市场快照逐位一致，再按 config.TOP_N 截取前 N。
 
 用法：
-    python -m fundscorer.screen                     # 筛选 + 漏斗 + 榜单
+    python -m fundscorer.screen                     # 短债池筛选 + 漏斗 + 榜单
+    python -m fundscorer.screen --pool long_bond     # 中长债池（SCREENS[pool]）
     python -m fundscorer.screen --csv out.csv       # 同时导出 CSV
     python -m fundscorer.screen --top 20            # 只保留前 20 名
 """
@@ -216,9 +221,10 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
                       cfg: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """阶段一+二（纯内存计算）：硬条件 S1~S5 + 性能条件 P1~P2，返回候选表与漏斗。
 
-    records  短债池份额级指标记录（metrics_cache 口径）
+    records  池内份额级指标记录（metrics_cache 口径）
     spikes   {code: 近5年单日最大涨幅}
     yearly   {基础名: {完整年: 年收益}}（历史最久份额净值口径）
+    cfg      SCREENS[pool]（漏斗键名中的阈值随 cfg，长债池 S5 标 >2%）
     """
     cfg = dict(C.SCREEN if cfg is None else cfg)
     pool = merge_shares(records)
@@ -226,22 +232,22 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
 
     # ---- 阶段一 硬条件 S1~S5 ----
     keep = pool["scale_sum"] >= cfg["scale_min_yi"]
-    funnel["S1 规模合并≥5亿"] = int(keep.sum())
+    funnel[f"S1 规模合并≥{cfg['scale_min_yi']:g}亿"] = int(keep.sum())
     keep &= pool["career"] >= cfg["mgr_career_min_years"]
-    funnel["S2 经理从业≥5年"] = int(keep.sum())
+    funnel[f"S2 经理从业≥{cfg['mgr_career_min_years']:g}年"] = int(keep.sum())
     keep &= pool["tenure"] >= cfg["mgr_tenure_min_days"]
-    funnel["S3 现经理任本基金≥3年"] = int(keep.sum())
+    funnel[f"S3 现经理任本基金≥{cfg['mgr_tenure_min_days'] / 365:g}年"] = int(keep.sum())
     keep &= pool["nav_years"] >= cfg["min_nav_years"]
-    funnel["S4 成立≥5年"] = int(keep.sum())
+    funnel[f"S4 成立≥{cfg['min_nav_years']:g}年"] = int(keep.sum())
     pool["max_gain_5y"] = pool["codes"].map(lambda cs: _fund_max_gain(cs, spikes))
     # 数据不足（NaN）不通过 S5：无法验证"无异常涨幅"则不放行
     keep &= pool["max_gain_5y"] <= cfg["spike_max_gain"]
-    funnel["S5 无近5年单日涨幅>1%"] = int(keep.sum())
+    funnel[f"S5 无近5年单日涨幅>{cfg['spike_max_gain'] * 100:g}%"] = int(keep.sum())
 
-    # ---- 阶段二 性能条件 P1~P2（百分位基准 = 短债合并全池） ----
+    # ---- 阶段二 性能条件 P1~P2（百分位基准 = 本池合并全池） ----
     P = composite_percentiles(pool)
     keep &= P["mpct"] >= cfg["comp_pct_min"]
-    funnel["P1 综合分位≥45%"] = int(keep.sum())
+    funnel[f"P1 综合分位≥{cfg['comp_pct_min'] * 100:g}%"] = int(keep.sum())
     Y = pd.DataFrame(yearly).T
     med = pd.Series(
         {i: yearly_median_pct(Y, b, yearly, cfg["yearly_pool_min"],
@@ -249,7 +255,7 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
          for i, b in zip(pool.index, pool["base"])},
         dtype="float64")
     keep &= med >= cfg["yearly_median_min"]
-    funnel["P2 年度分位中位≥55%"] = int(keep.sum())
+    funnel[f"P2 年度分位中位≥{cfg['yearly_median_min'] * 100:g}%"] = int(keep.sum())
 
     out = pool[keep].copy()
     out["comp_pct"] = P.loc[keep, "mpct"]
@@ -318,7 +324,7 @@ def run_screen(records: list[dict], spikes: dict, yearly: dict,
 def load_screen_inputs(cache_path: Path | None = None, nav_dir: Path | None = None,
                        asof: str | pd.Timestamp | None = None,
                        cfg: dict | None = None) -> tuple[list[dict], dict, dict, dict]:
-    """读取 metrics_cache（短债池）与 nav_full，产出筛选输入。
+    """读取 metrics_cache（按 cfg["pool"] 过滤池）与 nav_full，产出筛选输入。
 
     返回 (records, spikes, yearly, navs)；navs 供周更管线复用（详情页净值曲线等）。
     """
@@ -353,7 +359,9 @@ def load_screen_inputs(cache_path: Path | None = None, nav_dir: Path | None = No
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="短债两段式筛选（先筛后评）")
+    ap = argparse.ArgumentParser(description="两段式筛选（先筛后评，按池）")
+    ap.add_argument("--pool", default=None,
+                    help="池 id（config.SCREENS 键，默认 config.SCREEN=短债）")
     ap.add_argument("--cache", default=str(DEFAULT_CACHE))
     ap.add_argument("--nav-dir", default=str(DEFAULT_NAV_DIR))
     ap.add_argument("--snapshot", default=None, help="v5.2 全市场分数快照 JSON")
@@ -363,13 +371,20 @@ def main(argv=None) -> int:
     ap.add_argument("--asof", default=None, help="数据基准日 YYYY-MM-DD（默认今天）")
     args = ap.parse_args(argv)
 
+    if args.pool:
+        if args.pool not in C.SCREENS:
+            print(f"未知池 {args.pool!r}；可用：{', '.join(C.SCREENS)}")
+            return 2
+        cfg = C.SCREENS[args.pool]
+    else:
+        cfg = C.SCREEN
+
     try:
         records, spikes, yearly, _navs = load_screen_inputs(args.cache, args.nav_dir,
-                                                            args.asof)
+                                                            args.asof, cfg=cfg)
     except ValueError as e:
         print(e)
         return 1
-    cfg = C.SCREEN
 
     snap_path = Path(args.snapshot) if args.snapshot else ROOT / cfg["score_snapshot"]
     snap = json.loads(snap_path.read_text())
@@ -378,10 +393,10 @@ def main(argv=None) -> int:
               "建议先重跑 rank 刷新快照")
     snapshot = {r["code"]: r for r in snap["results"]}
 
-    candidates, funnel = screen_candidates(records, spikes, yearly)
-    res = rank_candidates(candidates, snapshot, top_n=args.top)
+    candidates, funnel = screen_candidates(records, spikes, yearly, cfg)
+    res = rank_candidates(candidates, snapshot, cfg, top_n=args.top)
 
-    print(f"== 短债两段式筛选漏斗（快照 {snap.get('generated_at', '?')}）==")
+    print(f"== {cfg['pool']} 两段式筛选漏斗（快照 {snap.get('generated_at', '?')}）==")
     for k, v in funnel.items():
         print(f"   {k}: {v}")
     print(f"\n== 入选榜单（{len(res)} 只，按 v5.2 全市场分数降序"

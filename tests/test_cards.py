@@ -37,7 +37,7 @@ def _rec(**over):
         "mgmt_fee": 0.0025, "custody_fee": 0.0007, "sales_fee": 0.0,
         "purchase_fee": 0.008, "purchase_fee_disc": 0.0008,
         "manager": "张某", "career": 11.4, "tenure": 1825,
-        "nav_years": 4.8, "mgr_products_ann": 0.031,
+        "nav_years": 4.8, "mgr_products_ann": 0.031, "mgr_products_n": 6,
         "score_capped": 86.83, "star": 5,
     }
     rec.update(over)
@@ -92,6 +92,16 @@ class TestContract:
         assert fi["purchase_fee_disc"] == pytest.approx(0.0008)
         assert fi["custody_fee"] == pytest.approx(0.0007)
 
+    def test_manager_block_median_and_products_n(self):
+        """经理口径透明化：指标为**中位数**且带计入产品数（docs/01 §5.5）。"""
+        mg = _payload()["funds"][0]["manager"]
+        assert mg["products_ann"] == pytest.approx(0.031)
+        assert mg["products_n"] == 6
+        rec = _rec(mgr_products_ann=None, mgr_products_n=None)
+        mg2 = cards.build_payload(pd.DataFrame([_row()]), {"002438": rec},
+                                  {"002438": _nav()})["funds"][0]["manager"]
+        assert mg2["products_ann"] is None and mg2["products_n"] is None
+
     def test_fee_fields_missing(self):
         rec = _rec(mgmt_fee=None, purchase_fee=None, purchase_fee_disc=None,
                    custody_fee=None, sales_fee=None)
@@ -118,6 +128,68 @@ class TestNaNGuards:
         assert f["metrics"]["lvi_5y"] is None
         assert f["fund_info"]["ms_rating"] is None
         json.dumps(p)   # 必须可序列化
+
+
+class TestMultiPoolContract:
+    """多池（docs/09 §D）：funds 逐只 category、pools 统计映射、顶层取主池。"""
+
+    @staticmethod
+    def _payload():
+        res = pd.DataFrame([
+            _row(rank=1, code="002438", base="002438", category="short_bond"),
+            _row(rank=1, code="900001", name="中长债优选债券A", base="中长债优选债券",
+                 category="long_bond"),
+        ])
+        snap = {"002438": _rec(),
+                "900001": _rec(code="900001", name="中长债优选债券A", pool="long_bond")}
+        navs = {"002438": _nav(), "900001": _nav()}
+        stats = {
+            "short_bond": {"n": 20, "n_screened": 23, "top_n": 20, "has_prev": True,
+                           "funnel": {"合并基金数": 482},
+                           "screen": {"scale_min_yi": 5, "comp_pct_min": 0.45,
+                                      "yearly_median_min": 0.55, "spike_max_gain": 0.01}},
+            "long_bond": {"n": 20, "n_screened": 74, "top_n": 20, "has_prev": False,
+                          "funnel": {"合并基金数": 945},
+                          "screen": {"scale_min_yi": 5, "comp_pct_min": 0.45,
+                                     "yearly_median_min": 0.55, "spike_max_gain": 0.02}},
+        }
+        return cards.build_payload(res, snap, navs, pool_stats=stats)
+
+    def test_funds_carry_category(self):
+        p = self._payload()
+        assert [f["category"] for f in p["funds"]] == ["short_bond", "long_bond"]
+
+    def test_pools_map_per_pool_stats(self):
+        p = self._payload()
+        assert set(p["pools"]) == {"short_bond", "long_bond"}
+        assert p["pools"]["long_bond"]["n_screened"] == 74
+        assert p["pools"]["long_bond"]["has_prev"] is False
+        assert p["pools"]["long_bond"]["funnel"]["合并基金数"] == 945
+        assert p["pools"]["long_bond"]["screen"]["spike_max_gain"] == 0.02
+
+    def test_top_level_follows_primary_pool(self):
+        # 顶层 = 首个池（PIPELINE.pools 主池）→ 旧页面单池语义不变
+        p = self._payload()
+        assert p["category"] == "short_bond"
+        assert p["n"] == 20 and p["n_screened"] == 23
+        assert p["top_n"] == 20 and p["has_prev"] is True
+        assert p["funnel"] == {"合并基金数": 482}
+        json.dumps(p)   # 必须可序列化
+
+    def test_category_falls_back_to_pool_column(self):
+        row = _row(category="long_bond")
+        row = row.drop(labels=["category"])          # 无 category 列
+        row["pool"] = "long_bond"                    # pipeline 只给 pool 列时也认
+        p = cards.build_payload(pd.DataFrame([row]), {"002438": _rec()},
+                                {"002438": _nav()})
+        assert p["funds"][0]["category"] == "long_bond"
+
+    def test_category_default_short_bond(self):
+        row = _row().drop(labels=["category"])
+        p = cards.build_payload(pd.DataFrame([row]), {"002438": _rec()},
+                                {"002438": _nav()})
+        assert p["funds"][0]["category"] == "short_bond"
+        assert p["category"] == "short_bond"
 
 
 class TestRankChanges:
@@ -157,6 +229,63 @@ class TestRankChanges:
             pipeline.save_history(res, path=path, today=f"2025-{1+i//28:02d}-{1+i%28:02d}")
         hist = json.loads(path.read_text(encoding="utf-8"))
         assert len(hist) == pipeline.HISTORY_KEEP
+        assert all(v == {"short_bond": {"X": 1}} for v in hist.values())   # 写入即嵌套
+
+
+class TestHistoryMigration:
+    """键结构 {date: {pool: {base: rank}}}；旧扁平期按 short_bond 迁移，历史不丢。"""
+
+    def test_legacy_flat_read(self, tmp_path):
+        path = tmp_path / "rank_history.json"
+        path.write_text(json.dumps({"2026-10-16": {"基金甲": 1, "基金乙": 2}}),
+                        encoding="utf-8")
+        assert pipeline.load_prev_ranks(path, today="2026-10-23",
+                                        pool="short_bond") == {"基金甲": 1, "基金乙": 2}
+        assert pipeline.load_prev_ranks(path, today="2026-10-23",
+                                        pool="long_bond") is None   # 旧期无长债
+        assert pipeline.load_prev_ranks(path, today="2026-10-23") == {"基金甲": 1,
+                                                                      "基金乙": 2}
+
+    def test_save_migrates_legacy_and_keeps_short_bond(self, tmp_path):
+        path = tmp_path / "rank_history.json"
+        path.write_text(json.dumps({"2026-10-16": {"基金甲": 1}}), encoding="utf-8")
+        res = pd.DataFrame([_row(base="基金丙", rank=1)])
+        pipeline.save_history(res, path=path, today="2026-10-23", pool="long_bond")
+        hist = json.loads(path.read_text(encoding="utf-8"))
+        assert hist["2026-10-16"] == {"short_bond": {"基金甲": 1}}   # 旧期就地升级
+        assert hist["2026-10-23"] == {"long_bond": {"基金丙": 1}}
+        # 环比各取各池：最新一期只有长债 → 短债再看上一期（10-16，迁移后）
+        assert pipeline.load_prev_ranks(path, today="2026-10-30",
+                                        pool="long_bond") == {"基金丙": 1}
+        assert pipeline.load_prev_ranks(path, today="2026-10-30",
+                                        pool="short_bond") is None
+        assert pipeline.load_prev_ranks(path, today="2026-10-23",
+                                        pool="short_bond") == {"基金甲": 1}
+
+    def test_same_date_two_pools_coexist(self, tmp_path):
+        path = tmp_path / "rank_history.json"
+        pipeline.save_history(pd.DataFrame([_row(base="短债甲", rank=1)]),
+                              path=path, today="2026-10-16", pool="short_bond")
+        pipeline.save_history(pd.DataFrame([_row(base="长债乙", rank=1)]),
+                              path=path, today="2026-10-16", pool="long_bond")
+        hist = json.loads(path.read_text(encoding="utf-8"))
+        assert hist["2026-10-16"] == {"short_bond": {"短债甲": 1},
+                                      "long_bond": {"长债乙": 1}}
+        assert pipeline.load_prev_ranks(path, today="2026-10-23",
+                                        pool="short_bond") == {"短债甲": 1}
+        assert pipeline.load_prev_ranks(path, today="2026-10-23",
+                                        pool="long_bond") == {"长债乙": 1}
+        # 同日重跑仍对比上一期
+        assert pipeline.load_prev_ranks(path, today="2026-10-16",
+                                        pool="long_bond") is None
+
+    def test_multi_pool_latest_period_requires_explicit_pool(self, tmp_path):
+        path = tmp_path / "rank_history.json"
+        pipeline.save_history(pd.DataFrame([_row(base="A", rank=1)]),
+                              path=path, today="2026-10-16", pool="short_bond")
+        pipeline.save_history(pd.DataFrame([_row(base="B", rank=1)]),
+                              path=path, today="2026-10-16", pool="long_bond")
+        assert pipeline.load_prev_ranks(path, today="2026-10-23") is None   # 二义 → 不猜
 
 
 class TestTrend:

@@ -3,7 +3,7 @@
 
 参数索引（要改什么去哪改，改这里不用动逻辑代码）：
   改权重          → PURE_BOND_WEIGHTS / POOL_WEIGHTS（各池评分卡，100 分制）
-  改筛选条件      → SCREENS["short_bond"]（S1~S5 硬条件 + P1~P2 性能条件 + 排序）
+  改筛选条件      → SCREENS["short_bond"/"long_bond"]（S1~S5 硬条件 + P1~P2 性能条件 + 排序）
   改打分标准      → QUALITY（绝对分档）/ RISK_THRESHOLD（风险门槛给分）/ REDLINES（红线封顶）
                     STARS（星级阈值与配额）/ HISTORY（数据不足判定）
   改 TOP 取数     → TOP_N（周更输出前 N 支）
@@ -192,7 +192,31 @@ SCREENS = {
         "score_snapshot": "data/full_scores.json",  # 手动模式的分数快照（周更管线走筛后即时评分，不读此文件）
         "prefer_letter": "A",         # 排序取 A 类份额分数（用户口径；无 A 类则用代表份额）
     },
-    # 将来扩展位："long_bond": {...}, "fixed_plus": {...}, "index": {...}
+    # 中长期纯债（docs/09-中长债筛选与评分.md，2026-10-16 设计）：与短债同构（S1-S5+P1-P2），
+    # 仅 S5 池别化——长债久期更长，>1% 单日涨幅占池 9.0%（短债仅 2.9%）且反向检验
+    # 124 件 0 反向：真实行情日与单边坏点混合；>2% 为纯债经济不可能日涨幅（池内 p99=5.18%）。
+    # 评分卡复用 POOL_WEIGHTS["long_bond"]（v5.1 IC 权重，docs/06 目标函数回测验证段与最优候选
+    # u2 差 0.03pp 在噪声内），"稳为底+稍偏收益"由 IC 池收益族倾斜体现（ret_1y 9.97 vs 短债 7.69）。
+    "long_bond": {
+        "pool": "long_bond",
+        # S1~S5 硬条件
+        "scale_min_yi": 5.0,          # S1 合并规模 ≥5 亿（试算 945→697；≥10亿将排除 006980）
+        "mgr_career_min_years": 5.0,  # S2 现任基金经理从业 ≥5 年（697→488）
+        "mgr_tenure_min_days": 1095,  # S3 现任经理任本基金 ≥3 年（488→198，约束主力同短债）
+        "min_nav_years": 5.0,         # S4 成立 ≥5 年（198→162）
+        "spike_max_gain": 0.02,       # S5 近5年任一单日涨幅 >2% 剔除（长债专属；短债 1%）
+        "spike_window_years": 5,
+        # P1~P2 性能条件（与短债"方案甲"同阈值，长债池试算 P2 后约 74~80 只 ≥ TOP20）
+        "comp_pct_min": 0.45,         # P1 四项分位均值在池内分位 ≥45%
+        "yearly_median_min": 0.55,    # P2 完整自然年收益分位的中位数 ≥55%
+        "yearly_min_years": 4,        # P2 参与比较的完整年数下限
+        "yearly_min_obs": 120,        # 完整年判定：年内净值点 ≥120 且存在上年基数
+        "yearly_pool_min": 30,        # P2 单年分位比较的池内最少样本
+        # 阶段三 排序
+        "score_snapshot": "data/full_scores.json",
+        "prefer_letter": "A",         # 排序取 A 类份额分数（同短债口径）
+    },
+    # 将来扩展位："fixed_plus": {...}, "index": {...}
 }
 SCREEN = SCREENS["short_bond"]   # 便捷别名（现有代码/文档引用）
 
@@ -207,9 +231,9 @@ CARD = {
     # 省 60% trend 体积（实测 data.js 1.07MB → ~300KB）。1y 保全量采样点保真。
     "trend_windows": ["1y", "5y"],
     "trend_max_points": 360,                                  # 走势每条曲线最大采样点（内嵌 JSON 体积控制）
-    "categories": [   # 分类 tab（框架占位，只有启用的分类有数据）
+    "categories": [   # 分类 tab（启用的分类由 PIPELINE.pools 供给数据）
         {"id": "short_bond", "name": "短债", "enabled": True},
-        {"id": "long_bond", "name": "中长债", "enabled": False},
+        {"id": "long_bond", "name": "中长债", "enabled": True},
         {"id": "fixed_plus", "name": "固收+", "enabled": False},
         {"id": "index", "name": "指数", "enabled": False},
     ],
@@ -217,7 +241,7 @@ CARD = {
 
 # 周更管线
 PIPELINE = {
-    "pools": ["short_bond"],   # 每周刷新哪些池（其他池数据不动，将来接入时扩）
+    "pools": ["short_bond", "long_bond"],   # 每周刷新哪些池（其他池数据不动，将来接入时扩）
     "log_dir": "data",         # 执行日志目录
 }
 

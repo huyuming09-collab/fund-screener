@@ -4,10 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from fundscorer import config as C
 from fundscorer.screen import (
     base_name,
     complete_yearly_returns,
     composite_percentiles,
+    load_screen_inputs,
     merge_shares,
     run_screen,
     scan_spikes,
@@ -187,6 +189,76 @@ class TestPerformanceConditions:
         yearly = {"基金A": {2024: 0.05, 2025: 0.05}}
         Y = pd.DataFrame(yearly).T
         assert yearly_median_pct(Y, "基金A", yearly, pool_min=1, min_years=4) is None
+
+
+# ---------------------------------------------------------------- 中长债池（docs/09）
+class TestLongBondPool:
+    """SCREENS["long_bond"]：漏斗文案随池阈值、S5 池别化（>2%）、S1 保留 9 亿级样本。"""
+
+    def _setup(self, n=40):
+        records, yearly, snapshot, spikes = TestRunScreen()._setup(n)
+        for r in records:
+            r["pool"] = "long_bond"
+        return records, yearly, snapshot, spikes
+
+    def test_funnel_labels_follow_pool_cfg(self):
+        records, yearly, snapshot, spikes = self._setup()
+        _, funnel = run_screen(records, spikes, yearly, snapshot,
+                               cfg=C.SCREENS["long_bond"])
+        assert funnel["合并基金数"] == 40
+        assert funnel["S1 规模合并≥5亿"] == 40
+        assert funnel["S5 无近5年单日涨幅>2%"] == 40   # 长债专属文案（短债标 >1%）
+        assert not any(k.startswith("S5") and ">1%" in k for k in funnel)
+        assert funnel["P1 综合分位≥45%"] == 23          # 阈值同短债 → 同短债口径计数
+        assert funnel["P2 年度分位中位≥55%"] == 18
+
+    def test_spike_between_1pct_and_2pct_passes_long_only(self):
+        # 1.5% 单日涨幅：长债高久期合法行情日 → 放行；短债口径判异常 → 剔除
+        records, yearly, snapshot, spikes = self._setup()
+        spikes[records[0]["code"]] = 0.015
+        _, f_long = run_screen(records, spikes, yearly, snapshot,
+                               cfg=C.SCREENS["long_bond"])
+        assert f_long["S5 无近5年单日涨幅>2%"] == 40
+        _, f_short = run_screen(records, spikes, yearly, snapshot)   # 默认短债 cfg
+        assert f_short["S5 无近5年单日涨幅>1%"] == 39
+        assert f_short["合并基金数"] == 40
+
+    def test_scale_gate_keeps_9yi_sample(self):
+        # 006980 式样本（9.04 亿）：S1 维持 ≥5 亿必须保留（≥10 亿会把它挡在门外）
+        assert C.SCREENS["long_bond"]["scale_min_yi"] == 5.0
+        records, yearly, snapshot, spikes = self._setup(10)
+        records[0]["scale_yi"] = 9.04
+        _, funnel = run_screen(records, spikes, yearly, snapshot,
+                               cfg=C.SCREENS["long_bond"])
+        assert funnel["S1 规模合并≥5亿"] == 10
+
+    def test_pool_block_keys_match_short_bond(self):
+        # 两池筛选块键集一致（screen/pipeline 逐键取值，缺键即崩）
+        assert set(C.SCREENS["long_bond"]) == set(C.SCREENS["short_bond"])
+
+
+class TestLoadInputsPoolFilter:
+    def test_filters_cache_by_pool(self, tmp_path):
+        import pickle
+        recs = [rec("000001", "中长债基金A", pool="long_bond"),
+                rec("000002", "短债基金A", pool="short_bond")]
+        cache = tmp_path / "m.pkl"
+        cache.write_bytes(pickle.dumps(recs))
+        nav_dir = tmp_path / "nav"
+        nav_dir.mkdir()
+        records, spikes, yearly, navs = load_screen_inputs(
+            cache, nav_dir, cfg=C.SCREENS["long_bond"])
+        assert [r["code"] for r in records] == ["000001"]
+        assert set(navs) == {"000001"}
+
+    def test_empty_pool_raises(self, tmp_path):
+        import pickle
+        cache = tmp_path / "m.pkl"
+        cache.write_bytes(pickle.dumps([rec("000001", "短债基金A", pool="short_bond")]))
+        nav_dir = tmp_path / "nav"
+        nav_dir.mkdir()
+        with pytest.raises(ValueError, match="index"):
+            load_screen_inputs(cache, nav_dir, cfg={"pool": "index"})
 
 
 # ---------------------------------------------------------------- 端到端
