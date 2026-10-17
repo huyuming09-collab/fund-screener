@@ -602,7 +602,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   const rowsBot = H - FOOT - 8;
   const rowH = funds.length ? Math.floor((rowsBot - rowsTop) / funds.length) : rowsBot - rowsTop;
   const h = Math.max(38, rowH - 6);
-  const fName = Math.min(wide ? 24 : 26, Math.round(h * 0.42));
+  const fName = Math.min(wide ? 24 : 26, Math.round(h * 0.44));
   const fVal = Math.max(14, Math.min(wide ? 16 : 17, Math.round(fName * 0.78)));
   const fCode = Math.max(12, Math.round(fVal * 0.85));
   const cardH = Math.max(h + 8, funds.length * rowH - 6);
@@ -623,7 +623,7 @@ function drawExport(canvas, pool, sizeKey, rows){
     ctx.font = '700 ' + Math.round(bSize * 0.52) + 'px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(String(rk), bx + bSize / 2, by + Math.round(bSize * 0.68)); ctx.textAlign = 'left';
     // 第一行：基金名（左）+ 评分（右）
-    const nameAvail = xR1 - 24 - nameX;
+    const nameAvail = xScore - (wide ? 150 : 130) - nameX;   // 名字整行可用，仅与评分保持间距
     ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
     ctx.fillText(_fitText(ctx, f.name || '', nameAvail), nameX, y + Math.round(h * 0.42));
     const score = f.score == null ? '—' : (+f.score).toFixed(1);
