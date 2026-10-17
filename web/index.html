@@ -164,7 +164,7 @@ body.exp{display:block;overflow:auto;background:#20242c;}
 body.bare{margin:0;padding:0;background:#f4f6f8;}
 body.bare .exp-bar,body.bare .exp-hint{display:none;}
 body.bare .exp-wrap{margin:0;padding:0;}
-body.bare .exp-canvas-\boxed{background:none;padding:0;box-shadow:none;border-radius:0;}
+body.bare [class~="exp-canvas-box"]{background:none;padding:0;box-shadow:none;border-radius:0;}
 body.bare #exp-canvas{width:100vw;height:auto;display:block;}
 </style>
 
@@ -557,93 +557,113 @@ function drawExport(canvas, pool, sizeKey, rows){
   const W = S.w, H = S.h, PAD = 48;
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#f4f6f8'; ctx.fillRect(0, 0, W, H);
-  const wide = W > H;                                   // wide=公众号横图，否则小红书竖图
-  // ---- 顶部标题行：xx排名 · 数据基准时间 · 模型（自页脚提上来，无色块横幅） ----
-const WX_ACCOUNT = '班马成长日记';   // 公众号引流用
-  const HH = wide ? 96 : 88;
+  const wide = W > H;
+  const WX_ACCOUNT = '班马成长日记';
+  const rr = (x, y, w, h, r) => {                    // 圆角矩形路径
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  };
+  const right = (txt, x, y) => { ctx.textAlign = 'right'; ctx.fillText(txt, x, y); ctx.textAlign = 'left'; };
+
+  // ---- 背景：暖米色 ----
+  ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
+
+  // ---- 顶部标题区：橙色竖条 + 「xx排名」+ 右侧日期/模型胶囊 + 分隔线 + 列头 ----
+  const rowsTop = wide ? 140 : 156;
+  const barH = wide ? 42 : 46;
+  ctx.fillStyle = '#ff6a00'; rr(PAD, (wide ? 34 : 38), 10, barH, 5); ctx.fill();
+  const tX = PAD + 24, tBase = wide ? 74 : 82;
+  ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 40 : 46) + 'px sans-serif';
   const t1 = label + '排名';
-  ctx.fillStyle = '#1f2430'; ctx.font = '700 ' + (wide ? 40 : 44) + 'px sans-serif';
-  ctx.fillText(t1, PAD, Math.round(HH * 0.58));
-  const t1w = ctx.measureText(t1).width;
-  ctx.fillStyle = '#8a919c'; ctx.font = (wide ? 22 : 24) + 'px sans-serif';
-  ctx.fillText(' · 数据基准 ' + ((D && D.asof) || '—') + ' · 模型 ' + ((D && D.model_version) || '—'),
-    PAD + t1w + 14, Math.round(HH * 0.58));
-  // ---- 榜单行：每行两行文字（名称+评分 / 指标串+环比），按行高自适应字号 ----
-  const FOOT = Math.round(H * (wide ? 0.205 : 0.135));
-  const top = HH + 16, bottom = H - FOOT - 8;
-  const rowH = funds.length ? Math.floor((bottom - top) / funds.length) : bottom - top;
-  const h = Math.max(38, rowH - 8);
-  const fName = Math.min(wide ? 24 : 26, Math.round(h * 0.44));
-  const fSub  = Math.round(fName * 0.66);
-  const scoreW = 130, padR = 14;
+  ctx.fillText(t1, tX, tBase);
+  // 日期胶囊（右对齐）
+  const pillTxt = '数据基准 ' + ((D && D.asof) || '—') + ' · 模型 ' + ((D && D.model_version) || '—');
+  ctx.font = (wide ? 18 : 20) + 'px sans-serif';
+  const pw = ctx.measureText(pillTxt).width + 36, ph = wide ? 36 : 40;
+  const px = W - PAD - pw, py = (wide ? 36 : 40);
+  ctx.fillStyle = '#ffe9d9'; rr(px, py, pw, ph, ph / 2); ctx.fill();
+  ctx.fillStyle = '#b3541e';
+  ctx.fillText(pillTxt, px + 18, py + ph * 0.68);
+  // 分隔线 + 列头
+  ctx.fillStyle = '#efe7dc'; ctx.fillRect(PAD, rowsTop - 46, W - PAD * 2, 2);
+  ctx.fillStyle = '#a8a094'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
+  const xScore = W - PAD - 16;
+  const xR5 = xScore - (wide ? 190 : 175), xA5 = xR5 - (wide ? 190 : 175), xR1 = xA5 - (wide ? 175 : 165);
+  const nameX = PAD + 16 + (wide ? 32 : 36) + 12;
+  ctx.fillText('基金', nameX, rowsTop - 16);
+  right('近1年', xR1, rowsTop - 16); right('近五年年化', xA5, rowsTop - 16);
+  right('近五年回撤', xR5, rowsTop - 16); right('评分', xScore, rowsTop - 16);
+
+  // ---- 榜单：单张白卡 + 行内分隔线（列对齐） ----
+  const FOOT = Math.round(H * (wide ? 0.21 : 0.14));
+  const rowsBot = H - FOOT - 8;
+  const rowH = funds.length ? Math.floor((rowsBot - rowsTop) / funds.length) : rowsBot - rowsTop;
+  const h = Math.max(38, rowH - 6);
+  const fName = Math.min(wide ? 24 : 26, Math.round(h * 0.42));
+  const fVal = Math.max(14, Math.min(wide ? 16 : 17, Math.round(fName * 0.78)));
+  const fCode = Math.max(12, Math.round(fVal * 0.85));
+  const cardH = Math.max(h + 8, funds.length * rowH - 6);
+  ctx.fillStyle = '#ffffff'; rr(PAD, rowsTop, W - PAD * 2, cardH, 16); ctx.fill();
   funds.forEach((f, i) => {
-    const y = top + i * rowH, x0 = PAD, x1 = W - PAD, r = 12;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.moveTo(x0 + r, y); ctx.lineTo(x1 - r, y); ctx.quadraticCurveTo(x1, y, x1, y + r);
-    ctx.lineTo(x1, y + h - r); ctx.quadraticCurveTo(x1, y + h, x1 - r, y + h);
-    ctx.lineTo(x0 + r, y + h); ctx.quadraticCurveTo(x0, y + h, x0, y + h - r);
-    ctx.lineTo(x0, y + r); ctx.quadraticCurveTo(x0, y, x0 + r, y); ctx.closePath(); ctx.fill();
-    // 名次徽标
-    const rk = (f.rank || i + 1);
-    ctx.fillStyle = rk === 1 ? '#ffe9e9' : rk === 2 ? '#fff1e0' : rk === 3 ? '#fff8dd' : '#f1f3f6';
-    const bSize = Math.min(40, h - 8), bx = PAD + 14, by = y + Math.round((h - bSize) / 2);
-    ctx.fillRect(bx, by, bSize, bSize);
-    ctx.fillStyle = rk === 1 ? '#e53935' : rk === 2 ? '#ff9800' : rk === 3 ? '#c89400' : '#5f6673';
-    ctx.font = '700 ' + Math.round(bSize * 0.55) + 'px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(String(rk), bx + bSize / 2, by + Math.round(bSize * 0.72)); ctx.textAlign = 'left';
-    // 名称（左）+ 评分（右）
-    const tx = bx + bSize + 12, avail = W - PAD - padR - scoreW - tx;
-    ctx.fillStyle = '#1f2430'; ctx.font = '600 ' + fName + 'px sans-serif';
-    ctx.fillText(_fitText(ctx, f.name || '', avail), tx, y + Math.round(h * 0.42));
-    const score = '评分 ' + (f.score == null ? '—' : (+f.score).toFixed(1));
-    ctx.fillStyle = '#ff6a00'; ctx.font = '600 ' + (fName - 1) + 'px sans-serif';
-    ctx.fillText(score, (W - PAD - padR) - ctx.measureText(score).width, y + Math.round(h * 0.42));
-    // 指标串（左）+ 环比（右）：近1年收益 / 近五年年化 / 近五年回撤 / 夏普（不含规模）
-    const m = (f.metrics || {}), sc = (f.screening || {});
-    const v1y = m.ret_1y, dt = _deltaTxt(f, hasPrev);
-    const parts = [
-      f.code || '',
-      '近1年 ' + (v1y == null ? '—' : (v1y * 100).toFixed(2) + '%'),
-      '近五年年化 ' + (m.ret_5y == null ? '—' : (m.ret_5y * 100).toFixed(2) + '%'),
-      '近五年回撤 ' + (m.mdd_5y == null ? '—' : (m.mdd_5y * 100).toFixed(2) + '%'),
-      '夏普 ' + (m.sharpe_5y == null ? '—' : (+m.sharpe_5y).toFixed(2)),
-    ];
-    const 环比 = dt ? '环比 ' + dt : '';
-    // 行内自适应：字号从 fSub 往下缩，直到 指标串+环比 放得下（防两行文字互相压）
-    const availR = W - PAD - padR - tx;
-    let fs = fSub, tw = 0;
-    for (; fs > 11; fs--) {
-      ctx.font = fs + 'px sans-serif';
-      tw = parts.reduce((s, p) => s + ctx.measureText(p).width + 12, 0)
-         + (环比 ? ctx.measureText(环比).width + 16 : 0);
-      if (tw <= availR) break;
+    const ry = rowsTop + i * rowH;
+    const y = ry + Math.round((rowH - h) / 2);
+    // 行分隔线（末行不画）
+    if (i < funds.length - 1) {
+      ctx.fillStyle = '#f3efe8'; ctx.fillRect(nameX - 8, ry + rowH - 1, W - PAD * 2 - (nameX - PAD - 8) - 16, 1);
     }
-    ctx.font = fs + 'px sans-serif';
-    let px = tx;
-    parts.forEach((p, j) => {
-      ctx.fillStyle = j === 1 ? (v1y == null ? '#8a919c' : (v1y >= 0 ? '#e53935' : '#12a150'))
-                    : (j === 2 || j === 3) ? '#12a150' : '#8a919c';   // 收益红；年化/回撤/夏普=稳健指标用绿灰
-      ctx.fillText(p, px, y + Math.round(h * 0.80));
-      px += ctx.measureText(p).width + 12;
-    });
+    const rk = (f.rank || i + 1);
+    // 名次徽标
+    const bSize = Math.min(wide ? 32 : 36, h - 8), bx = PAD + 16, by = ry + Math.round((rowH - bSize) / 2);
+    ctx.fillStyle = rk === 1 ? '#ffe3e3' : rk === 2 ? '#fff0dd' : rk === 3 ? '#fdf6d8' : '#f4f1ec';
+    rr(bx, by, bSize, bSize, 9); ctx.fill();
+    ctx.fillStyle = rk === 1 ? '#d32f2f' : rk === 2 ? '#e07b00' : rk === 3 ? '#b08900' : '#8a8175';
+    ctx.font = '700 ' + Math.round(bSize * 0.52) + 'px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(rk), bx + bSize / 2, by + Math.round(bSize * 0.68)); ctx.textAlign = 'left';
+    // 第一行：基金名（左）+ 评分（右）
+    const nameAvail = xR1 - 24 - nameX;
+    ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
+    ctx.fillText(_fitText(ctx, f.name || '', nameAvail), nameX, y + Math.round(h * 0.42));
+    const score = f.score == null ? '—' : (+f.score).toFixed(1);
+    ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (fName + 1) + 'px sans-serif';
+    right(score, xScore, y + Math.round(h * 0.44));
+    // 第二行：代码 + 三列指标（右对齐于列头） + 环比（评分列下）
+    const m = (f.metrics || {});
+    const v1y = m.ret_1y, dt = _deltaTxt(f, hasPrev);
+    ctx.font = fVal + 'px sans-serif';
+    ctx.fillStyle = '#a8a094'; ctx.font = fCode + 'px sans-serif';
+    ctx.fillText(f.code || '', nameX, y + Math.round(h * 0.78));
+    ctx.font = fVal + 'px sans-serif';
+    ctx.fillStyle = v1y == null ? '#a8a094' : (v1y >= 0 ? '#e53935' : '#12a150');
+    right(v1y == null ? '—' : (v1y * 100).toFixed(2) + '%', xR1, y + Math.round(h * 0.78));
+    ctx.fillStyle = '#44403a';
+    right(m.ret_5y == null ? '—' : (m.ret_5y * 100).toFixed(2) + '%', xA5, y + Math.round(h * 0.78));
+    ctx.fillStyle = '#12a150';
+    right(m.mdd_5y == null ? '—' : (m.mdd_5y * 100).toFixed(2) + '%', xR5, y + Math.round(h * 0.78));
     if (dt) {
       ctx.fillStyle = f.is_new ? '#ff8a3d' : (f.rank_delta > 0 ? '#e53935' : (f.rank_delta < 0 ? '#12a150' : '#9aa0a6'));
-      ctx.fillText(环比, (W - PAD - padR) - ctx.measureText(环比).width, y + Math.round(h * 0.80));
+      ctx.font = (fCode + 1) + 'px sans-serif';
+      right((f.is_new ? '新增 ' : '') + dt, xScore, y + Math.round(h * 0.78));
     }
   });
-  // ---- 页脚：公众号引流 + 免责声明（自动折行）+ 来源（标题与时间已上移至顶部） ----
+
+  // ---- 页脚：橙色 CTA 药丸（公众号）+ 仓库链接 + 免责声明 ----
   const fy = H - FOOT;
-  ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 24 : 22) + 'px sans-serif';
-  ctx.fillText('完整榜单与逐期复盘 → 公众号「' + WX_ACCOUNT + '」', PAD, fy + 32);
-  ctx.fillStyle = '#8a919c'; ctx.font = (wide ? 17 : 16) + 'px sans-serif';
+  const pTxt = '完整榜单与逐期复盘 → 公众号「' + WX_ACCOUNT + '」';
+  ctx.font = '700 ' + (wide ? 21 : 23) + 'px sans-serif';
+  const pW = ctx.measureText(pTxt).width + 48, pH = wide ? 50 : 54;
+  const g2 = ctx.createLinearGradient(PAD, 0, PAD + pW, 0);
+  g2.addColorStop(0, '#ff8a3d'); g2.addColorStop(1, '#ff6a00');
+  ctx.fillStyle = g2; rr(PAD, fy + 8, pW, pH, pH / 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.fillText(pTxt, PAD + 24, fy + 8 + pH * 0.66);
+  ctx.fillStyle = '#ff6a00'; ctx.font = (wide ? 15 : 16) + 'px sans-serif';
+  ctx.fillText('github.com/huyuming09-collab/fund-screener', PAD, fy + 8 + pH + 28);
+  ctx.fillStyle = '#b3aca2'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
   const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
-  lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 76 + i * 21));
-  ctx.fillStyle = '#ff6a00'; ctx.font = (wide ? 17 : 16) + 'px sans-serif';
-  ctx.fillText('github.com/huyuming09-collab/fund-screener', PAD, H - 18);
+  lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 8 + pH + 56 + i * 20));
   return {width: W, height: H, rows: funds.length, rowH: rowH};
 }
+
 function exportDownload(canvas, pool, sizeKey){
   const name = '基金周榜-' + catLabel(pool) + '-' + ((D && D.asof) || '') + '-' + sizeKey + '.png';
   const done = (url, revoke) => {
