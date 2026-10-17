@@ -203,6 +203,13 @@ chk('_deltaTxt 环比分支（↑/↓/新增/—/无历史空串）',
   _deltaTxt({rank_delta:2},true)==='↑2' && _deltaTxt({rank_delta:-1},true)==='↓1'
   && _deltaTxt({is_new:true,rank_delta:null},true)==='新增'
   && _deltaTxt({rank_delta:null},true)==='—' && _deltaTxt({rank_delta:3},false)==='');
+const poolsExp = exportPools();
+chk('exportPools：启用且有数据的池（多池=短债+中长债，旧单池回退默认池）',
+  poolsExp.length >= (D.pools ? 2 : 1) && poolsExp.every(p => p && p.id && p.name)
+  && (!D.pools || (poolsExp.some(p=>p.id==='short_bond') && poolsExp.some(p=>p.id==='long_bond'))));
+chk('drawExport 遍历全部可导出池：每池都有行且画布为请求尺寸',
+  poolsExp.every(p => { const info = drawExport(cv2, p.id, 'xhs');
+    return info.rows > 0 && cv2.width === 1080 && cv2.height === 1440; }));
 let drawOK = true;
 try { drawExport(cv2,'long_bond','xhs'); drawExport(cv2,'not_a_pool','wide'); } catch(e){ drawOK = false; }
 chk('drawExport 容错：未知池/空池不抛异常', drawOK);

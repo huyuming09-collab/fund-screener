@@ -505,8 +505,9 @@ function drawTrend(){
      Math.max(PADL, X(ys.length-1)-90), Math.max(PADT+14, Y(ys[ys.length-1])-10));
 }
 
-/* ============ 隐藏导出模式（?export=<pool>，页面无入口，仅 URL 触发） ============
-   用法：web/index.html?export=short_bond[&size=xhs|wide][&rows=N]
+/* ============ 隐藏导出模式（?export=<pool>|all，页面无入口，仅 URL 触发） ============
+   用法：web/index.html?export=all[&size=xhs|wide][&rows=N]   ← 工作台：全部启用分类页签 + 一键下载全部
+         web/index.html?export=short_bond|long_bond[...]      ← 直达某一分类（页签预选该池）
      size 默认 xhs（小红书 3:4 1080×1440，20 行）；wide = 公众号宽图 3:2 1200×800（10 行）
    产出：当期榜单 → 社媒海报 PNG（canvas 绘制，可直接下载发小红书/公众号）。
    数字全部取自 data.js（与页面同源），杜绝"旧图新发"。 */
@@ -638,6 +639,15 @@ function exportDownload(canvas, pool, sizeKey){
   if (canvas.toBlob) canvas.toBlob(b => done(URL.createObjectURL(b), true), 'image/png');
   else done(canvas.toDataURL('image/png'), false);
 }
+function exportPools(){
+  /* 可导出池：数据契约里 enabled 的分类，且该池当期确实有榜单行（旧单池 data.js 回退默认池） */
+  const cats = (D && D.categories) || [];
+  const out = cats.filter(c => c && c.id && c.enabled !== false && exportRows(c.id).length > 0)
+                  .map(c => ({id: c.id, name: c.name || CATEGORY_LABELS[c.id] || c.id}));
+  if (out.length) return out;
+  const def = (D && D.category) || 'short_bond';
+  return exportRows(def).length ? [{id: def, name: CATEGORY_LABELS[def] || def}] : [];
+}
 function initExport(){
   if (typeof location === 'undefined' || !location.search) return false;
   let pool = null, sizeKey = null, rows = null;
@@ -647,26 +657,49 @@ function initExport(){
   } catch (e) { return false; }
   if (!pool || !(D && D.funds)) return false;
   if (!EXPORT_SIZES[sizeKey]) sizeKey = 'xhs';
+  const pools = exportPools();
+  if (!pools.length) return false;
+  if (!pools.some(p => p.id === pool)) pool = pools[0].id;      // all/缺省/未知 → 首个可用池
   document.body.innerHTML = '';
   document.body.classList.add('exp');
   const wrap = document.createElement('div'); wrap.className = 'exp-wrap';
-  wrap.innerHTML = '<div class="exp-bar"><span class="t"></span>'
+  wrap.innerHTML = '<div class="exp-bar"><span class="t"></span></div>'
+    + '<div class="exp-bar exp-opts">'
+    + pools.map(p => '<button data-pool="' + p.id + '">' + p.name + '</button>').join('')
+    + '<span style="flex:1 0 0"></span>'
     + '<button data-size="xhs">小红书 3:4</button><button data-size="wide">公众号宽图 3:2</button>'
-    + '<button class="dl">下载 PNG</button></div><div class="exp-hint"></div>'
+    + '<button class="dl">下载 PNG</button>'
+    + (pools.length > 1 ? '<button class="dl-all">下载全部分类</button>' : '')
+    + '</div><div class="exp-hint"></div>'
     + '<div class="exp-canvas-box"><canvas id="exp-canvas"></canvas></div>';
   document.body.appendChild(wrap);
   const cv = document.getElementById('exp-canvas');
   const hint = wrap.querySelector('.exp-hint'), title = wrap.querySelector('.t');
-  title.textContent = catLabel(pool) + '基金周榜 · 社媒导出';
+  const nameOf = id => (pools.find(p => p.id === id) || {}).name || catLabel(id);
   const draw = () => {
     const info = drawExport(cv, pool, sizeKey, rows);
+    title.textContent = nameOf(pool) + '基金周榜 · 社媒导出'
+      + (pools.length > 1 ? '（共 ' + pools.length + ' 个分类，页签切换）' : '');
     hint.textContent = EXPORT_SIZES[sizeKey].label + ' · ' + info.rows + ' 行 · 数据基准 '
-      + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）';
+      + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）'
+      + (pools.length > 1 ? '；「下载全部」逐池出图，浏览器可能询问是否允许多文件下载' : '');
     wrap.querySelectorAll('button[data-size]').forEach(b =>
       b.classList.toggle('on', b.getAttribute('data-size') === sizeKey));
+    wrap.querySelectorAll('button[data-pool]').forEach(b =>
+      b.classList.toggle('on', b.getAttribute('data-pool') === pool));
   };
+  wrap.querySelectorAll('button[data-pool]').forEach(b => b.onclick = () => { pool = b.getAttribute('data-pool'); draw(); });
   wrap.querySelectorAll('button[data-size]').forEach(b => b.onclick = () => { sizeKey = b.getAttribute('data-size'); draw(); });
   wrap.querySelector('.dl').onclick = () => exportDownload(cv, pool, sizeKey);
+  const dlAll = wrap.querySelector('.dl-all');
+  if (dlAll) dlAll.onclick = () => {
+    const list = pools.map(p => p.id), step = i => {
+      if (i >= list.length) { draw(); return; }
+      drawExport(cv, list[i], sizeKey, rows);
+      setTimeout(() => { exportDownload(cv, list[i], sizeKey); step(i + 1); }, 600);
+    };
+    step(0);
+  };
   draw();
   return true;
 }
