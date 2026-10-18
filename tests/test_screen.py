@@ -367,7 +367,7 @@ class TestRunScreen:
 
 # ---------------------------------------------------------------- 固收+池（docs/10）
 class TestFixedPlusPool:
-    """SCREENS["fixed_plus"]：S1~S5 同构 + 专属风险预算闸 S6~S8（回撤/波动 ≤8%、反追收益 <5%）。"""
+    """SCREENS["fixed_plus"]：S1~S5 同构 + 专属风险预算闸 S6~S8（回撤 ≤8%、波动带 2%~8%、反追收益 <8%）。"""
 
     @staticmethod
     def _setup(n=20):
@@ -375,10 +375,10 @@ class TestFixedPlusPool:
         records, yearly, snapshot, spikes = TestRunScreen()._setup(n)
         for i, r in enumerate(records):
             r["pool"] = "fixed_plus"
-            # 基夹具 ret_5y 步长 0.5%（i≥9 即 ≥5% 触发 S8）、mdd_5y 步长 −0.3%
-            # （i≥14 转负数）——固收+夹具统一压回三闸放行区，单闸测试再各自越线
-            r["vol_5y"] = 0.03 + i * 0.001     # 默认全部 ≤8%（S7 放行）
-            r["ret_5y"] = 0.01 + i * 0.001     # 默认全部 <5%（S8 放行）
+            # 覆盖基夹具：ret_5y 步长 0.1%（i≤19 → ≤2.9%，离 S8 上限 8% 有余量）、
+            # mdd_5y 步长 −0.1%（i≥30 才转负）——三闸默认全放行，单闸测试再各自越线
+            r["vol_5y"] = 0.03 + i * 0.001     # 默认全部在 2%~8% 带内（S7 放行）
+            r["ret_5y"] = 0.01 + i * 0.001     # 默认全部 <8%（S8 放行）
             r["mdd_5y"] = 0.03 - i * 0.001     # 默认全部 ≤8%（S6 放行）
         return records, yearly, snapshot, spikes
 
@@ -387,12 +387,12 @@ class TestFixedPlusPool:
         _, funnel = run_screen(records, spikes, yearly, snapshot,
                                cfg=C.SCREENS["fixed_plus"])
         assert funnel["S6 近5年最大回撤≤8%"] == 20
-        assert funnel["S7 近5年年化波动≤8%"] == 20
-        assert funnel["S8 近五年年化<5%"] == 20
+        assert funnel["S7 近5年年化波动2%~8%"] == 20
+        assert funnel["S8 近五年年化<8%"] == 20
         # 顺序：S6/S7/S8 紧跟 S5、在 P1 之前
         keys = list(funnel)
         assert keys.index("S6 近5年最大回撤≤8%") == keys.index("S5 无近5年单日涨幅>5%") + 1
-        assert keys.index("S8 近五年年化<5%") < keys.index("P1 综合分位≥45%")
+        assert keys.index("S8 近五年年化<8%") < keys.index("P1 综合分位≥45%")
 
     def test_s6_blocks_high_drawdown(self):
         # mdd_5y 10% > 8% 预算 → 剔除（docs/10 §四 S6：>8% 桶前瞻卡玛崩坏）
@@ -401,28 +401,46 @@ class TestFixedPlusPool:
         _, funnel = run_screen(records, spikes, yearly, snapshot,
                                cfg=C.SCREENS["fixed_plus"])
         assert funnel["S6 近5年最大回撤≤8%"] == 9
-        assert funnel["S7 近5年年化波动≤8%"] == 9
+        assert funnel["S7 近5年年化波动2%~8%"] == 9
 
     def test_s7_blocks_high_volatility(self):
-        # 波动 10% > 8% → 剔除（"名不副实的固收+"，docs/10 §四 S7）
+        # 波动 10% > 8% → 剔除（风险预算越界，docs/10 §四 S7 上限）
         records, yearly, snapshot, spikes = self._setup(10)
         records[0]["vol_5y"] = 0.10
         _, funnel = run_screen(records, spikes, yearly, snapshot,
                                cfg=C.SCREENS["fixed_plus"])
-        assert funnel["S7 近5年年化波动≤8%"] == 9
+        assert funnel["S7 近5年年化波动2%~8%"] == 9
+
+    def test_s7_floor_blocks_bond_like(self):
+        # 波动 1.5% < 2% 下限 → 剔除（区分度闸："行为像纯债"的伪固收+ 不进池，docs/10 §四 S7 下限）
+        records, yearly, snapshot, spikes = self._setup(10)
+        records[0]["vol_5y"] = 0.015
+        _, funnel = run_screen(records, spikes, yearly, snapshot,
+                               cfg=C.SCREENS["fixed_plus"])
+        assert funnel["S7 近5年年化波动2%~8%"] == 9
+        # 恰好 2% 放行（下限为闭区间）
+        records[0]["vol_5y"] = 0.02
+        _, funnel = run_screen(records, spikes, yearly, snapshot,
+                               cfg=C.SCREENS["fixed_plus"])
+        assert funnel["S7 近5年年化波动2%~8%"] == 10
 
     def test_s8_blocks_aggressive_return(self):
-        # 近五年年化 6% ≥ 5% → 剔除（反追收益闸：高收益桶前瞻回撤最高，docs/10 §三）
+        # 近五年年化 9% ≥ 8% → 剔除（反追收益闸，v1.1 阈值自 5% 放宽至 8%）
         records, yearly, snapshot, spikes = self._setup(10)
+        records[0]["ret_5y"] = 0.09
+        _, funnel = run_screen(records, spikes, yearly, snapshot,
+                               cfg=C.SCREENS["fixed_plus"])
+        assert funnel["S8 近五年年化<8%"] == 9
+        # 恰好 8% 也剔除（阈值为开区间上限，"≥8% 剔除"）
+        records[0]["ret_5y"] = 0.08
+        _, funnel = run_screen(records, spikes, yearly, snapshot,
+                               cfg=C.SCREENS["fixed_plus"])
+        assert funnel["S8 近五年年化<8%"] == 9
+        # 6%（旧 5% 阈值会误杀的区间）现在放行
         records[0]["ret_5y"] = 0.06
         _, funnel = run_screen(records, spikes, yearly, snapshot,
                                cfg=C.SCREENS["fixed_plus"])
-        assert funnel["S8 近五年年化<5%"] == 9
-        # 恰好 5% 也剔除（阈值为闭区间下限，"≥5% 剔除"）
-        records[0]["ret_5y"] = 0.05
-        _, funnel = run_screen(records, spikes, yearly, snapshot,
-                               cfg=C.SCREENS["fixed_plus"])
-        assert funnel["S8 近五年年化<5%"] == 9
+        assert funnel["S8 近五年年化<8%"] == 10
 
     def test_nan_blocked_by_all_three_gates(self):
         # 数据不足（NaN）不放行——与 S5 同口径（无法验证即不通过）
@@ -433,8 +451,8 @@ class TestFixedPlusPool:
         _, funnel = run_screen(records, spikes, yearly, snapshot,
                                cfg=C.SCREENS["fixed_plus"])
         assert funnel["S6 近5年最大回撤≤8%"] == 4
-        assert funnel["S7 近5年年化波动≤8%"] == 3
-        assert funnel["S8 近五年年化<5%"] == 2
+        assert funnel["S7 近5年年化波动2%~8%"] == 3
+        assert funnel["S8 近五年年化<8%"] == 2
 
     def test_bond_pools_have_no_s6_s7_s8(self):
         # 两债池 cfg 无三闸键 → 漏斗不含 S6/S7/S8（既有漏斗键名零变化）
@@ -455,7 +473,8 @@ class TestFixedPlusPool:
         # 三闸阈值必须在 cfg 中显式给出（screen 按 .get 取值，缺键=静默跳过=闸门失效）
         cfg = C.SCREENS["fixed_plus"]
         assert cfg["mdd_5y_max"] == 0.08
+        assert cfg["vol_5y_min"] == 0.02
         assert cfg["vol_5y_max"] == 0.08
-        assert cfg["ret_5y_max"] == 0.05
+        assert cfg["ret_5y_max"] == 0.08
         # S1~S5/P1~P2 与两债池同键（结构同构）
         assert set(C.SCREENS["fixed_plus"]) >= set(C.SCREENS["short_bond"])

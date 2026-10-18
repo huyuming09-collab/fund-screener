@@ -18,8 +18,9 @@
        S3 现任经理任本基金 ≥ 3 年（1095 天）
        S4 成立 ≥ 5 年（保证近五年数据完整）
        S5 剔除近 5 年任一份额单日涨幅超过阈值的异常基金（短债 >1% / 长债 >2% / 固收+ >5%，池别化）
-       S6（固收+）近 5 年最大回撤 ≤ 8%；S7（固收+）近 5 年年化波动 ≤ 8%（风险预算硬闸）
-       S8（固收+）剔除近五年年化 ≥ 5% 的激进型（反追收益闸：收益下限方案已被前瞻数据证伪）
+       S6（固收+）近 5 年最大回撤 ≤ 8%；S7（固收+）近 5 年年化波动带 2%~8%
+         （下限 = 与长债池的区分度闸：剔除“行为像纯债”的伪固收+；上限 = 风险预算）
+       S8（固收+）剔除近五年年化 ≥ 8% 的激进型（反追收益闸；收益下限方案已被前瞻数据证伪）
   3. 性能条件（方案甲；字面规则"四项前40%×每年>55%"全阈值空集后的放宽决策）：
        P1 近5y/3y 收益与回撤四项池内分位的均值，其池内分位 ≥ 45%（综合前 55%）
        P2 近 5 个完整自然年收益分位的中位数 ≥ 55%（可比完整年 ≥ 4）
@@ -253,9 +254,21 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
     if cfg.get("mdd_5y_max") is not None:
         keep &= pool["mdd_5y"] <= cfg["mdd_5y_max"]
         funnel[f"S6 近5年最大回撤≤{cfg['mdd_5y_max'] * 100:g}%"] = int(keep.sum())
-    if cfg.get("vol_5y_max") is not None:
-        keep &= pool["vol_5y"] <= cfg["vol_5y_max"]
-        funnel[f"S7 近5年年化波动≤{cfg['vol_5y_max'] * 100:g}%"] = int(keep.sum())
+    vlo, vhi = cfg.get("vol_5y_min"), cfg.get("vol_5y_max")
+    if vlo is not None or vhi is not None:
+        # S7 波动带（docs/10 §四 S7）：下限 = 与长债池的区分度闸（剔除"行为像纯债"的
+        # 伪固收+），上限 = 风险预算；只有单边时按可用一侧出标签
+        if vhi is not None:
+            keep &= pool["vol_5y"] <= vhi
+        if vlo is not None:
+            keep &= pool["vol_5y"] >= vlo
+        if vlo is not None and vhi is not None:
+            label = f"S7 近5年年化波动{vlo * 100:g}%~{vhi * 100:g}%"
+        elif vhi is not None:
+            label = f"S7 近5年年化波动≤{vhi * 100:g}%"
+        else:
+            label = f"S7 近5年年化波动≥{vlo * 100:g}%"
+        funnel[label] = int(keep.sum())
     if cfg.get("ret_5y_max") is not None:
         keep &= pool["ret_5y"] < cfg["ret_5y_max"]
         funnel[f"S8 近五年年化<{cfg['ret_5y_max'] * 100:g}%"] = int(keep.sum())

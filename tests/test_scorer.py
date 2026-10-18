@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fundscorer import config as C
-from fundscorer.scorer import _assign_stars, _check_redlines, _quality_scores, classify
+from fundscorer.scorer import _assign_stars, _check_redlines, _manager_qualified, _quality_scores, classify
 
 
 def make_fund(code, pool="fixed_plus", **kw):
@@ -121,3 +121,27 @@ class TestWeightsSum:
 
     def test_fixed_plus_sums_100(self):
         assert sum(C.FIXED_PLUS_WEIGHTS.values()) == 100
+
+
+class TestManagerQualified:
+    """R3 经理资质（固收+回撤容差调节）：阈值语义 = 被超过比例，2026-10-19 方向修复回归。"""
+
+    def test_elite_every_year_top_half_and_avg_top_third(self):
+        # 每年收益分位 0.7/0.8/0.9 → 被超过 0.3/0.2/0.1，全过且均值 0.2 ≤ 1/3
+        assert _manager_qualified({"_stab_ranks": [0.7, 0.8, 0.9]}, []) is True
+
+    def test_consistently_poor_not_qualified(self):
+        # 常年垫底（分位 0.3/0.4/0.45）——方向反转 bug 下会误判合格，此为回归锚
+        assert _manager_qualified({"_stab_ranks": [0.3, 0.4, 0.45]}, []) is False
+
+    def test_one_bad_year_fails_every_year_condition(self):
+        # 任一年跌出前半（0.4 → 被超过 0.6 > 0.5）即不合格
+        assert _manager_qualified({"_stab_ranks": [0.9, 0.9, 0.4]}, []) is False
+
+    def test_ok_years_but_weak_average_fails(self):
+        # 每年都前半（0.6 → 被超过 0.4）但均值 0.4 > 1/3 → 不合格
+        assert _manager_qualified({"_stab_ranks": [0.6, 0.6, 0.6]}, []) is False
+
+    def test_insufficient_years_not_qualified(self):
+        assert _manager_qualified({"_stab_ranks": [0.9, 0.9, None]}, []) is False
+        assert _manager_qualified({"_stab_ranks": []}, []) is False

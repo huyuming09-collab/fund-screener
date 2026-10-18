@@ -320,13 +320,18 @@ def _repair_scalar(p: dict, pool: str, weights: dict) -> float | None:
 
 
 def _manager_qualified(f: dict, peers: list[dict]) -> bool:
-    """R3：任职期内每年排名≤50% 且平均≤33.3%，可得年份≥3。"""
+    """R3：任职期内每年被超过 ≤50%（前半）且平均被超过 ≤33.3%（前1/3），可得年份≥3。
+
+    ranks = 池内收益分位（越高越好）；配置阈值语义为"被超过比例"（越低越好），
+    故取 1-r 后比较。2026-10-19 修复原方向反转 bug（r 与阈值直接比大小 → 精英判负、
+    垫底判胜）。
+    """
     ranks = [r for r in (f.get("_stab_ranks") or []) if r is not None]
-    # 用年度收益池内分位代替（_stab_ranks 在池级算好传入）
     if len(ranks) < C.QUALIFIER["min_years"]:
         return False
-    return all(r <= C.QUALIFIER["yearly_rank_le"] for r in ranks) and \
-        (sum(ranks) / len(ranks)) <= C.QUALIFIER["avg_rank_le"]
+    beaten = [1.0 - r for r in ranks]
+    return all(b <= C.QUALIFIER["yearly_rank_le"] for b in beaten) and \
+        (sum(beaten) / len(beaten)) <= C.QUALIFIER["avg_rank_le"]
 
 
 def _yearly_score(f: dict, peers: list[dict], pool: str) -> float | None:
