@@ -390,10 +390,13 @@ function bodyHTML(f){
     <div style="font-size:11.5px;color:var(--sub);margin-top:8px">
       近5年最大单日涨幅 ${pct(f.screening.max_gain_5y)}（筛选阈值 &lt;${fpct(screenOf(f.category).spike_max_gain)}）</div>
     ${(() => { const s = screenOf(f.category);
-      /* 固收+专属风险预算闸（docs/10 S6/S7/S8）：仅该池有三阈值时展示；S7 自 v1.1 起为波动带 */
+      /* 固收+专属风险预算闸（docs/10 S6/S7；v2：S6 分级、S8 删除）：仅该池有阈值时展示 */
       if (s.mdd_5y_max == null) return '';
       const vb = s.vol_5y_min != null ? `${fpct(s.vol_5y_min)}~${fpct(s.vol_5y_max)}` : `≤${fpct(s.vol_5y_max)}`;
-      return `<div style="font-size:11.5px;color:var(--sub);margin-top:4px">风险预算：近5年最大回撤 ${pct(m.mdd_5y)}（≤${fpct(s.mdd_5y_max)}） · 年化波动 ${pct(m.vol_5y)}（${vb}） · 近五年年化 ${pct(m.ret_5y)}（&lt;${fpct(s.ret_5y_max)}）</div>`; })()}
+      const mb = s.mdd_5y_max_qualified != null
+        ? `≤${fpct(s.mdd_5y_max)}（精英经理≤${fpct(s.mdd_5y_max_qualified)}）` : `≤${fpct(s.mdd_5y_max)}`;
+      const rb = s.ret_5y_max != null ? ` · 近五年年化 ${pct(m.ret_5y)}（&lt;${fpct(s.ret_5y_max)}）` : '';
+      return `<div style="font-size:11.5px;color:var(--sub);margin-top:4px">风险预算：近5年最大回撤 ${pct(m.mdd_5y)}（${mb}） · 年化波动 ${pct(m.vol_5y)}（${vb}）${rb}</div>`; })()}
   </div>
 
   <!-- 基金经理 -->

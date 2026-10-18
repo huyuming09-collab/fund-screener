@@ -37,7 +37,8 @@ HISTORY_PATH = DATA / "rank_history.json"      # 历期榜单（环比基准，�
 HISTORY_KEEP = 26                              # 只留最近 26 期
 # 随池统计下发给页面的筛选阈值（详情页"入选依据/筛选阈值"文案按池显示，不硬编码）
 SCREEN_KEYS = ("scale_min_yi", "comp_pct_min", "yearly_median_min", "spike_max_gain",
-               "mdd_5y_max", "vol_5y_min", "vol_5y_max", "ret_5y_max")   # 后四项仅固收+有（缺失即不下发）
+               "mdd_5y_max", "mdd_5y_max_qualified", "vol_5y_min", "vol_5y_max",
+               "ret_5y_max")   # 固收+专属键：缺失即不下发（两债池漏斗/页面零影响）
 # 池中文名（日志用）：与卡片分类 tab 同源，新增池时只改 config.CARD["categories"]
 _POOL_NAMES = {c["id"]: c["name"] for c in C.CARD["categories"]}
 

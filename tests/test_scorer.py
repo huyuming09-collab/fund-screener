@@ -145,3 +145,29 @@ class TestManagerQualified:
     def test_insufficient_years_not_qualified(self):
         assert _manager_qualified({"_stab_ranks": [0.9, 0.9, None]}, []) is False
         assert _manager_qualified({"_stab_ranks": []}, []) is False
+
+
+class TestRiskRatios:
+    """v2 试验（2026-10-18）：风险调整收益派生字段 calmar_5y / sharpe_5y。"""
+
+    def test_derivation(self):
+        from fundscorer.scorer import _risk_ratios
+        f = {"ret_5y": 0.06, "mdd_5y": 0.04, "vol_5y": 0.03}
+        _risk_ratios(f)
+        assert f["calmar_5y"] == pytest.approx(1.5)                    # 6%/4%
+        assert f["sharpe_5y"] == pytest.approx((0.06 - 0.015) / 0.03)  # (ret−rf)/vol
+
+    def test_missing_or_zero_denominator_is_none(self):
+        from fundscorer.scorer import _risk_ratios
+        f = {"ret_5y": None, "mdd_5y": 0.0, "vol_5y": None}
+        _risk_ratios(f)
+        assert f["calmar_5y"] is None and f["sharpe_5y"] is None
+        g = {"ret_5y": float("nan"), "mdd_5y": 0.04, "vol_5y": 0.03}
+        _risk_ratios(g)
+        assert g["calmar_5y"] is None and g["sharpe_5y"] is None
+
+    def test_ratio_metrics_registered_as_percentile(self):
+        # 权重表引用的派生因子必须在 PERCENTILE_METRICS 注册（否则分位分不生效）
+        for k in ("calmar_5y", "sharpe_5y"):
+            assert C.PERCENTILE_METRICS[k] == "higher"
+            assert k in C.FIXED_PLUS_WEIGHTS and C.FIXED_PLUS_WEIGHTS[k] > 0

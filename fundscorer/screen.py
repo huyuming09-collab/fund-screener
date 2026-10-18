@@ -204,6 +204,32 @@ def _fund_max_gain(codes: list[str], spikes: dict) -> float:
     return max(vals) if vals else np.nan
 
 
+def _qualify_flags(pool: pd.DataFrame, yearly: dict) -> pd.Series:
+    """R3 经理资质（与 scorer._manager_qualified 同语义），基金级判定，供 S6 分级阈值用。
+
+    在池内逐年收益分位上判定"每一年被超过≤50%（前半）且平均被超过≤1/3"（可比年数
+    ≥3）。筛选期先于评分、且已是基金级口径，直接用 base 键的 yearly（历史最久份额净值）。
+    """
+    q = C.QUALIFIER
+    ranks: dict[str, list[float]] = {}
+    Y = pd.DataFrame(yearly).T
+    for y in Y.columns:
+        col = Y[y].dropna()
+        if len(col) < 2:
+            continue
+        for base, v in col.rank(pct=True).items():
+            ranks.setdefault(base, []).append(float(v))
+    flags = []
+    for base in pool["base"]:
+        rs = ranks.get(base) or []
+        beaten = [1.0 - r for r in rs]
+        ok = (len(beaten) >= q["min_years"]
+              and all(b <= q["yearly_rank_le"] for b in beaten)
+              and (sum(beaten) / len(beaten)) <= q["avg_rank_le"])
+        flags.append(ok)
+    return pd.Series(flags, index=pool.index)
+
+
 def _pick_rank_share(classes: list[tuple[str, str]], rep_code: str,
                      snapshot: dict, prefer_letter: str = "A") -> tuple[str | None, str]:
     """排序用份额：优先指定字母份额（默认 A，多取时选分高者），否则代表份额，
@@ -248,16 +274,24 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
     keep &= pool["max_gain_5y"] <= cfg["spike_max_gain"]
     funnel[f"S5 无近5年单日涨幅>{cfg['spike_max_gain'] * 100:g}%"] = int(keep.sum())
 
-    # ---- 阶段一b 固收+专属风险预算闸 S6~S8（docs/10 §四；键缺失 = 两债池不启用） ----
-    # S6/S7 风险预算硬闸（回撤/波动 ≤ 阈值）；S8 反追收益闸（剔除近五年年化 ≥ 阈值的
-    # 激进型——"收益下限"方案已被前瞻数据证伪，docs/10 §三）。NaN（数据不足）不放行。
+    # ---- 阶段一b 固收+专属风险预算闸 S6~S7（键缺失 = 两债池不启用；v2 试验 2026-10-18） ----
+    # S6 分级回撤闸：普通经理 ≤mdd_5y_max，R3 精英经理放宽至 ≤mdd_5y_max_qualified
+    # （真权益暴露的优质品种回撤普遍 8~12%，与评分端容差联动）；S7 波动带：下限=池纯度
+    # 闸（挤出"行为像纯债"的弱增强），上限=风险预算。NaN（数据不足）不放行。
     if cfg.get("mdd_5y_max") is not None:
-        keep &= pool["mdd_5y"] <= cfg["mdd_5y_max"]
-        funnel[f"S6 近5年最大回撤≤{cfg['mdd_5y_max'] * 100:g}%"] = int(keep.sum())
+        qmax = cfg.get("mdd_5y_max_qualified")
+        if qmax is not None:
+            qual = _qualify_flags(pool, yearly)
+            cap = np.where(qual, qmax, cfg["mdd_5y_max"])
+            keep &= pool["mdd_5y"] <= cap
+            funnel[f"S6 近5年最大回撤≤{cfg['mdd_5y_max'] * 100:g}%"
+                   f"（精英经理≤{qmax * 100:g}%）"] = int(keep.sum())
+        else:
+            keep &= pool["mdd_5y"] <= cfg["mdd_5y_max"]
+            funnel[f"S6 近5年最大回撤≤{cfg['mdd_5y_max'] * 100:g}%"] = int(keep.sum())
     vlo, vhi = cfg.get("vol_5y_min"), cfg.get("vol_5y_max")
     if vlo is not None or vhi is not None:
-        # S7 波动带（docs/10 §四 S7）：下限 = 与长债池的区分度闸（剔除"行为像纯债"的
-        # 伪固收+），上限 = 风险预算；只有单边时按可用一侧出标签
+        # S7 波动带：下限 = 池纯度/区分度闸，上限 = 风险预算；只有单边时按可用一侧出标签
         if vhi is not None:
             keep &= pool["vol_5y"] <= vhi
         if vlo is not None:
@@ -269,6 +303,7 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
         else:
             label = f"S7 近5年年化波动≥{vlo * 100:g}%"
         funnel[label] = int(keep.sum())
+    # S8（收益上限）v2 起删除：评分端卡玛/夏普已约束激进风格，"不追高收益"≠"限制收益"
     if cfg.get("ret_5y_max") is not None:
         keep &= pool["ret_5y"] < cfg["ret_5y_max"]
         funnel[f"S8 近五年年化<{cfg['ret_5y_max'] * 100:g}%"] = int(keep.sum())

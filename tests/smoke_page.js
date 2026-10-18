@@ -181,8 +181,9 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     openDetail(fpFunds[0].code);
     const db3 = document.getElementById('d-body').innerHTML;
     chk('固收+详情 S5 阈值按池显示 5%', db3.includes('筛选阈值 &lt;5%'));
-    chk('固收+详情风险预算行（S6/S7/S8：回撤≤8%、波动带2%~8%、年化<8%）',
-        db3.includes('风险预算') && db3.includes('≤8%') && db3.includes('2%~8%') && db3.includes('&lt;8%'));
+    chk('固收+详情风险预算行（v2：S6 10%精英12%、S7 带2.5%~8%、无 S8）',
+        db3.includes('风险预算') && db3.includes('≤10%') && db3.includes('2.5%~8%')
+        && !db3.includes('&lt;8%'));
     switchTab('short_bond');
     const h4 = document.getElementById('list').innerHTML;
     chk('切回短债后固收+卡片消失',

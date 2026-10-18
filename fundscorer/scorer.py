@@ -159,6 +159,8 @@ def score_pool(fund_metrics: list[dict], score_only: set[str] | None = None,
         med_dd = float(np.nanmedian([f["mdd_5y"] for f in funds if f["mdd_5y"] is not None])) if funds else 0.0
         # 逐年排名分位（rank_stab 用）：按年度收益在池内排位（全池计算——分位基准）
         stab_ranks = _pool_yearly_ranks(funds)
+        for f in funds:      # 风险调整收益派生字段（v2 试验：calmar/sharpe → 池内分位计分）
+            _risk_ratios(f)
         if score_only is not None:
             for f in funds:      # 标记未参与打分者（_assign_stars 跳过评星）
                 if f["code"] not in score_only:
@@ -195,6 +197,19 @@ def _pool_yearly_ranks(funds: list[dict]) -> dict[str, list[float | None]]:
         for f in funds:
             out[f["code"]].append(float(pcts.get(f["code"], np.nan)) if f["code"] in pcts else None)
     return out
+
+
+def _risk_ratios(f: dict) -> None:
+    """风险调整收益派生字段（v2 试验 2026-10-18）。
+
+    calmar_5y = 近五年年化 ÷ 近五年最大回撤；sharpe_5y = (近五年年化 − 无风险利率) ÷ 波动。
+    纯收益/纯超额保持权重 0（不追历史绝对收益），比率指标分子分母结合，对应
+    "风险预算内卡玛最优"。数据不足（None/NaN/分母≈0）→ None（子项不计分）。
+    """
+    r, mdd, v = f.get("ret_5y"), f.get("mdd_5y"), f.get("vol_5y")
+    r = None if (r is None or (isinstance(r, float) and np.isnan(r))) else r
+    f["calmar_5y"] = (r / mdd) if (r is not None and mdd and mdd > 0) else None
+    f["sharpe_5y"] = ((r - C.SHARPE_RF) / v) if (r is not None and v and v > 0) else None
 
 
 def _score_one(f: dict, peers: list[dict], weights: dict, pool: str,
