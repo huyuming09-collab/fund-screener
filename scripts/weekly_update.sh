@@ -29,5 +29,16 @@ if git diff --cached --quiet; then
 fi
 git -c user.name="fund-screener-bot" -c user.email="fund-screener-bot@users.noreply.github.com" \
     commit -m "data: 周更榜单 $(date +%F)" >> "$LOG" 2>&1
-git push >> "$LOG" 2>&1
-echo "[$(date '+%F %T')] 已推送，Pages 将自动重新部署" >> "$LOG"
+# push 带重试：2026-10-16 实际发生过单次 TLS 失败（GnuTLS recv error -110）导致静默漏推
+for i in 1 2 3; do
+  if git push >> "$LOG" 2>&1; then
+    echo "[$(date '+%F %T')] 已推送，Pages 将自动重新部署" >> "$LOG"
+    break
+  fi
+  echo "[$(date '+%F %T')] [警告] 第 $i 次推送失败，10s 后重试" >> "$LOG"
+  if [ "$i" = 3 ]; then
+    echo "[$(date '+%F %T')] [错误] 推送重试耗尽——本地已提交，下一次运行会携带重推" >> "$LOG"
+    exit 1
+  fi
+  sleep 10
+done
