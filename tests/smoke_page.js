@@ -34,6 +34,7 @@ eval(dataJs + '\n' + script + `
 
 const shortFunds = (D.funds||[]).filter(f=>(f.category || D.category || 'short_bond')==='short_bond');
 const longFunds  = (D.funds||[]).filter(f=>f.category==='long_bond');
+const fpFunds    = (D.funds||[]).filter(f=>f.category==='fixed_plus');
 const expectedN  = (D.pools && Object.keys(D.pools).length)
   ? Object.values(D.pools).reduce((s,p)=>s+p.n, 0) : D.n;
 
@@ -167,7 +168,27 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
   openDetail(shortFunds[0].code);
   chk('短债详情 S5 阈值仍 1%',
       document.getElementById('d-body').innerHTML.includes('筛选阈值 &lt;1%'));
-  chk('禁用分类切换被忽略', (switchTab('fixed_plus'), ACTIVE==='short_bond'));
+  chk('短债详情无风险预算行（三闸仅固收+）',
+      !document.getElementById('d-body').innerHTML.includes('风险预算'));
+  if (fpFunds.length) {          // 固收+第三池接入（docs/10，2026-10-18）
+    console.log('· 三池分支：固收+ ' + fpFunds.length + ' 卡');
+    switchTab('fixed_plus');
+    const h3 = document.getElementById('list').innerHTML;
+    chk('固收+ tab 只显该池卡片',
+        fpFunds.every(f=>h3.includes(f.code)) && shortFunds.every(f=>!h3.includes(f.code)));
+    const m3 = document.getElementById('meta').innerHTML;
+    chk('meta 显示固收+池口径', m3.includes('固收+池 本期上榜 <b>'+fpFunds.length+'</b> 只'));
+    openDetail(fpFunds[0].code);
+    const db3 = document.getElementById('d-body').innerHTML;
+    chk('固收+详情 S5 阈值按池显示 5%', db3.includes('筛选阈值 &lt;5%'));
+    chk('固收+详情风险预算行（S6/S7/S8 阈值 8%/8%/5%）',
+        db3.includes('风险预算') && db3.includes('≤8%') && db3.includes('&lt;5%'));
+    switchTab('short_bond');
+    const h4 = document.getElementById('list').innerHTML;
+    chk('切回短债后固收+卡片消失',
+        shortFunds.every(f=>h4.includes(f.code)) && fpFunds.every(f=>!h4.includes(f.code)));
+  }
+  chk('禁用分类切换被忽略', (switchTab('index'), ACTIVE==='short_bond'));
 } else {
   console.log('· 单池 data.js：多池切换分支未适用（跑完周更管线后应出现多池分支）');
   switchTab('short_bond');

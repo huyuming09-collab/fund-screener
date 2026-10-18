@@ -12,12 +12,14 @@
        （新发大份额（如长城短债D）成立晚、任期记录短，不能拖累全基金）；
      - 成立年限 = 全部份额中的最大值；
      - 业绩（近5y/3y收益回撤）与年度收益 = 历史最久份额（并列优先 A 类）口径。
-  2. 硬条件 S1~S5：
+  2. 硬条件 S1~S5（固收+池另有专属风险预算闸 S6~S8，docs/10-固收加筛选与评分.md）：
        S1 合并规模 ≥ 5 亿
        S2 现任基金经理从业 ≥ 5 年
        S3 现任经理任本基金 ≥ 3 年（1095 天）
        S4 成立 ≥ 5 年（保证近五年数据完整）
-       S5 剔除近 5 年任一份额        S5 剔除近 5 年任一份额单日涨幅超过阈值的异常基金（短债 >1% / 长债 >2%，池别化）
+       S5 剔除近 5 年任一份额单日涨幅超过阈值的异常基金（短债 >1% / 长债 >2% / 固收+ >5%，池别化）
+       S6（固收+）近 5 年最大回撤 ≤ 8%；S7（固收+）近 5 年年化波动 ≤ 8%（风险预算硬闸）
+       S8（固收+）剔除近五年年化 ≥ 5% 的激进型（反追收益闸：收益下限方案已被前瞻数据证伪）
   3. 性能条件（方案甲；字面规则"四项前40%×每年>55%"全阈值空集后的放宽决策）：
        P1 近5y/3y 收益与回撤四项池内分位的均值，其池内分位 ≥ 45%（综合前 55%）
        P2 近 5 个完整自然年收益分位的中位数 ≥ 55%（可比完整年 ≥ 4）
@@ -30,6 +32,7 @@
 用法：
     python -m fundscorer.screen                     # 短债池筛选 + 漏斗 + 榜单
     python -m fundscorer.screen --pool long_bond     # 中长债池（SCREENS[pool]）
+    python -m fundscorer.screen --pool fixed_plus    # 固收+池（S1~S8，docs/10）
     python -m fundscorer.screen --csv out.csv       # 同时导出 CSV
     python -m fundscorer.screen --top 20            # 只保留前 20 名
 """
@@ -219,7 +222,7 @@ def _pick_rank_share(classes: list[tuple[str, str]], rep_code: str,
 
 def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
                       cfg: dict | None = None) -> tuple[pd.DataFrame, dict]:
-    """阶段一+二（纯内存计算）：硬条件 S1~S5 + 性能条件 P1~P2，返回候选表与漏斗。
+    """阶段一+二（纯内存计算）：硬条件 S1~S5（固收+另含 S6~S8）+ 性能条件 P1~P2，返回候选表与漏斗。
 
     records  池内份额级指标记录（metrics_cache 口径）
     spikes   {code: 近5年单日最大涨幅}
@@ -243,6 +246,19 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
     # 数据不足（NaN）不通过 S5：无法验证"无异常涨幅"则不放行
     keep &= pool["max_gain_5y"] <= cfg["spike_max_gain"]
     funnel[f"S5 无近5年单日涨幅>{cfg['spike_max_gain'] * 100:g}%"] = int(keep.sum())
+
+    # ---- 阶段一b 固收+专属风险预算闸 S6~S8（docs/10 §四；键缺失 = 两债池不启用） ----
+    # S6/S7 风险预算硬闸（回撤/波动 ≤ 阈值）；S8 反追收益闸（剔除近五年年化 ≥ 阈值的
+    # 激进型——"收益下限"方案已被前瞻数据证伪，docs/10 §三）。NaN（数据不足）不放行。
+    if cfg.get("mdd_5y_max") is not None:
+        keep &= pool["mdd_5y"] <= cfg["mdd_5y_max"]
+        funnel[f"S6 近5年最大回撤≤{cfg['mdd_5y_max'] * 100:g}%"] = int(keep.sum())
+    if cfg.get("vol_5y_max") is not None:
+        keep &= pool["vol_5y"] <= cfg["vol_5y_max"]
+        funnel[f"S7 近5年年化波动≤{cfg['vol_5y_max'] * 100:g}%"] = int(keep.sum())
+    if cfg.get("ret_5y_max") is not None:
+        keep &= pool["ret_5y"] < cfg["ret_5y_max"]
+        funnel[f"S8 近五年年化<{cfg['ret_5y_max'] * 100:g}%"] = int(keep.sum())
 
     # ---- 阶段二 性能条件 P1~P2（百分位基准 = 本池合并全池） ----
     P = composite_percentiles(pool)

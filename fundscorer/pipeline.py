@@ -36,7 +36,8 @@ JS_PATH = ROOT / "web" / "data.js"
 HISTORY_PATH = DATA / "rank_history.json"      # 历期榜单（环比基准，本地文件）
 HISTORY_KEEP = 26                              # 只留最近 26 期
 # 随池统计下发给页面的筛选阈值（详情页"入选依据/筛选阈值"文案按池显示，不硬编码）
-SCREEN_KEYS = ("scale_min_yi", "comp_pct_min", "yearly_median_min", "spike_max_gain")
+SCREEN_KEYS = ("scale_min_yi", "comp_pct_min", "yearly_median_min", "spike_max_gain",
+               "mdd_5y_max", "vol_5y_max", "ret_5y_max")   # 后三项仅固收+有（缺失即不下发）
 # 池中文名（日志用）：与卡片分类 tab 同源，新增池时只改 config.CARD["categories"]
 _POOL_NAMES = {c["id"]: c["name"] for c in C.CARD["categories"]}
 
@@ -273,7 +274,9 @@ def run(skip_refresh: bool = False, top: int | None = None,
                      "top_n": top_n,
                      "has_prev": out[p]["prev_ranks"] is not None,
                      "funnel": out[p]["funnel"],
-                     "screen": {k: C.SCREENS[p][k] for k in SCREEN_KEYS}}
+                     # 三闸键（mdd_5y_max 等）仅固收+有 → 缺失不下发，两债池契约零变化
+                     "screen": {k: C.SCREENS[p][k] for k in SCREEN_KEYS
+                                if k in C.SCREENS[p]}}
                  for p in pools}
         combined = pd.concat([out[p]["res"] for p in pools], ignore_index=True)
 

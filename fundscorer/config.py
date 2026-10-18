@@ -218,7 +218,7 @@ SCREENS = {
         "score_snapshot": "data/full_scores.json",
         "prefer_letter": "A",         # 排序取 A 类份额分数（同短债口径）
     },
-    # 固收+（docs/10-固收加筛选与评分.md，2026-10-18 设计定稿；池未启用 enabled=false）：
+    # 固收+（docs/10-固收加筛选与评分.md，2026-10-18 设计定稿；同日按 §六 步骤启用）：
     # 池口径=偏债混合+混合二级+混合一级（面板 1493 只）；用户口径"比长债低一级稳定性换更高收益"
     # 落地为 S6/S7 风险预算闸（回撤≤8%、波动≤8%）+ S8 反追收益闸（近五年年化<5%，
     # 幸存者内前瞻回撤 3% vs 1% 的分桶证据）；不做收益下限（ret≥4% 方案被前瞻数据证伪）。
@@ -263,14 +263,15 @@ CARD = {
     "categories": [   # 分类 tab（启用的分类由 PIPELINE.pools 供给数据）
         {"id": "short_bond", "name": "短债", "enabled": True},
         {"id": "long_bond", "name": "中长债", "enabled": True},
-        {"id": "fixed_plus", "name": "固收+", "enabled": False},
+        {"id": "fixed_plus", "name": "固收+", "enabled": True},
         {"id": "index", "name": "指数", "enabled": False},
     ],
 }
 
 # 周更管线
 PIPELINE = {
-    "pools": ["short_bond", "long_bond"],   # 每周刷新哪些池（其他池数据不动，将来接入时扩）
+    # 每周刷新哪些池（其他池数据不动）；fixed_plus 2026-10-18 接入（docs/10 §六 启用步骤）
+    "pools": ["short_bond", "long_bond", "fixed_plus"],
     "log_dir": "data",         # 执行日志目录
 }
 
