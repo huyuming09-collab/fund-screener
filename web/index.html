@@ -558,7 +558,6 @@ function drawExport(canvas, pool, sizeKey, rows){
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
   const wide = W > H;
-  const WX_ACCOUNT = '班马成长日记';
   const rr = (x, y, w, h, r) => {
     ctx.beginPath(); ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -661,7 +660,7 @@ function drawExport(canvas, pool, sizeKey, rows){
 
   // ---- 页脚：橙色 CTA 药丸（公众号）+ 仓库链接 + 免责声明 ----
   const fy = H - FOOT;
-  const pTxt = '完整榜单与逐期复盘 → 公众号「' + WX_ACCOUNT + '」';
+  const pTxt = '每周五 23:00 自动更新 · 完整榜单与逐期复盘随后放出';
   ctx.font = '700 ' + (wide ? 21 : 23) + 'px sans-serif';
   const pW = ctx.measureText(pTxt).width + 48, pH = wide ? 50 : 54;
   const g2 = ctx.createLinearGradient(PAD, 0, PAD + pW, 0);
@@ -669,7 +668,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   ctx.fillStyle = g2; rr(PAD, fy + 8, pW, pH, pH / 2); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.fillText(pTxt, PAD + 24, fy + 8 + pH * 0.66);
   ctx.fillStyle = '#ff6a00'; ctx.font = (wide ? 15 : 16) + 'px sans-serif';
-  ctx.fillText('github.com/huyuming09-collab/fund-screener', PAD, fy + 8 + pH + 28);
+  ctx.fillText('数据基准 ' + ((D && D.asof) || '') + ' · 筛选口径见配套图卡', PAD, fy + 8 + pH + 28);
   ctx.fillStyle = '#b3aca2'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
   const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
   lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 8 + pH + 56 + i * 20));
@@ -755,7 +754,7 @@ function initExport(){
 /* ============ 启动 ============ */
 /* 免责声明：优先取 data.js，缺失时用与 cards.DISCLAIMER 同口径的静态兜底 */
 const DISCLAIMER_FALLBACK = '本页榜单由程序基于公开历史数据自动生成，仅为数据分析研究结论，'
-  + '不构成任何投资建议或基金推介；数据源（天天基金/AkShare 等）可能存在延迟与错误；'
+  + '不构成任何投资建议或基金推介；数据来自公开渠道，可能存在延迟与错误；'
   + '历史业绩与评分不代表未来表现，基金有风险，投资须谨慎，据此操作风险自担。';
 $('p-disc').textContent = (D && D.disclaimer) || DISCLAIMER_FALLBACK;
 if (initExport()){
