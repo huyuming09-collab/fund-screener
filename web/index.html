@@ -558,6 +558,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
   const wide = W > H;
+  const WX_ACCOUNT = '班马成长日记';  /* 页脚 @ 标识用；不出现"公众号"字样（社媒合规口径） */
   const rr = (x, y, w, h, r) => {
     ctx.beginPath(); ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -669,6 +670,8 @@ function drawExport(canvas, pool, sizeKey, rows){
   ctx.fillStyle = '#fff'; ctx.fillText(pTxt, PAD + 24, fy + 8 + pH * 0.66);
   ctx.fillStyle = '#ff6a00'; ctx.font = (wide ? 15 : 16) + 'px sans-serif';
   ctx.fillText('数据基准 ' + ((D && D.asof) || '') + ' · 筛选口径见配套图卡', PAD, fy + 8 + pH + 28);
+  /* 账号标识：社媒合规口径下不写"公众号"字样，只留 @ 账号名（右对齐，同色同行） */
+  ctx.textAlign = 'right'; ctx.fillText('@' + WX_ACCOUNT, W - PAD, fy + 8 + pH + 28); ctx.textAlign = 'left';
   ctx.fillStyle = '#b3aca2'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
   const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
   lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 8 + pH + 56 + i * 20));
