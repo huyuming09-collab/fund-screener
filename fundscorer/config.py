@@ -52,16 +52,18 @@ PURE_BOND_WEIGHTS_LONG = {
 # 可回溯 88 分重分配为风险因子 77.3 + mgr_tenure 7.9 + ret_1y 2.8；
 # 不可回溯 12 分（mgr_products_ann 11 + ms_rating 1）数据无法回测，沿用原值。
 FIXED_PLUS_WEIGHTS = {
-    # 风险因子 77.31（仍按门槛式打分：≤池均值×1.5 满分，不参与线性排序）
-    "mdd_5y": 14.15, "mdd_3y": 19.06, "mdd_1y": 23.36, "vol_5y": 20.74,
-    "repair_5y": 0,
-    # IC 池：ret_1y 由 24.2 → 2.75（动量的收益预测力被其回撤预测力抵消）
-    "ret_1y": 2.75, "age": 0, "lvi_3y": 0,
-    "ret_5y": 0, "excess_5y": 0, "ret_3y": 0, "lvi_5y": 0, "yearly_5y": 0,
-    "q_win_20q": 0, "fee": 0, "winrate_m_5y": 0,
-    # 固定块：稳定性 0（IC≤0）+ 经理 tenure 7.94（career 0）+ 不可回溯 12
-    "rank_stab": 0, "mgr_tenure": 7.94, "mgr_career": 0, "mgr_products_ann": 11,
-    "ms_rating": 1, "inst_ratio": 0, "fund_scale": 0, "company_scale": 0,
+    # 风险因子 44（门槛式：≤池均值×1.5 满分、×4.0 归零；docs/10 训练段筛后池
+    # calmar IC：vol_5y -0.458 / mdd_3y -0.428 / mdd_1y -0.416 / mdd_5y -0.399）
+    "mdd_1y": 13, "mdd_3y": 10, "mdd_5y": 7, "vol_5y": 14, "repair_5y": 0,
+    # IC 池 44（训练段 2019-2021 筛后池 fwd 卡玛 IC：winrate_m_5y +0.313、
+    # q_win_20q +0.304、fee -0.418（低费优故逆向）、mgr_tenure +0.109；
+    # ret_1y 训练段 -0.306 为负 → 剔除，"追收益"见 docs/10 §三 C 方案反例）
+    "winrate_m_5y": 14, "q_win_20q": 12, "fee": 12, "mgr_tenure": 6,
+    # 固定块 12：不可回溯（面板无经理全产品/晨星字段）沿用原值
+    "ret_1y": 0, "age": 0, "lvi_3y": 0, "lvi_5y": 0, "ret_5y": 0, "excess_5y": 0,
+    "ret_3y": 0, "yearly_5y": 0, "q_excess_20q": 0,
+    "rank_stab": 0, "mgr_career": 0, "mgr_products_ann": 11, "ms_rating": 1,
+    "inst_ratio": 0, "fund_scale": 0, "company_scale": 0,
 }
 
 # 池 → 权重表（v5.1 起短债与中长期纯债分表）
@@ -216,7 +218,34 @@ SCREENS = {
         "score_snapshot": "data/full_scores.json",
         "prefer_letter": "A",         # 排序取 A 类份额分数（同短债口径）
     },
-    # 将来扩展位："fixed_plus": {...}, "index": {...}
+    # 固收+（docs/10-固收加筛选与评分.md，2026-10-18 设计定稿；池未启用 enabled=false）：
+    # 池口径=偏债混合+混合二级+混合一级（面板 1493 只）；用户口径"比长债低一级稳定性换更高收益"
+    # 落地为 S6/S7 风险预算闸（回撤≤8%、波动≤8%）+ S8 反追收益闸（近五年年化<5%，
+    # 幸存者内前瞻回撤 3% vs 1% 的分桶证据）；不做收益下限（ret≥4% 方案被前瞻数据证伪）。
+    "fixed_plus": {
+        "pool": "fixed_plus",
+        # S1~S5 硬条件（与两债池同构，S5 阈值池别化）
+        "scale_min_yi": 5.0,          # S1 合并规模 ≥5 亿（池中位仅 1.83 亿，67% 不足 5 亿 → 1493→488）
+        "mgr_career_min_years": 5.0,  # S2 经理从业 ≥5 年（488→281；覆盖 2018 熊 + 2019-21 牛 + 2022-24 熊）
+        "mgr_tenure_min_days": 1095,  # S3 现任经理任本基金 ≥3 年（281→109，约束主力；tenure<2 年桶前瞻卡玛 127 vs 3-5 年 155）
+        "min_nav_years": 5.0,         # S4 成立 ≥5 年（109→86；评分主因子需 5 年窗口）
+        "spike_max_gain": 0.05,       # S5 近5年无单日涨幅 >5%（86→80；500 只样本 97.8 万单日：p99=1.59%、p99.9=3.27%、max 27.9%=赎回费尖峰；2-3% 为权益/转债合法日波，阈值须高于纯债池防误杀）
+        "spike_window_years": 5,
+        # S6~S8 固收+专属风险预算（docs/10 §二，每条附分桶前瞻依据）
+        "mdd_5y_max": 0.08,           # S6 近5年最大回撤 ≤8%（80→60；前瞻收益跨回撤桶平坦、卡玛 258→66 单调恶化 = 零成本闸）
+        "vol_5y_max": 0.08,           # S7 近5年年化波动 ≤8%（60→60；>8% 桶前瞻回撤 9.17% = 名不副实的"固收+"）
+        "ret_5y_max": 0.05,           # S8 剔除近五年年化 ≥5% 激进型（60→45；幸存者内前瞻回撤 3% vs 1%、收益持平；反向：收益下限方案被证伪不做）
+        # P1~P2 性能条件（百分位基准=固收+合并全池；45→45→41 ≥ TOP20）
+        "comp_pct_min": 0.45,         # P1 四项分位均值的池内分位 ≥45%
+        "yearly_median_min": 0.55,    # P2 完整自然年收益分位的中位数 ≥55%
+        "yearly_min_years": 4,        # P2 参与比较的完整年数下限
+        "yearly_min_obs": 120,        # 完整自然年判定
+        "yearly_pool_min": 30,        # P2 单年分位比较的池内最少样本
+        # 阶段三 排序
+        "score_snapshot": "data/full_scores.json",
+        "prefer_letter": "A",         # 排序取 A 类份额分数（同两债池口径）
+    },
+    # 将来扩展位："index": {...}
 }
 SCREEN = SCREENS["short_bond"]   # 便捷别名（现有代码/文档引用）
 
