@@ -2,9 +2,9 @@
 
 [![Deploy Pages](https://github.com/huyuming09-collab/fund-screener/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/huyuming09-collab/fund-screener/actions/workflows/deploy-pages.yml)
 [![Staleness](https://github.com/huyuming09-collab/fund-screener/actions/workflows/staleness.yml/badge.svg)](https://github.com/huyuming09-collab/fund-screener/actions/workflows/staleness.yml)
-[![Tests](https://img.shields.io/badge/tests-117%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-125%20passed-brightgreen)](tests/)
 
-基金评分后端 + **静态网页周榜**（响应式：手机满宽 / 电脑窄栏居中，分类 tab 切换短债与中长债）。**先做债券类**（纯债型 / 固收+），后续扩展到指数、混合、股票等全类型。
+基金评分后端 + **静态网页周榜**（响应式：手机满宽 / 电脑窄栏居中，分类 tab 切换短债 / 中长债 / 固收+）。**先做债券类**（纯债型 / 固收+），后续扩展到指数、混合、股票等全类型。
 核心不是"罗列指标"，而是**一套经过方法论论证、可回测验证、能定期自动重评**的评分体系。
 
 > ⚠️ 本项目输出为历史数据分析结论，**不构成投资建议**。
@@ -198,8 +198,10 @@ crontab: 30 23 * * 5  →  flock + scripts/weekly_update.sh  （日志 data/pipe
 - [x] **周榜网页**：web/index.html 响应式页面（榜单卡 + 支付宝风详情 + 常显免责声明；手机满宽 / 电脑窄栏居中），数据契约见 docs/08
 - [x] **中长债池上线**：先筛后评双池化（S5 阈值池别化：短债 1% / 长债 2%），周更每池各 TOP20，
       网页分类 tab 可切换，环比按池互不串池——见 docs/09
+- [x] **固收+池上线**（2026-10-18）：风险预算体系换代（S6 回撤 ≤8% / S7 波动 ≤8% 硬闸 +
+      S8 反追收益闸 <5%）+ 训练段 IC 定权的 B′ 评分卡，周更三池——见 docs/10
 - [ ] **稳定性回测**：验证"高星基金未来收益更高、回撤更小"（Spearman > 0.3）与"排名不剧烈跳变"
-- [ ] **扩展基金类型**：指数基金、混合基金、股票基金各自的评分卡（复用 `config.py` + `scorer.py` 骨架）
+- [ ] **扩展基金类型**：指数基金、股票基金各自的评分卡（复用 `config.py` + `scorer.py` 骨架）
 - [ ] 费率分 A/C/E 份额类别比较；基金公司非货规模接入真实数据源
 - [ ] 经理资质调节（R3）、星级滞回（L4）、滑动中位（L3）的完整实现
 
