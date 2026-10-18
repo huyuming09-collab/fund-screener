@@ -23,7 +23,8 @@ data/*.csv
 # ---- 本地杂项 ----
 out.json
 .DS_Store
-.shots/   # 本地页面/海报验证截图（chromium --screenshot 产出，可随时再生）
+# 本地页面/海报验证截图（chromium --screenshot 产出，可随时再生）
+.shots/
 
 # ---- 本地运营归档（小红书/公众号：选题、草稿、成品、素材、台账）----
 # 永不入库：weekly_update.sh 只 add web/data.js，且带 staged 路径守卫；双保险。
