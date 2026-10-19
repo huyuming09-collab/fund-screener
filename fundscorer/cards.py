@@ -312,6 +312,21 @@ def _namegap(n: int = 4) -> dict:
                      "mdd_5y": round(float(m), 4),
                      "ret_5y": None if r.get("ret_5y") is None else round(float(r["ret_5y"]), 4)})
     rows.sort(key=lambda x: -x["vol_5y"])
+    # 选样：保留波动前 2（"名字带稳却颠簸"的主力证据），另 2 位专取五年年化最差者
+    # （优先负收益），避免四行全是正收益而削弱"名不副实"的论点；展示仍按波动降序
+    if len(rows) > 2:
+        lead = [rows[0]] + ([rows[3]] if len(rows) > 3 else rows[1:2])   # 保留波动第1与第4
+        rest = [r for r in rows if r.get("ret_5y") is not None and r["label"] not in {x["label"] for x in lead}]
+        negs = sorted([r for r in rest if r["ret_5y"] < 0], key=lambda r: r["ret_5y"])
+        pool = negs if len(negs) >= 2 else sorted(rest, key=lambda r: r["ret_5y"])
+        picked, seen2 = list(lead), {r["label"] for r in lead}
+        for r in pool:
+            if len(picked) >= n:
+                break
+            if r["label"] in seen2:
+                continue
+            picked.append(r); seen2.add(r["label"])
+        rows = sorted(picked, key=lambda x: -x["vol_5y"])[:n]
     base.sort()
     # 对照用分位数而非 min-max：5年口径下池内存在 5.95% 离群值，
     # 写「0.4%~1.5%」会被理解为区间上下限而被反杀，改用中位数 + P90 表述
