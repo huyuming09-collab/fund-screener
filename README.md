@@ -2,10 +2,14 @@
 
 [![Deploy Pages](https://github.com/huyuming09-collab/fund-screener/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/huyuming09-collab/fund-screener/actions/workflows/deploy-pages.yml)
 [![Staleness](https://github.com/huyuming09-collab/fund-screener/actions/workflows/staleness.yml/badge.svg)](https://github.com/huyuming09-collab/fund-screener/actions/workflows/staleness.yml)
-[![Tests](https://img.shields.io/badge/tests-131%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-191%20passed-brightgreen)](tests/)
 
-基金评分后端 + **静态网页周榜**（响应式：手机满宽 / 电脑窄栏居中，分类 tab 切换 中短债 / 长债 / 固收+ / 指数）。**先做债券类**（纯债型 / 债券指数 / 固收+），后续扩展到混合、股票等全类型。
+基金评分后端 + **静态网页周榜**（响应式：手机满宽 / 电脑窄栏居中，分类 tab 切换 中短债 / 长债 / 固收+）。**先做债券类**（纯债型 / 固收+），后续扩展到混合、股票等全类型。
 核心不是"罗列指标"，而是**一套经过方法论论证、可回测验证、能定期自动重评**的评分体系。
+
+> 📖 **三份入口文件，各管一事**：
+> [README.md](README.md) 怎么用 ｜ [AGENTS.md](AGENTS.md) 什么规矩 ｜ [STATUS.md](STATUS.md) **现在什么状态（接手先读这份）**
+> 文件该放哪 → [docs/00-项目结构与约定.md](docs/00-项目结构与约定.md)
 
 > ⚠️ 本项目输出为历史数据分析结论，**不构成投资建议**。
 
