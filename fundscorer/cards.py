@@ -277,10 +277,15 @@ def _namegap(n: int = 4) -> dict:
         except Exception:
             recs = {}
     KW = ("稳", "双利", "恒益", "安心")
+    # 对照基准单独一轮：中短债池**全体**（净值≥5年、历史完整、有波动值），
+    # 不叠加 mdd/名称/类型过滤 —— 与图3「分类依据」的全池口径保持一致
+    base = [float(r["vol_5y"]) for r in recs.values()
+            if r.get("pool") == "short_bond" and r.get("vol_5y") is not None
+            and (r.get("nav_years") or 0) >= 5 and not r.get("insufficient_history")]
     TYPE_TAG = {"混合型-偏债": "偏债混合", "债券型-混合二级": "二级债基", "债券型-信用债": "信用债",
                 "债券型-利率债": "利率债", "债券型-长债": "长债", "债券型-中短债": "中短债",
                 "债券型-一级": "一级债基", "混合型-偏债混合": "偏债混合"}
-    seen, rows, base = set(), [], []
+    seen, rows = set(), []
     for r in recs.values():
         nm, v, m = r.get("name") or "", r.get("vol_5y"), r.get("mdd_5y")
         if v is None or m is None or not nm:
@@ -292,8 +297,6 @@ def _namegap(n: int = 4) -> dict:
         tt = r.get("type_text") or ""
         if any(x in nm for x in ("指数", "FOF", "货")) or any(x in tt for x in ("指数", "FOF")):
             continue
-        if r.get("pool") == "short_bond":            # 真·中短债池归池结果（非名字匹配）
-            base.append(float(v))
         if not any(k in nm for k in KW):
             continue
         core = re.sub(r"[A-EＡ-Ｅ]\s*$", "", nm)          # 去份额后缀做去重与展示
