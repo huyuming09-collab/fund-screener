@@ -1028,22 +1028,63 @@ function drawWxCover(cv){                     // 公众号头条封面 1080×460
   g.fillText(t0.vol_5y ? ('近5年年化波动 '+(t0.vol_5y*100).toFixed(1)+'%') : '实测见内文', rx+pad, 378);
 }
 
+function drawDict(cv){                       // 三个核心指标「大白话」说明表（公众号插图）
+  cv.width = 1080; cv.height = 580;
+  const W = cv.width, PAD = 60, CX = PAD, CW = W - PAD*2;
+  const g = cv.getContext('2d');
+  g.fillStyle = PA.bg; g.fillRect(0,0,W,580);
+  g.fillStyle = PA.card; _rr(g, CX, 36, CW, 508, 18); g.fill();
+  g.lineWidth = 2; g.strokeStyle = PA.bord; g.stroke();
+  const x0 = CX + 44, innerW = CW - 88;
+  const c1 = x0, c2 = x0 + 200, c3 = x0 + 530;          // 三列起点
+  const ROWS = [
+    ['年化波动',   '净值涨跌的剧烈程度，折算成一年',      '账户坐不坐过山车，数字越大越颠'],
+    ['最大回撤',   '从最高点一路跌到最低点的幅度',        '最惨的时候你最多亏掉多少'],
+    ['五年年化收益','5 年总收益折算成每年平均（复利）',    '平均下来每年赚多少'],
+  ];
+  // 「大白话」列高亮底
+  g.fillStyle = 'rgba(255,106,0,0.06)';
+  _rr(g, c3 - 18, 206, (x0 + innerW) - (c3 - 18), 288, 14); g.fill();
+  g.textAlign = 'left';
+  g.fillStyle = PA.dark; g.font = '800 34px sans-serif'; g.fillText('先看懂这三个指标', x0, 96);
+  g.fillStyle = PA.mut; g.font = '400 21px sans-serif';
+  g.fillText('后面全文都要用，先用大白话讲清楚', x0, 132);
+  g.font = '700 22px sans-serif';
+  g.fillStyle = PA.mut; g.fillText('指标', c1 + 6, 190);
+  g.fillStyle = PA.mut; g.fillText('它是什么', c2, 190);
+  g.fillStyle = PA.orange; g.fillText('大白话', c3, 190);
+  g.strokeStyle = PA.bord; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(x0, 206); g.lineTo(x0 + innerW, 206); g.stroke();
+  ROWS.forEach((r, i) => { const ry = 206 + i*96;
+    g.fillStyle = PA.orange; _rr(g, c1, ry + 30, 6, 30, 3); g.fill();
+    g.fillStyle = PA.dark; g.font = '700 25px sans-serif'; g.fillText(r[0], c1 + 18, ry + 56);
+    g.fillStyle = PA.mut;   g.font = '400 20px sans-serif'; g.fillText(r[1], c2, ry + 56);
+    g.fillStyle = PA.dark;  g.font = '700 21px sans-serif'; g.fillText(r[2], c3, ry + 56);
+    if (i < 2) { g.strokeStyle = PA.bord; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x0, ry + 96); g.lineTo(x0 + innerW, ry + 96); g.stroke(); }
+  });
+  g.strokeStyle = PA.bord; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(x0, 494); g.lineTo(x0 + innerW, 494); g.stroke();
+  g.fillStyle = '#b9b2a8'; g.font = '400 19px sans-serif'; g.textAlign = 'center';
+  g.fillText('数据来自公开净值回测 ｜ 历史业绩不代表未来，不构成投资建议', x0 + innerW/2, 524);
+}
+
 function renderSpecial(kind, sizeKey){         // 挂到导出页外壳（下载按钮/尺寸切换复用）
   window.__EXP_SIZE = EXPORT_SIZES[sizeKey]?sizeKey:'xhs';
-  const OWN = {cover:{w:1080,h:1440}, table:{w:1080,h:660}, wxcov:{w:1080,h:460}};
+  const OWN = {cover:{w:1080,h:1440}, table:{w:1080,h:660}, wxcov:{w:1080,h:460}, dict:{w:1080,h:580}};
   const S = OWN[kind] || EXPORT_SIZES[window.__EXP_SIZE];
   document.body.innerHTML=''; document.body.classList.add('exp');
   const wrap=document.createElement('div'); wrap.className='exp-wrap';
   wrap.innerHTML='<div class="exp-bar"><span class="t">'+(kind==='cover'?'封面 · 反常识':'配图 · 名字vs实际波动')+'</span></div>'
    +'<div class="exp-bar exp-opts">'
-   +'<button data-kind="cover">封面</button><button data-kind="namegap">名字vs实际</button><button data-kind="basis">分类依据</button><button data-kind="table">指标表</button><button data-kind="wxcov">公众号封面</button>'
+   +'<button data-kind="cover">封面</button><button data-kind="namegap">名字vs实际</button><button data-kind="basis">分类依据</button><button data-kind="table">指标表</button><button data-kind="wxcov">公众号封面</button><button data-kind="dict">指标说明</button>'
    +'<span style="flex:1 0 0"></span>'
    +'<button data-size="xhs">小红书 2:3</button><button data-size="wide">公众号 3:2</button>'
    +'<button class="dl">下载 PNG</button></div><div class="exp-hint"></div>';
   const cv=document.createElement('canvas'); cv.width=S.w; cv.height=S.h;
   cv.style.cssText='width:100%;height:auto;display:block;'+(window.devicePixelRatio>1?'image-rendering:auto;':'');
   wrap.appendChild(cv); document.body.appendChild(wrap);
-  const paint=()=>{ (kind==='cover'?drawCover:kind==='basis'?drawBasis:kind==='table'?drawTable:kind==='wxcov'?drawWxCover:drawNameGap)(cv);
+  const paint=()=>{ (kind==='cover'?drawCover:kind==='basis'?drawBasis:kind==='table'?drawTable:kind==='wxcov'?drawWxCover:kind==='dict'?drawDict:drawNameGap)(cv);
     wrap.querySelector('.exp-hint').textContent = S.w+'×'+S.h; };
   wrap.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>location.search='?export='+b.dataset.kind+'&size='+window.__EXP_SIZE);
   wrap.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{ window.__EXP_SIZE = b.dataset.size;
@@ -1061,7 +1102,7 @@ function initExport(){
     pool = q.get('export'); sizeKey = q.get('size'); rows = parseInt(q.get('rows') || '', 10) || null;
     bare = q.get('bare') === '1';
   } catch (e) { return false; }
-  if (['cover','namegap','basis','table','wxcov'].indexOf(pool) >= 0) return renderSpecial(pool, sizeKey);
+  if (['cover','namegap','basis','table','wxcov','dict'].indexOf(pool) >= 0) return renderSpecial(pool, sizeKey);
   if (!pool || !(D && D.funds)) return false;
   if (!EXPORT_SIZES[sizeKey]) sizeKey = 'xhs';
   const pools = exportPools();
