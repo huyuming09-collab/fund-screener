@@ -226,8 +226,6 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         "has_prev": ps.get("has_prev", prev_ranks is not None),
         "sharpe_rf": C.SHARPE_RF,
         "categories": C.CARD["categories"],
-        # "名字 vs 实际波动"配图数据（?export=namegap）：全量快照里名字带"稳"但实际波动最大的若干只
-        "namegap": _namegap(),
         "funnel": funnel or ps.get("funnel", {}),
         "pools": pool_stats or {},
         "funds": funds,
@@ -255,85 +253,3 @@ def write_payload(payload: dict, json_path, js_path=None) -> None:
         tmpj = Path(str(wp) + ".tmp")
         tmpj.write_text("window.CARD_DATA = " + compact + ";\n", encoding="utf-8")
         tmpj.replace(wp)
-def _namegap(n: int = 4) -> dict:
-    """封面配图「名字带稳的，实际有多不稳」的实证数据。
-
-    从全量指标缓存（data/metrics_cache.pkl，非榜单子集）里挑名字含"稳/双利/恒益/安心"
-    的债券类+偏债类产品，按**年化波动**降序取前 n；对照条取中短债池同期波动中位数。
-
-    合规：**不输出公司名**——展示为「类型标签 · 名称去掉公司前缀」，如
-    「偏债混合 · 稳健增长混合」，保留"名字带稳"的反例属性但不指向具体产品；
-    同一基金的 A/C/D/E 份额去重。每周随缓存自动更新，不写死。
-    """
-    import pickle
-    import re
-    from pathlib import Path
-    src = Path(__file__).resolve().parent.parent / "data" / "metrics_cache.pkl"
-    recs = {}
-    if src.exists():
-        try:
-            raw = pickle.load(open(src, "rb"))
-            recs = raw if isinstance(raw, dict) else {r.get("code"): r for r in raw}
-        except Exception:
-            recs = {}
-    KW = ("稳", "双利", "恒益", "安心")
-    # 对照基准单独一轮：中短债池**全体**（净值≥5年、历史完整、有波动值），
-    # 不叠加 mdd/名称/类型过滤 —— 与图3「分类依据」的全池口径保持一致
-    base = [float(r["vol_5y"]) for r in recs.values()
-            if r.get("pool") == "short_bond" and r.get("vol_5y") is not None
-            and (r.get("nav_years") or 0) >= 5 and not r.get("insufficient_history")]
-    TYPE_TAG = {"混合型-偏债": "偏债混合", "债券型-混合二级": "二级债基", "债券型-信用债": "信用债",
-                "债券型-利率债": "利率债", "债券型-长债": "长债", "债券型-中短债": "中短债",
-                "债券型-一级": "一级债基", "混合型-偏债混合": "偏债混合"}
-    seen, rows = set(), []
-    for r in recs.values():
-        nm, v, m = r.get("name") or "", r.get("vol_5y"), r.get("mdd_5y")
-        if v is None or m is None or not nm:
-            continue
-        # 口径闸：图上写「近5年」就必须是真满 5 年净值。ann_return/ann_vol 在历史不足时
-        # 会退化为全期计算但字段名不变，故此处硬性拦截（含 insufficient_history 标记）
-        if (r.get("nav_years") or 0) < 5 or r.get("insufficient_history"):
-            continue
-        tt = r.get("type_text") or ""
-        if any(x in nm for x in ("指数", "FOF", "货")) or any(x in tt for x in ("指数", "FOF")):
-            continue
-        if not any(k in nm for k in KW):
-            continue
-        core = re.sub(r"[A-EＡ-Ｅ]\s*$", "", nm)          # 去份额后缀做去重与展示
-        if core in seen:
-            continue
-        idx = next((nm.find(k) for k in KW if nm.find(k) >= 1), -1)
-        rest = nm[idx:].strip() if idx >= 1 else core
-        rest = re.sub(r"[A-EＡ-Ｅ]\s*$", "", rest)
-        tag = next((v2 for k2, v2 in TYPE_TAG.items() if k2 in tt), (tt[:6] or "债类"))
-        # 合规脱敏优先级：机构量级描述（人工维护）> 类型标签兜底；均不输出公司名
-        SENS = {"稳健增长混合": "头部机构 · 稳健增长混合", "稳宏债券": "老牌机构 · 稳宏债券",
-                "稳健配置混合": "大厂 · 稳健配置混合", "恒益稳健混合": "中型机构 · 恒益稳健混合"}
-        label = next((SENS[k] for k in SENS if k in nm), f"{tag} · {rest}")
-        seen.add(core)
-        rows.append({"label": label, "vol_5y": round(float(v), 4),
-                     "mdd_5y": round(float(m), 4),
-                     "ret_5y": None if r.get("ret_5y") is None else round(float(r["ret_5y"]), 4)})
-    rows.sort(key=lambda x: -x["vol_5y"])
-    # 选样：保留波动前 2（"名字带稳却颠簸"的主力证据），另 2 位专取五年年化最差者
-    # （优先负收益），避免四行全是正收益而削弱"名不副实"的论点；展示仍按波动降序
-    if len(rows) > 2:
-        lead = [rows[0]] + ([rows[3]] if len(rows) > 3 else rows[1:2])   # 保留波动第1与第4
-        rest = [r for r in rows if r.get("ret_5y") is not None and r["label"] not in {x["label"] for x in lead}]
-        negs = sorted([r for r in rest if r["ret_5y"] < 0], key=lambda r: r["ret_5y"])
-        pool = negs if len(negs) >= 2 else sorted(rest, key=lambda r: r["ret_5y"])
-        picked, seen2 = list(lead), {r["label"] for r in lead}
-        for r in pool:
-            if len(picked) >= n:
-                break
-            if r["label"] in seen2:
-                continue
-            picked.append(r); seen2.add(r["label"])
-        rows = sorted(picked, key=lambda x: -x["vol_5y"])[:n]
-    base.sort()
-    # 对照用分位数而非 min-max：5年口径下池内存在 5.95% 离群值，
-    # 写「0.4%~1.5%」会被理解为区间上下限而被反杀，改用中位数 + P90 表述
-    med = base[len(base) // 2] if base else None
-    p90 = base[len(base) * 9 // 10] if base else None
-    return {"top": rows[:n], "base_vol": round(med, 4) if med else None,
-            "base_p90": round(p90, 4) if p90 else None}
