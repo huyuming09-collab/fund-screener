@@ -285,10 +285,14 @@ def _namegap(n: int = 4) -> dict:
         nm, v, m = r.get("name") or "", r.get("vol_5y"), r.get("mdd_5y")
         if v is None or m is None or not nm:
             continue
+        # 口径闸：图上写「近5年」就必须是真满 5 年净值。ann_return/ann_vol 在历史不足时
+        # 会退化为全期计算但字段名不变，故此处硬性拦截（含 insufficient_history 标记）
+        if (r.get("nav_years") or 0) < 5 or r.get("insufficient_history"):
+            continue
         tt = r.get("type_text") or ""
         if any(x in nm for x in ("指数", "FOF", "货")) or any(x in tt for x in ("指数", "FOF")):
             continue
-        if "中短债" in nm or "短债" in nm:
+        if r.get("pool") == "short_bond":            # 真·中短债池归池结果（非名字匹配）
             base.append(float(v))
         if not any(k in nm for k in KW):
             continue
@@ -309,4 +313,9 @@ def _namegap(n: int = 4) -> dict:
                      "ret_5y": None if r.get("ret_5y") is None else round(float(r["ret_5y"]), 4)})
     rows.sort(key=lambda x: -x["vol_5y"])
     base.sort()
-    return {"top": rows[:n], "base_vol": round(base[len(base) // 2], 4) if base else None}
+    # 对照用分位数而非 min-max：5年口径下池内存在 5.95% 离群值，
+    # 写「0.4%~1.5%」会被理解为区间上下限而被反杀，改用中位数 + P90 表述
+    med = base[len(base) // 2] if base else None
+    p90 = base[len(base) * 9 // 10] if base else None
+    return {"top": rows[:n], "base_vol": round(med, 4) if med else None,
+            "base_p90": round(p90, 4) if p90 else None}

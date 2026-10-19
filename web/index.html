@@ -787,7 +787,7 @@ function drawCover(cv){                       // 封面 1080×1440：仅排版�
   g.fillStyle = PA.dark; g.font = '700 32px sans-serif'; g.fillText('纯债大类', PAD+pad, cy+80);
   _spark(g, PAD+pad, cy+104, cw-pad*2, 76, '#12a150', false);
   g.fillStyle = PA.mut; g.font = '400 25px sans-serif';
-  g.fillText('近5年年化波动 0.4%~1.5%', PAD+pad, cy+ch-pad);
+  g.fillText('近5年年化波动 中位 '+(ng.base_vol!=null?(ng.base_vol*100).toFixed(2)+'%':'—'), PAD+pad, cy+ch-pad);
   const x2 = PAD+cw+32;
   card(x2);
   g.fillStyle = PA.dark; g.font = '700 32px sans-serif'; g.fillText('名字带「稳」的', x2+pad, cy+80);
@@ -798,7 +798,7 @@ function drawCover(cv){                       // 封面 1080×1440：仅排版�
   const sy = cy+ch+44, sh = 348, spad = 40;
   g.fillStyle = PA.card; _rr(g, PAD, sy, W-PAD*2, sh, 18); g.fill(); g.stroke();
   g.fillStyle = PA.orange; g.font = '700 31px sans-serif';
-  g.fillText('实测：名字带「稳健」的偏债混合产品', PAD+spad, sy+76);
+  g.fillText('实测：名字带「稳」的债类产品（净值≥5年）', PAD+spad, sy+76);
   const stats=[['近5年年化波动',(t0.vol_5y*100).toFixed(1)+'%',PA.red],
                ['最大回撤',(t0.mdd_5y*100).toFixed(1)+'%',PA.red],
                ['五年年化',t0.ret_5y==null?'—':(t0.ret_5y*100).toFixed(1)+'%',(t0.ret_5y||0)<0?PA.red:PA.green]];
@@ -810,7 +810,10 @@ function drawCover(cv){                       // 封面 1080×1440：仅排版�
     g.fillStyle = s[2]; g.font = '700 25px sans-serif'; g.fillText(s[0], sx+(i3?18:0), sy+240);
   });
   g.fillStyle = PA.mut; g.font = '400 26px sans-serif';
-  const note = '同期【纯债大类】平均近5年年化波动 0.4%~1.5%，包含中短债+长债，相差 10 倍以上';
+  const bv = ng.base_vol!=null ? (ng.base_vol*100).toFixed(2)+'%' : '—';
+  const bp = ng.base_p90!=null ? (ng.base_p90*100).toFixed(2)+'%' : '—';
+  const bt = (ng.base_vol && t0.vol_5y) ? Math.round(t0.vol_5y/ng.base_vol) : 0;
+  const note = '同期【纯债大类】近5年年化波动中位 '+bv+'、九成在 '+bp+' 以内（含中短债+长债），是反例的 '+bt+' 倍';
   _wrapText(g, note, innerW, 2).forEach((ln,li)=> g.fillText(ln, PAD+spad, sy+284+li*34));
   // —— 底部：降权调灰 ——
   const by = sy+sh+46;
@@ -850,12 +853,12 @@ function drawNameGap(cv){                     // 实锤图：共享坐标轴 + �
   const by=top0+rows.length*rowH;
   g.fillStyle='#e8f6ee'; _rr(g,PAD,by,W-PAD*2,rowH-40,14); g.fill();
   g.fillStyle='#0d7a3f'; g.font='700 24px sans-serif'; g.fillText('对照 · 稳健纯债大类（中短债+长债）',PAD+22,by+36);
-  g.font='400 23px sans-serif'; g.fillText('近5年年化波动 0.4%~1.5%',PAD+22,by+76);
+  g.font='400 23px sans-serif'; g.fillText('近5年年化波动 中位 '+(base*100).toFixed(2)+'%（九成 ≤'+((ng.base_p90||base)*100).toFixed(2)+'%）',PAD+22,by+76);
   g.fillStyle=PA.green; _rr(g,axisX,by+6,Math.max(base/maxV*axisW,6),44,10); g.fill();
   g.fillStyle='#0d7a3f'; g.font='700 30px sans-serif';
   g.fillText((base*100).toFixed(1)+'%',axisX+18,by+40);
   // 倍数徽章
-  const bx=W-PAD-150, bcy=by+rowH/2-20, ratio=Math.max(1,Math.round(rows[0].vol_5y/0.015));
+  const bx=W-PAD-150, bcy=by+rowH/2-20, ratio=Math.max(1,Math.round(rows[0].vol_5y/Math.max(base,0.0001)));
   g.fillStyle=PA.red; g.beginPath(); g.arc(bx+70,bcy,70,0,Math.PI*2); g.fill();
   g.fillStyle='#fff'; g.font='800 52px sans-serif'; g.textAlign='center';
   g.fillText('×'+ratio, bx+70, bcy+18);
