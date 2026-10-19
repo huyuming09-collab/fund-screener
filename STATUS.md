@@ -31,6 +31,7 @@
 | ☑ | GitHub Pages 自动部署 + 数据陈旧巡检 | `.github/workflows/` |
 | ☑ | 周更 → 本地运营素材包（要点/骨架，**不入库**） | `scripts/content_digest.py` |
 | ☑ | 债券指数型基金分类评分（代码完成，被总开关关闭） | `indexfund.py` |
+| ☑ | 历史回测与目标函数预注册回测（**研究脚本，不入主链、无单测**） | `backtest.py` / `backtest2.py` |
 | ▣ | 固收+ 池筛选规则定稿（规则核验中，暂不发榜） | `config.py` + `docs/10` |
 | ⊘ | 债券指数型基金上线（`config.INDEX["enabled"]=False`） | 见第 2 节 |
 | ☐ | `rank.py` / `data.py` / `content_digest.py` 单元测试 | `tests/` |
