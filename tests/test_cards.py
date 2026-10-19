@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fundscorer import cards, pipeline
+from fundscorer import cards, config, pipeline
 
 
 def _nav(rows=500, start="2022-01-01"):
@@ -365,3 +365,46 @@ class TestWritePayload:
         jp = tmp_path / "only.json"
         cards.write_payload(_payload(), jp)
         assert jp.exists()
+
+
+class TestCompareFields:
+    """池内横向对比（网页勾选≤5只）所需的契约字段。"""
+
+    @staticmethod
+    def _payload_compare():
+        res = pd.DataFrame([_row(score=86.36)])
+        rec = _rec(raw_score=19.0, earned_weight=22.0,
+                   score_detail={"fee": 7.0, "ret_3y": 12.0},
+                   sub_scores={"fee": 78.6, "ret_3y": 140.6, "company_scale": None})
+        return cards.build_payload(res, {"002438": rec}, {"002438": _nav()},
+                                   pool_stats={"short_bond": {"n": 1, "n_screened": 25,
+                                                              "top_n": 20, "has_prev": False,
+                                                              "funnel": {}, "screen": {}}})
+
+    def test_pool_carries_weights_and_groups(self):
+        p = self._payload_compare()
+        st = p["pools"]["short_bond"]
+        assert st["weights"] == config.POOL_WEIGHTS["short_bond"]
+        assert st["weight_groups"] == config.WEIGHT_GROUPS["short_bond"]
+
+    def test_weight_groups_cover_all_keys(self):
+        """分块键并集必须与权重表键集完全一致（漏一个 = 对比表缺维度）。"""
+        for pid in ("short_bond", "long_bond", "fixed_plus"):
+            w = set(config.POOL_WEIGHTS[pid])
+            g = [k for _, ks in config.WEIGHT_GROUPS[pid] for k in ks]
+            assert len(g) == len(set(g)), f"{pid} 分块内有重复键"
+            assert set(g) == w, f"{pid} 分块与权重表不一致：缺 {w - set(g)} 多 {set(g) - w}"
+
+    def test_fund_score_recompute_fields(self):
+        f = self._payload_compare()["funds"][0]
+        assert f["raw_score"] == pytest.approx(19.0)
+        assert f["earned_weight"] == pytest.approx(22.0)
+        # 复算链路必须与卡片上的 score 一致：Σ贡献 × 100 / earned_weight
+        detail = f["score_detail"]
+        assert sum(detail.values()) == pytest.approx(f["raw_score"], abs=1e-6)
+        assert round(f["raw_score"] * 100 / f["earned_weight"], 2) == f["score"]
+
+    def test_missing_score_block_is_none(self):
+        """旧快照无评分明细时字段为 None（网页降级显示，不报错）。"""
+        f = _payload()["funds"][0]
+        assert f["raw_score"] is None and f["earned_weight"] is None

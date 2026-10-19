@@ -90,6 +90,35 @@ POOL_WEIGHTS = {
     "fixed_plus": FIXED_PLUS_WEIGHTS,
 }
 
+# 评分维度的**展示分块**（纯展示用，不参与任何打分/筛选；仅给网页对比表分区标题用）。
+# 每个池的分组键并集必须与对应权重表键集完全一致 —— tests/test_cards.py 有契约测试兜底。
+# 分块沿用上方各权重表的注释分组（风险块 / IC 池 / 稳定性与经理 / 质地）。
+WEIGHT_GROUPS = {
+    "short_bond": [
+        ("风险块", ["mdd_5y", "mdd_3y", "mdd_1y", "repair_5y", "vol_5y"]),
+        ("收益与超额", ["fee", "ret_3y", "ret_5y", "ret_1y", "yearly_5y",
+                       "q_excess_20q", "lvi_5y", "lvi_3y", "winrate_m_5y"]),
+        ("稳定性与经理", ["rank_stab", "mgr_tenure", "mgr_career", "mgr_products_ann"]),
+        ("质地与其他", ["age", "ms_rating", "inst_ratio", "fund_scale", "company_scale"]),
+    ],
+    "long_bond": [
+        ("风险块", ["mdd_5y", "mdd_3y", "mdd_1y", "repair_5y", "vol_5y"]),
+        ("收益与超额", ["ret_1y", "ret_3y", "lvi_3y", "yearly_5y", "q_excess_20q",
+                       "ret_5y", "lvi_5y", "winrate_m_5y", "fee"]),
+        ("稳定性与经理", ["rank_stab", "mgr_tenure", "mgr_career", "mgr_products_ann"]),
+        ("质地与其他", ["age", "ms_rating", "inst_ratio", "fund_scale", "company_scale"]),
+    ],
+    "fixed_plus": [
+        ("风险块", ["mdd_1y", "mdd_3y", "mdd_5y", "vol_5y", "repair_5y"]),
+        ("风险调整收益", ["calmar_5y", "sharpe_5y"]),
+        ("胜率与运营", ["winrate_m_5y", "q_win_20q", "fee", "mgr_tenure"]),
+        ("机构占比", ["inst_ratio"]),
+        ("固定块", ["ret_1y", "age", "lvi_3y", "lvi_5y", "ret_5y", "excess_5y",
+                   "ret_3y", "yearly_5y", "q_excess_20q", "rank_stab", "mgr_career",
+                   "mgr_products_ann", "ms_rating", "fund_scale", "company_scale"]),
+    ],
+}
+
 # 需要在同类池内算百分位的指标（正向=越大越好；逆向=越小越好）
 PERCENTILE_METRICS = {
     "mdd_5y": "lower", "mdd_3y": "lower", "mdd_1y": "lower",

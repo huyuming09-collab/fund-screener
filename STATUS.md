@@ -14,7 +14,7 @@
 
 三池评分体系 **v5.4** 已上线并正常周更（中短债池 / 长债池榜单每周五自动更新）；
 固收+ 池筛选规则仍在核验、暂不发榜；债券指数型基金被总开关关闭、方案待定。
-**仓库无阻塞性缺陷**，测试基线 191 passed + SMOKE PASS。
+**仓库无阻塞性缺陷**，测试基线 195 passed + SMOKE PASS。
 
 ## 1. 功能清单
 
@@ -28,6 +28,7 @@
 | ☑ | 周更管线（周五 23:00 自动，任一池失败=整体失败、产物不动） | `pipeline.py` |
 | ☑ | 三件套导出：`top20.json` / `screen_report.csv` / `web/data.js` | `cards.py` |
 | ☑ | 周榜网页：多池 tab、环比、说明区、榜单图导出 | `web/index.html` |
+| ☑ | **池内横向对比**：榜内/详情页勾选 ≤5 只，分区大表看各维度权重·贡献·载分率·原始值，校验行复算评分，一键复制文本 | `web/index.html` |
 | ☑ | GitHub Pages 自动部署 + 数据陈旧巡检 | `.github/workflows/` |
 | ☑ | 周更 → 本地运营素材包（要点/骨架，**不入库**） | `scripts/content_digest.py` |
 | ☑ | 债券指数型基金分类评分（代码完成，被总开关关闭） | `indexfund.py` |
@@ -82,6 +83,9 @@
 
 ## 6. 最近变更
 
+- **2026-10-19** 新增**池内横向对比**（榜单行/详情页勾选 ≤5 只 → 分区大表：综合概览 / 评分明细按权重分块 /
+  关键指标 / 校验行「Σ贡献×100÷载分权重=评分」；`data.js` 新增 `pools[].weights`、`weight_groups`、
+  `raw_score`、`earned_weight`；切池自动清空，旧 `data.js` 优雅降级；测试基线 191→195）
 - **2026-10-19** 三池重构上线（v5.4：`short_bond` 中短债池 / `long_bond` 长债池 / `fixed_plus` 固收+ 池，
   池 id 更名但历史数据链路延续）；`INDEX["enabled"]` 总开关落地（债指方案待定）；对外波动口径统一为「近5年年化波动」；
   **非榜单配图导出模式全部下线**（页面 1172→817 行）；新增 `AGENTS.md` / `STATUS.md` / `docs/00-项目结构与约定.md`
@@ -94,7 +98,7 @@
 ```bash
 # 1) 装环境、跑测试确认基线
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest tests/ -q        # 191 passed
+.venv/bin/python -m pytest tests/ -q        # 195 passed
 node tests/smoke_page.js                     # SMOKE PASS
 
 # 2) 看当期榜单与数据（不要重抓，先用缓存）

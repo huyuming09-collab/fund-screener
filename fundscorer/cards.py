@@ -181,6 +181,9 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         },
         "score_detail": {k: _r(v, 3) for k, v in (rec.get("score_detail") or {}).items()},
         "sub_scores": {k: _r(v, 1) for k, v in (rec.get("sub_scores") or {}).items()},
+        # 池内对比复算用：Σ score_detail = raw_score；score = raw_score × 100 / earned_weight
+        "raw_score": _r(rec.get("raw_score"), 2),
+        "earned_weight": _r(rec.get("earned_weight"), 2),
         "redlines": list(rec.get("redlines") or []),
         "trend": trend_windows(nav, max_points),
     }
@@ -215,6 +218,12 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         funds.append(build_fund(row, rec, nav, max_points, category=cat))
     primary = next(iter(pool_stats), None) if pool_stats else None
     ps = pool_stats.get(primary, {}) if primary else {}
+    # 各池统计 + 评分权重/分块（权重来自 config.POOL_WEIGHTS，供网页「池内横向对比」复算与分区）
+    pools = {}
+    for pid, st in (pool_stats or {}).items():
+        pools[pid] = dict(st)
+        pools[pid]["weights"] = C.POOL_WEIGHTS.get(pid)
+        pools[pid]["weight_groups"] = C.WEIGHT_GROUPS.get(pid)
     return {
         "model_version": C.MODEL_VERSION,
         "generated_at": str(dt.datetime.now()),
@@ -227,7 +236,7 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         "sharpe_rf": C.SHARPE_RF,
         "categories": C.CARD["categories"],
         "funnel": funnel or ps.get("funnel", {}),
-        "pools": pool_stats or {},
+        "pools": pools,
         "funds": funds,
         "disclaimer": DISCLAIMER,
     }

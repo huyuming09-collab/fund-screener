@@ -7,7 +7,7 @@ const dataJs = fs.readFileSync('web/data.js','utf8');
 const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
 
 const classes = new Set();
-const mkEl = () => ({ innerHTML:'', textContent:'', style:{}, dataset:{}, onclick:null, disabled:false, scrollTop:0,
+const mkEl = () => ({ innerHTML:'', textContent:'', style:{}, dataset:{}, onclick:null, disabled:false, scrollTop:0, hidden:false, addEventListener(){},
   classList:{ add:c=>classes.add(c), remove:c=>classes.delete(c), contains:c=>classes.has(c), toggle:()=>{} } });
 const els = {};
 global.document = {
@@ -145,7 +145,7 @@ const nDisabled = D.categories.filter(c=>!c.enabled).length;
   chk('可见分类渲染 tab、hidden 分类不渲染（固收+ 暂隐藏）',
       visCats.every(c => tabsHTML.includes(c.name))
       && D.categories.filter(c=>c&&c.hidden).every(c => !tabsHTML.includes(c.name)));
-chk('禁用分类不可点击（toast 占位）', (tabsHTML.match(/toast\\(\\)/g)||[]).length === nDisabled);
+chk('禁用分类不可点击（toast 提示）', (tabsHTML.match(/toast\\('/g)||[]).length === nDisabled);
 if (D.pools && D.pools.long_bond && longFunds.length) {
   // 池显示名从 data.js 派生（2026-10-19 改名 中短债/长债/固收+），不再写死
   const longLabel = (D.categories.find(c=>c.id==='long_bond')||{}).name || '长债';
@@ -288,6 +288,38 @@ let drawOK = true;
 try { drawExport(cv2,'long_bond','xhs'); drawExport(cv2,'not_a_pool','wide'); } catch(e){ drawOK = false; }
 chk('drawExport 容错：未知池/空池不抛异常', drawOK);
 chk('initExport 无 URL 参数时不进入导出模式', initExport() === false);
+
+// 11. 池内横向对比（榜内勾选 ≤5 只、仅同池、校验行可复算）
+if (shortFunds.length >= 2) {
+  CMP = []; renderPick(); closeDetail();
+  pickTgl(shortFunds[0].code); pickTgl(shortFunds[1].code);
+  chk('勾选两只后浮条出现、对比按钮可用', CMP.length===2 && !document.getElementById('cmp-open').disabled);
+  chk('勾选不触发详情面板', !document.getElementById('detail').classList.contains('show'));
+  for (let i=2;i<6;i++) if (shortFunds[i]) pickTgl(shortFunds[i].code);
+  chk('上限 5 只：选满后再点被拒', CMP.length===5);
+  openCmp();
+  const cb = document.getElementById('cmp-body').innerHTML;
+  chk('对比表无 NaN/undefined 泄漏', !/NaN|undefined/.test(cb));
+  chk('对比表含四分区与校验行',
+      cb.includes('综合概览') && cb.includes('评分明细') && cb.includes('关键指标')
+      && cb.includes('Σ 贡献分') && cb.includes('= 卡片上的评分'));
+  chk('对比列数 = 选中只数', (cb.match(/<th><span class="nm">/g)||[]).length===CMP.length);
+  const sel = CMP.map(c=>D.funds.find(f=>f.code===c));
+  chk('契约字段齐备：raw_score/earned_weight/weights',
+      sel.every(f=>f.raw_score!=null && f.earned_weight!=null)
+      && Object.keys((D.pools||{})[sel[0].category||'short_bond'].weights||{}).length>0);
+  if (sel.every(f=>f.raw_score!=null && f.earned_weight)) {
+    chk('校验行复算 = 卡片评分',
+        sel.every(f=>Math.abs(f.raw_score*100/f.earned_weight - f.score) < 0.02));
+  }
+  chk('复制文本表非空', cmpTSV(sel, null, 0).length > 40);
+  closeCmp();
+  switchTab('long_bond');
+  chk('切池清空对比选择（跨池不可比）', CMP.length===0 && $('cmp-bar').hidden);
+  switchTab('short_bond');
+} else {
+  chk('榜内样本 <2 只：对比断言跳过（合法）', true);
+}
 
 console.log(fail ? 'SMOKE FAIL: '+fail : 'SMOKE PASS');
 process.exit(fail);
