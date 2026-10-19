@@ -990,22 +990,60 @@ function drawTable(cv){                       // 三池指标对比表（公众�
   g.fillText('数据来自公开净值回测 ｜ 历史业绩不代表未来，不构成投资建议', x0 + innerW/2, 594);
 }
 
+function drawWxCover(cv){                     // 公众号头条封面 1080×460（2.35:1），与小红书封面同文案同色板
+  cv.width = 1080; cv.height = 460;
+  const W = cv.width, PAD = 48;
+  const g = cv.getContext('2d');
+  const ng = (D && D.namegap) || {top:[]}; const t0 = (ng.top || [])[0] || {};
+  const ACCENT = '#e05a3c';
+  const bv = ng.base_vol != null ? (ng.base_vol*100).toFixed(2)+'%' : '—';
+  const bt = (ng.base_vol && t0.vol_5y) ? Math.round(t0.vol_5y/ng.base_vol) : 0;
+  g.fillStyle = PA.bg; g.fillRect(0,0,W,460);
+  g.fillStyle = PA.pillBg; _rr(g, PAD, 40, 300, 52, 26); g.fill();
+  g.fillStyle = PA.pillTx; g.font = '700 24px sans-serif'; g.textAlign = 'center';
+  g.fillText('本周更新 · 全量实测', PAD+150, 74); g.textAlign = 'left';
+  g.fillStyle = PA.mut; g.font = '700 28px sans-serif'; g.fillText('债基筛选，我更看', PAD, 148);
+  g.fillStyle = PA.dark; g.font = '800 84px sans-serif';
+  g.fillText('名字叫稳健', PAD, 238);
+  const a = '不一定', b = '真的稳';
+  const wa = g.measureText(a).width, wb = g.measureText(b).width;
+  g.fillText(a, PAD, 336);
+  g.fillStyle = ACCENT; _rr(g, PAD+wa-12, 266, wb+24, 84, 12); g.fill();
+  g.fillStyle = '#ffffff'; g.fillText(b, PAD+wa, 336);
+  g.fillStyle = PA.mut; g.font = '400 21px sans-serif';
+  g.fillText('近5年年化波动中位 '+bv+'，是反例的 '+bt+' 倍', PAD, 388);
+  g.fillStyle = '#9a938a'; g.font = '700 26px sans-serif';
+  g.fillText('中短债池 ｜ 长债池 ｜ 固收+ 池', PAD, 428);
+  const rx = 648, rw = W-PAD-rx, rh = 170, pad = 28;
+  const card = (y) => { g.fillStyle = PA.card; _rr(g, rx, y, rw, rh, 16); g.fill();
+                        g.lineWidth = 2; g.strokeStyle = PA.bord; g.stroke(); };
+  card(40);
+  g.fillStyle = PA.dark; g.font = '700 26px sans-serif'; g.fillText('纯债大类', rx+pad, 88);
+  _spark(g, rx+pad, 104, rw-pad*2, 52, '#12a150', false);
+  g.fillStyle = PA.mut; g.font = '400 21px sans-serif'; g.fillText('近5年年化波动 中位 '+bv, rx+pad, 192);
+  card(226);
+  g.fillStyle = PA.dark; g.font = '700 26px sans-serif'; g.fillText('名字带「稳」的', rx+pad, 274);
+  _spark(g, rx+pad, 290, rw-pad*2, 52, '#e05a3c', true);
+  g.fillStyle = PA.mut; g.font = '400 21px sans-serif';
+  g.fillText(t0.vol_5y ? ('近5年年化波动 '+(t0.vol_5y*100).toFixed(1)+'%') : '实测见内文', rx+pad, 378);
+}
+
 function renderSpecial(kind, sizeKey){         // 挂到导出页外壳（下载按钮/尺寸切换复用）
   window.__EXP_SIZE = EXPORT_SIZES[sizeKey]?sizeKey:'xhs';
-  const OWN = {cover:{w:1080,h:1440}, table:{w:1080,h:660}};
+  const OWN = {cover:{w:1080,h:1440}, table:{w:1080,h:660}, wxcov:{w:1080,h:460}};
   const S = OWN[kind] || EXPORT_SIZES[window.__EXP_SIZE];
   document.body.innerHTML=''; document.body.classList.add('exp');
   const wrap=document.createElement('div'); wrap.className='exp-wrap';
   wrap.innerHTML='<div class="exp-bar"><span class="t">'+(kind==='cover'?'封面 · 反常识':'配图 · 名字vs实际波动')+'</span></div>'
    +'<div class="exp-bar exp-opts">'
-   +'<button data-kind="cover">封面</button><button data-kind="namegap">名字vs实际</button><button data-kind="basis">分类依据</button><button data-kind="table">指标表</button>'
+   +'<button data-kind="cover">封面</button><button data-kind="namegap">名字vs实际</button><button data-kind="basis">分类依据</button><button data-kind="table">指标表</button><button data-kind="wxcov">公众号封面</button>'
    +'<span style="flex:1 0 0"></span>'
    +'<button data-size="xhs">小红书 2:3</button><button data-size="wide">公众号 3:2</button>'
    +'<button class="dl">下载 PNG</button></div><div class="exp-hint"></div>';
   const cv=document.createElement('canvas'); cv.width=S.w; cv.height=S.h;
   cv.style.cssText='width:100%;height:auto;display:block;'+(window.devicePixelRatio>1?'image-rendering:auto;':'');
   wrap.appendChild(cv); document.body.appendChild(wrap);
-  const paint=()=>{ (kind==='cover'?drawCover:kind==='basis'?drawBasis:kind==='table'?drawTable:drawNameGap)(cv);
+  const paint=()=>{ (kind==='cover'?drawCover:kind==='basis'?drawBasis:kind==='table'?drawTable:kind==='wxcov'?drawWxCover:drawNameGap)(cv);
     wrap.querySelector('.exp-hint').textContent = S.w+'×'+S.h; };
   wrap.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>location.search='?export='+b.dataset.kind+'&size='+window.__EXP_SIZE);
   wrap.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{ window.__EXP_SIZE = b.dataset.size;
@@ -1023,7 +1061,7 @@ function initExport(){
     pool = q.get('export'); sizeKey = q.get('size'); rows = parseInt(q.get('rows') || '', 10) || null;
     bare = q.get('bare') === '1';
   } catch (e) { return false; }
-  if (pool === 'cover' || pool === 'namegap' || pool === 'basis' || pool === 'table') return renderSpecial(pool, sizeKey);
+  if (['cover','namegap','basis','table','wxcov'].indexOf(pool) >= 0) return renderSpecial(pool, sizeKey);
   if (!pool || !(D && D.funds)) return false;
   if (!EXPORT_SIZES[sizeKey]) sizeKey = 'xhs';
   const pools = exportPools();
