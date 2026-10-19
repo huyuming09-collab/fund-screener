@@ -316,7 +316,9 @@ CARD = {
     "categories": [   # 分类 tab（启用的分类由 PIPELINE.pools 供给数据）
         {"id": "short_bond", "name": "中短债", "enabled": True},
         {"id": "long_bond", "name": "长债", "enabled": True},
-        {"id": "fixed_plus", "hidden": True, "name": "固收+", "enabled": True},
+        # 固收+ 页签：2026-10-19 应用户要求打开（查看池内对比用）；筛选规则核验未完成前
+        # 仍不对外发榜。恢复隐藏只需把 hidden 改回 True（STATUS 第 2 节同步）。
+        {"id": "fixed_plus", "hidden": False, "name": "固收+", "enabled": True},
         {"id": "index", "name": "指数", "enabled": False},
     ],
 }

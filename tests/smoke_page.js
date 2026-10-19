@@ -139,10 +139,10 @@ chk('data.js 契约 n_screened/top_n 字段保留', D.n_screened != null && D.to
 const tabsHTML = document.getElementById('tabs').innerHTML;
 const nEnabled  = D.categories.filter(c=>c.enabled).length;
 const nDisabled = D.categories.filter(c=>!c.enabled).length;
-// hidden 分类（2026-10-19 固收+ 暂不显示，规则待核验）不渲染 tab，故跳过
-  // hidden 分类（2026-10-19 固收+ 暂不显示，规则待核验）不渲染 tab → 只数可见分类
+// hidden 分类不渲染 tab（当前 0 个 hidden；断言保留以守未来隐藏开关）
+  // hidden 分类不渲染 tab → 只数可见分类
   const visCats = D.categories.filter(c=>!(c&&c.hidden));
-  chk('可见分类渲染 tab、hidden 分类不渲染（固收+ 暂隐藏）',
+  chk('可见分类渲染 tab、hidden 分类不渲染',
       visCats.every(c => tabsHTML.includes(c.name))
       && D.categories.filter(c=>c&&c.hidden).every(c => !tabsHTML.includes(c.name)));
 chk('禁用分类不可点击（toast 提示）', (tabsHTML.match(/toast\\('/g)||[]).length === nDisabled);
