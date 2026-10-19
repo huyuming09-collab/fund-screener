@@ -110,13 +110,19 @@ fundscorer/
   batch.py        批量抓取/持久化：nav_full 固化、池指标强制重算（refresh_pool_metrics）
   pipeline.py     ★ 周更管线：逐池刷新 → 筛选 → 筛后评分 → 每池 TOP20 → CSV/top20.json/data.js 原子导出
   cards.py        卡片数据契约：榜单 → 详情字段 + 净值曲线采样 → JSON（top20.json / web/data.js）
-  backtest.py     历史回测与因素分析
+  indexfund.py    ⊘ 休眠模块：债券指数型基金分类评分。由 config.INDEX["enabled"] 总开关控制（现为 False），
+                  关闭时 universe 排除指数型、F10 复判跳过、pipeline 不走指数候选分支；代码与测试均保留，可随时回开
+  backtest.py     ⚙ 研究脚本：历史回测与因素分析（docs/05），不接入周更主链
+  backtest2.py    ⚙ 研究脚本：目标函数预注册回测（docs/06），依赖 backtest.py 的面板，不接入主链
+  sources/        外部一次性采集：amac_nonmoney.py（非货规模）、company_scale.py（公司非货规模映射）
 tests/            单元测试（不依赖网络，合成数据验证口径；含 score_only 等价性测试）
                   + smoke_page.js（node DOM 冒烟：渲染/环比/多池 tab 切换）
-docs/             评分指南 V5、短债筛选标准（07）、周更与卡片（08）、长债筛选与评分（09 摘要）、固收+筛选与评分（10）、三池重构与指数基金口径（11）
-                  回测/核验细节文档（04 全市场核验、05 因素回测、06 目标函数回测、09 完整版）不随仓库发布，
-                  完整推演在公众号「班马成长日记」，本仓库只留结论级内容
-web/              周榜网页：index.html（响应式；分类 tab 可切换 中短债/长债/固收+/指数）+ data.js（pipeline 生成）
+docs/             项目结构约定（00）、评分指南 V5（01）、GitHub 项目调研（03）、短债筛选标准（07）、
+                  周更与卡片（08）、长债筛选与评分（09 摘要）、固收+筛选与评分（10）、三池重构与指数基金口径（11）
+                  另有三份**不随仓库发布**的深度推演：04 全市场核验、05 因素回测、06 目标函数回测、09 完整版 ——
+                  它们存放在本机 `运营/素材库/方法论/`（该目录已 gitignore），完整推演在公众号「班马成长日记」
+web/              周榜网页：index.html（响应式；分类 tab 可切换 中短债/长债/固收+）+ data.js（pipeline 生成）
+                  社媒导出仅**榜单图**：`?export=<pool>&size=xhs|wide`，以及 `?export=all` 全分类工作台
 scripts/          weekly_update.sh（周更 + 自动 git push，crontab 调用）
                   content_digest.py（周更 → 运营素材包：要点/小红书骨架/公众号骨架，**输出仅本地**）
 .github/workflows/  deploy-pages.yml（push 即把 web/ 部署到 GitHub Pages）
