@@ -299,8 +299,12 @@ def _namegap(n: int = 4) -> dict:
         rest = nm[idx:].strip() if idx >= 1 else core
         rest = re.sub(r"[A-EＡ-Ｅ]\s*$", "", rest)
         tag = next((v2 for k2, v2 in TYPE_TAG.items() if k2 in tt), (tt[:6] or "债类"))
+        # 合规脱敏优先级：机构量级描述（人工维护）> 类型标签兜底；均不输出公司名
+        SENS = {"稳健增长混合": "头部机构 · 稳健增长混合", "稳宏债券": "老牌机构 · 稳宏债券",
+                "稳健配置混合": "大厂 · 稳健配置混合", "恒益稳健混合": "中型机构 · 恒益稳健混合"}
+        label = next((SENS[k] for k in SENS if k in nm), f"{tag} · {rest}")
         seen.add(core)
-        rows.append({"label": f"{tag} · {rest}", "vol_5y": round(float(v), 4),
+        rows.append({"label": label, "vol_5y": round(float(v), 4),
                      "mdd_5y": round(float(m), 4),
                      "ret_5y": None if r.get("ret_5y") is None else round(float(r["ret_5y"]), 4)})
     rows.sort(key=lambda x: -x["vol_5y"])
