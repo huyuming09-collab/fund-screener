@@ -227,7 +227,7 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         "sharpe_rf": C.SHARPE_RF,
         "categories": C.CARD["categories"],
         # "名字 vs 实际波动"配图数据（?export=namegap）：全量快照里名字带"稳"但实际波动最大的若干只
-        "namegap": _namegap(snapshot),
+        "namegap": _namegap(),
         "funnel": funnel or ps.get("funnel", {}),
         "pools": pool_stats or {},
         "funds": funds,
@@ -255,26 +255,54 @@ def write_payload(payload: dict, json_path, js_path=None) -> None:
         tmpj = Path(str(wp) + ".tmp")
         tmpj.write_text("window.CARD_DATA = " + compact + ";\n", encoding="utf-8")
         tmpj.replace(wp)
-def _namegap(snapshot: dict, n: int = 4) -> dict:
-    """封面配图「名字叫稳健，不一定真的稳」的实证数据。
+def _namegap(n: int = 4) -> dict:
+    """封面配图「名字带稳的，实际有多不稳」的实证数据。
 
-    从当期全量指标快照里挑名字含"稳/安心"、且有 5 年波动数据的债基，按波动降序取前 n，
-    外加中短债池（short_bond）同期波动中位数作对照条。随每周数据自动更新，不写死。
+    从全量指标缓存（data/metrics_cache.pkl，非榜单子集）里挑名字含"稳/双利/恒益/安心"
+    的债券类+偏债类产品，按**年化波动**降序取前 n；对照条取中短债池同期波动中位数。
+
+    合规：**不输出公司名**——展示为「类型标签 · 名称去掉公司前缀」，如
+    「偏债混合 · 稳健增长混合」，保留"名字带稳"的反例属性但不指向具体产品；
+    同一基金的 A/C/D/E 份额去重。每周随缓存自动更新，不写死。
     """
-    rows, base = [], []
-    for r in snapshot.values():
-        nm, v = r.get("name") or "", r.get("vol_5y")
-        if v is None or r.get("mdd_5y") is None:
+    import pickle
+    import re
+    from pathlib import Path
+    src = Path(__file__).resolve().parent.parent / "data" / "metrics_cache.pkl"
+    recs = {}
+    if src.exists():
+        try:
+            raw = pickle.load(open(src, "rb"))
+            recs = raw if isinstance(raw, dict) else {r.get("code"): r for r in raw}
+        except Exception:
+            recs = {}
+    KW = ("稳", "双利", "恒益", "安心")
+    TYPE_TAG = {"混合型-偏债": "偏债混合", "债券型-混合二级": "二级债基", "债券型-信用债": "信用债",
+                "债券型-利率债": "利率债", "债券型-长债": "长债", "债券型-中短债": "中短债",
+                "债券型-一级": "一级债基", "混合型-偏债混合": "偏债混合"}
+    seen, rows, base = set(), [], []
+    for r in recs.values():
+        nm, v, m = r.get("name") or "", r.get("vol_5y"), r.get("mdd_5y")
+        if v is None or m is None or not nm:
             continue
-        if "指数" in nm or "FOF" in nm or "货" in nm:
+        tt = r.get("type_text") or ""
+        if any(x in nm for x in ("指数", "FOF", "货")) or any(x in tt for x in ("指数", "FOF")):
             continue
-        if r.get("pool") == "short_bond" or "中短债" in nm or "短债" in nm:
+        if "中短债" in nm or "短债" in nm:
             base.append(float(v))
-        if any(k in nm for k in ("稳", "安心", "双利", "恒益")):
-            rows.append({"name": nm[:20], "vol_5y": round(float(v), 4),
-                         "mdd_5y": round(float(r["mdd_5y"]), 4),
-                         "ret_5y": None if r.get("ret_5y") is None else round(float(r["ret_5y"]), 4)})
+        if not any(k in nm for k in KW):
+            continue
+        core = re.sub(r"[A-EＡ-Ｅ]\s*$", "", nm)          # 去份额后缀做去重与展示
+        if core in seen:
+            continue
+        idx = next((nm.find(k) for k in KW if nm.find(k) >= 1), -1)
+        rest = nm[idx:].strip() if idx >= 1 else core
+        rest = re.sub(r"[A-EＡ-Ｅ]\s*$", "", rest)
+        tag = next((v2 for k2, v2 in TYPE_TAG.items() if k2 in tt), (tt[:6] or "债类"))
+        seen.add(core)
+        rows.append({"label": f"{tag} · {rest}", "vol_5y": round(float(v), 4),
+                     "mdd_5y": round(float(m), 4),
+                     "ret_5y": None if r.get("ret_5y") is None else round(float(r["ret_5y"]), 4)})
     rows.sort(key=lambda x: -x["vol_5y"])
     base.sort()
-    return {"top": rows[:n],
-            "base_vol": (round(base[len(base) // 2], 4) if base else None)}
+    return {"top": rows[:n], "base_vol": round(base[len(base) // 2], 4) if base else None}

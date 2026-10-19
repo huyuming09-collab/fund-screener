@@ -751,8 +751,8 @@ function drawCover(cv){                        // 封面：反常识主标题 + 
   const g = cv.getContext('2d'); const ng = (D && D.namegap) || {top:[]};
   g.fillStyle = PA.bg; g.fillRect(0,0,W,H);
   g.fillStyle = PA.orange; _rr(g,PAD,70,W-PAD*2,80,5); g.fill();     // 与榜单图同款顶部标题条
-  g.fillStyle = PA.dark; g.font='700 44px sans-serif';
-  g.fillText('名字叫稳健，不一定真的稳', PAD+30, 128);
+  g.fillStyle = PA.dark; g.font='700 56px sans-serif';
+  g.fillText('名字叫稳健，不一定真的稳', PAD+26, 134);
   g.fillStyle = PA.pillBg; _rr(g,PAD,180,290,60,30); g.fill();       // 期数药丸
   g.fillStyle = PA.pillTx; g.font='700 32px sans-serif';
   g.fillText('本周更新 · 实测数据', PAD+26, 222);
@@ -768,12 +768,12 @@ function drawCover(cv){                        // 封面：反常识主标题 + 
   g.fillStyle=PA.dark; g.font='700 36px sans-serif';
   g.fillText(t0 ? ('「'+t0.name+'」') : '（本期数据未生成）', PAD+40, cardY+136);
   g.font='700 44px sans-serif'; g.fillStyle=PA.red;
-  g.fillText('近5年波动 '+PCT(t0&&t0.vol_5y), PAD+40, cardY+214);
+  g.fillText('近5年年化波动 '+PCT(t0&&t0.vol_5y), PAD+40, cardY+214);
   g.fillText('最大回撤 '+PCT(t0&&t0.mdd_5y), PAD+40, cardY+278);
   if (t0 && t0.ret_5y != null) g.fillText('五年年化 '+PCT(t0.ret_5y), PAD+40, cardY+342);
   g.fillStyle=PA.mut; g.font='400 30px sans-serif';
-  g.fillText('同期中短债池实际波动 '+PCT(ng.base_vol), PAD+40, cardY+418);
-  g.fillStyle=PA.mut; g.font='700 40px sans-serif';
+  g.fillText('对照：中短债池年化波动仅 '+PCT(ng.base_vol)+'，差 10 倍以上', PAD+40, cardY+418);
+  g.fillStyle='#6b6459'; g.font='700 46px sans-serif';
   g.fillText('中短债池  ｜  长债池  ｜  固收+ 池', PAD, H-160);
   g.font='400 26px sans-serif';
   g.fillText('数据来自公开净值 · 历史业绩不代表未来，不构成投资建议', PAD, H-90);
@@ -784,29 +784,32 @@ function drawNameGap(cv){                      // 名字带「稳」的，实际
   g.fillStyle=PA.bg; g.fillRect(0,0,W,H);
   g.fillStyle=PA.orange; _rr(g,PAD,70,W-PAD*2,80,5); g.fill();
   g.fillStyle=PA.dark; g.font='700 44px sans-serif'; g.fillText('名字带「稳」的，实际有多不稳',PAD+30,128);
-  g.fillStyle=PA.mut; g.font='400 32px sans-serif'; g.fillText('条形 = 近5年波动，越长越颠',PAD,300);
-  const rows=(ng.top||[]), top=370, rowH=Math.min(250,(H-top-320)/Math.max(rows.length,1));
+  g.fillStyle=PA.mut; g.font='400 32px sans-serif'; g.fillText('条形 = 近5年年化波动，越长越颠',PAD,300);
+  g.fillStyle=PA.dark; g.font='400 26px sans-serif';
+  g.fillText('以下均为名字含「稳」、常被当作稳健债基买入的产品，',PAD,352);
+  g.fillText('实际多为偏债混合/二级债基，波动远超纯债',PAD,392);
+  const rows=(ng.top||[]), top=430, rowH=Math.min(250,(H-top-320)/Math.max(rows.length,1));
   const barMax=W-PAD*2-260, sc=barMax/0.20;
   rows.forEach((r,i)=>{
     const y=top+i*rowH; g.fillStyle=PA.card; _rr(g,PAD,y,W-PAD*2,rowH-30,16); g.fill();
     g.lineWidth=2; g.strokeStyle=PA.bord; g.stroke();
-    g.fillStyle=PA.dark; g.font='700 34px sans-serif'; g.fillText(r.name,PAD+34,y+56);
+    g.fillStyle=PA.dark; g.font='700 34px sans-serif'; g.fillText(r.label,PAD+34,y+56);
     g.fillStyle=PA.orange; _rr(g,PAD+34,y+90,Math.max(r.vol_5y*sc,10),44,12); g.fill();
     g.fillStyle=PA.dark; g.font='700 32px sans-serif';
-    g.fillText('波动 '+PCT(r.vol_5y), PAD+50+Math.max(r.vol_5y*sc,10), y+124);
-    g.fillStyle=(r.ret_5y!=null && r.ret_5y<0)?PA.red:PA.green; g.font='700 30px sans-serif';
-    g.fillText('五年年化 '+(r.ret_5y==null?'—':PCT(r.ret_5y)),PAD+34,y+190);
+    g.fillText('年化波动 '+PCT(r.vol_5y), PAD+50+Math.max(r.vol_5y*sc,10), y+124);
+    g.fillStyle=(r.ret_5y!=null && r.ret_5y<0)?PA.red:PA.mut; g.font='400 26px sans-serif';
+    g.fillText('五年年化 '+(r.ret_5y==null?'—':PCT(r.ret_5y))+'（参考）',PAD+34,y+186);
   });
   const by=top+rows.length*rowH+10;
   g.fillStyle='#fff3e8'; _rr(g,PAD,by,W-PAD*2,200,16); g.fill();
   g.lineWidth=2; g.strokeStyle=PA.bord; g.stroke();
-  g.fillStyle=PA.orange; g.font='700 34px sans-serif'; g.fillText('对照：中短债池实际波动',PAD+34,by+56);
+  g.fillStyle=PA.orange; g.font='700 34px sans-serif'; g.fillText('对照：中短债池年化波动仅 0.4%~1.5%',PAD+34,by+56);
   g.fillStyle=PA.green; _rr(g,PAD+34,by+90,Math.max((ng.base_vol||0.0095)*sc,10),44,12); g.fill();
   g.fillStyle=PA.dark; g.font='700 32px sans-serif';
   g.fillText(PCT(ng.base_vol),PAD+50+Math.max((ng.base_vol||0.0095)*sc,10),by+124);
   g.fillStyle=PA.mut; g.font='400 30px sans-serif'; g.fillText('名字能换，走势换不了',PAD+34,by+176);
   g.font='400 26px sans-serif';
-  g.fillText('数据来自公开净值 · 历史业绩不代表未来，不构成投资建议',PAD,H-70);
+  g.fillText('年化波动：数值越大，涨跌震荡越剧烈  ｜  数据来自公开净值，历史业绩不代表未来',PAD,H-70);
 }
 function renderSpecial(kind, sizeKey){         // 挂到导出页外壳（下载按钮/尺寸切换复用）
   window.__EXP_SIZE = EXPORT_SIZES[sizeKey]?sizeKey:'xhs';
