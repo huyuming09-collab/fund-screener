@@ -226,6 +226,8 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         "has_prev": ps.get("has_prev", prev_ranks is not None),
         "sharpe_rf": C.SHARPE_RF,
         "categories": C.CARD["categories"],
+        # "名字 vs 实际波动"配图数据（?export=namegap）：全量快照里名字带"稳"但实际波动最大的若干只
+        "namegap": _namegap(snapshot),
         "funnel": funnel or ps.get("funnel", {}),
         "pools": pool_stats or {},
         "funds": funds,
@@ -253,3 +255,26 @@ def write_payload(payload: dict, json_path, js_path=None) -> None:
         tmpj = Path(str(wp) + ".tmp")
         tmpj.write_text("window.CARD_DATA = " + compact + ";\n", encoding="utf-8")
         tmpj.replace(wp)
+def _namegap(snapshot: dict, n: int = 4) -> dict:
+    """封面配图「名字叫稳健，不一定真的稳」的实证数据。
+
+    从当期全量指标快照里挑名字含"稳/安心"、且有 5 年波动数据的债基，按波动降序取前 n，
+    外加中短债池（short_bond）同期波动中位数作对照条。随每周数据自动更新，不写死。
+    """
+    rows, base = [], []
+    for r in snapshot.values():
+        nm, v = r.get("name") or "", r.get("vol_5y")
+        if v is None or r.get("mdd_5y") is None:
+            continue
+        if "指数" in nm or "FOF" in nm or "货" in nm:
+            continue
+        if r.get("pool") == "short_bond" or "中短债" in nm or "短债" in nm:
+            base.append(float(v))
+        if any(k in nm for k in ("稳", "安心", "双利", "恒益")):
+            rows.append({"name": nm[:20], "vol_5y": round(float(v), 4),
+                         "mdd_5y": round(float(r["mdd_5y"]), 4),
+                         "ret_5y": None if r.get("ret_5y") is None else round(float(r["ret_5y"]), 4)})
+    rows.sort(key=lambda x: -x["vol_5y"])
+    base.sort()
+    return {"top": rows[:n],
+            "base_vol": (round(base[len(base) // 2], 4) if base else None)}
