@@ -867,6 +867,80 @@ function drawNameGap(cv){                     // 实锤图：共享坐标轴 + �
   g.fillText('年化波动：数值越大，净值涨跌震荡越剧烈',PAD,H-86);
   g.fillText('数据来源：公开净值，历史业绩不代表未来',PAD,H-52);
 }
+function drawBasis(cv){                       // 图3 分类依据佐证图（一次性快照 2026-10-19，不随周更）
+  const W = cv.width, H = cv.height, PAD = 80;
+  const g = cv.getContext('2d');
+  const C1='#ffc46b', C2='#ff6a00', C3='#d0392e';   // 中短债 / 长债 / 固收+
+  const HIST=[[41,27,0],[273,64,4],[162,263,2],[65,373,4],[11,258,8],[2,113,4],[0,69,11],[0,30,9],[0,29,15],[0,40,34],[0,3,51],[0,3,48],[0,1,67],[1,1,84],[0,2,81],[0,1,53],[0,1,75],[0,0,73],[0,0,60],[0,0,59],[0,2,77],[0,0,39],[0,0,43],[1,0,37],[0,0,36],[0,0,24],[0,1,27],[0,2,27],[0,0,28],[0,0,17],[0,0,20],[0,2,278]];
+  const P=[{n:'中短债池',c:C1,cnt:556, med:0.43, win:88.5,mdd:0.8,ret:2.63},
+           {n:'长债池', c:C2,cnt:1285,med:0.94, win:80.3,mdd:1.6,ret:3.15},
+           {n:'固收+池',c:C3,cnt:1395,med:4.82, win:54.1,mdd:9.1,ret:1.99}];
+  const GAP=[1.71,2.74], NTOT=3236;
+  g.fillStyle = PA.bg; g.fillRect(0,0,W,H);
+  g.fillStyle = PA.orange; _rr(g,PAD,64,W-PAD*2,66,14); g.fill();
+  g.fillStyle='#ffffff'; g.font='700 40px sans-serif'; g.textAlign='center';
+  g.fillText('为什么这么分池 —— 数据自己长成三档', W/2, 109); g.textAlign='left';
+  g.fillStyle = PA.mut; g.font='400 25px sans-serif';
+  g.fillText('近5年年化波动分布 · 柱高＝基金数量 · 0.25% 一档 · 样本 n='+NTOT, PAD, 178);
+  const c1y=212, c1h=556;
+  g.fillStyle=PA.card; _rr(g,PAD,c1y,W-PAD*2,c1h,18); g.fill();
+  g.lineWidth=2; g.strokeStyle=PA.bord; g.stroke();
+  P.forEach((p,i)=>{ const x=PAD+36+i*286;
+    g.fillStyle=p.c; _rr(g,x,252,22,22,5); g.fill();
+    g.fillStyle=PA.dark; g.font='700 24px sans-serif'; g.fillText(p.n, x+32, 270);
+    g.fillStyle=PA.mut; g.font='400 21px sans-serif'; g.fillText('n='+p.cnt+' · 中位 '+p.med.toFixed(2)+'%', x+32, 300); });
+  const gx0=PAD+72, gx1=W-PAD-40, gy0=c1y+122, gy1=c1y+c1h-96;
+  const NB=HIST.length, span=0.25*NB, bx=(v)=>gx0+(v/span)*(gx1-gx0);
+  const tot=HIST.map(h2=>h2[0]+h2[1]+h2[2]), mx=Math.max.apply(null,tot), step=(gx1-gx0)/NB;
+  g.font='400 19px sans-serif'; g.fillStyle=PA.mut;
+  [0,200,400].forEach(v=>{ const y=gy1-(gy1-gy0)*v/mx;
+    g.strokeStyle=PA.bord; g.lineWidth=1; g.beginPath(); g.moveTo(gx0,y); g.lineTo(gx1,y); g.stroke();
+    g.fillText(String(v), gx0-56, y+7); });
+  g.fillStyle='rgba(255,106,0,0.07)'; g.fillRect(bx(GAP[0]),gy0,bx(GAP[1])-bx(GAP[0]),gy1-gy0);
+  g.strokeStyle=PA.orange; g.lineWidth=2; g.setLineDash([6,6]);
+  [bx(GAP[0]),bx(GAP[1])].forEach(x=>{g.beginPath(); g.moveTo(x,gy0); g.lineTo(x,gy1); g.stroke();});
+  g.setLineDash([]);
+  HIST.forEach((h2,i)=>{ let y=gy1;
+    h2.forEach((v,k)=>{ const hh=(gy1-gy0)*v/mx;
+      if(hh>0){ g.fillStyle=[C1,C2,C3][k]; g.fillRect(gx0+i*step+1, y-hh, step-2, hh); } y-=hh; }); });
+  g.fillStyle=PA.mut; g.font='400 20px sans-serif'; g.textAlign='center';
+  for(let v=0; v<=8; v++) g.fillText(v+'%', bx(v), gy1+32);
+  g.fillStyle=PA.orange; g.font='700 23px sans-serif';
+  g.fillText('空档 1.71% → 2.74%', (bx(GAP[0])+bx(GAP[1]))/2, gy0-10);
+  g.fillStyle=PA.dark; g.font='700 22px sans-serif';
+  g.fillText('谷底仅 39 只', bx(1.875), gy1-16);
+  g.fillStyle=PA.mut; g.font='400 20px sans-serif'; g.textAlign='left';
+  g.fillText('纯债区每档 270~440 只，空档里只有几十只，固收+区 40~80 只', PAD+36, c1y+c1h-22);
+  const c2y=c1y+c1h+40, c2h=604;
+  g.fillStyle=PA.card; _rr(g,PAD,c2y,W-PAD*2,c2h,18); g.fill(); g.stroke();
+  g.fillStyle=PA.dark; g.font='700 30px sans-serif';
+  g.fillText('三池关键指标对比（均为中位数）', PAD+36, c2y+62);
+  const G=[['月度胜率（近5年）', [88.5,80.3,54.1], 100, 1, '断层 −26pp'],
+           ['最大回撤（近5年）', [0.8,1.6,9.1],      10, 1, '×5.7'],
+           ['五年年化',         [2.63,3.15,1.99], 3.5, 2, '反而更低 −1.2pp']];
+  const bX0=PAD+176, bw=W-PAD-176-bX0;
+  G.forEach((grp,gi)=>{ const y0=c2y+112+gi*160;
+    g.fillStyle=PA.dark; g.font='700 26px sans-serif'; g.textAlign='left';
+    g.fillText(grp[0], PAD+36, y0);
+    g.font='700 22px sans-serif'; const cw=g.measureText(grp[4]).width+30;
+    g.fillStyle=PA.pillBg; _rr(g, W-PAD-40-cw, y0-24, cw, 34, 17); g.fill();
+    g.fillStyle=PA.pillTx; g.textAlign='center';
+    g.fillText(grp[4], W-PAD-40-cw/2, y0+2); g.textAlign='left';
+    grp[1].forEach((v,pi)=>{ const y=y0+20+pi*40;
+      g.fillStyle=PA.mut; g.font='400 22px sans-serif'; g.fillText(P[pi].n, PAD+36, y+22);
+      const wpx=bw*Math.min(v/grp[2],1);
+      g.fillStyle=P[pi].c; _rr(g, bX0, y+3, wpx, 26, 6); g.fill();
+      g.fillStyle=PA.dark; g.font='700 23px sans-serif';
+      g.fillText(v.toFixed(grp[3])+'%', bX0+wpx+12, y+24); });
+  });
+  const fy=c2y+c2h+42;
+  g.fillStyle=PA.mut; g.font='400 20px sans-serif'; g.textAlign='left';
+  g.fillText('第一大档内部按持仓期限拆为中短债池、长债池：两者波动区间重叠（0.27~0.80% 与 0.59~1.71%），', PAD, fy);
+  g.fillText('故分开评分、分开排名，分数不可跨池比较。', PAD, fy+34);
+  g.fillStyle='#b9b2a8'; g.font='400 18px sans-serif';
+  g.fillText('口径：近5年年化波动、净值≥5年且历史完整、n=3236 ｜ 公开净值 ｜ 历史业绩不代表未来，不构成投资建议', PAD, fy+78);
+}
+
 function renderSpecial(kind, sizeKey){         // 挂到导出页外壳（下载按钮/尺寸切换复用）
   window.__EXP_SIZE = EXPORT_SIZES[sizeKey]?sizeKey:'xhs';
   const S = kind==='cover' ? {w:1080,h:1440} : EXPORT_SIZES[window.__EXP_SIZE];
@@ -874,14 +948,14 @@ function renderSpecial(kind, sizeKey){         // 挂到导出页外壳（下载
   const wrap=document.createElement('div'); wrap.className='exp-wrap';
   wrap.innerHTML='<div class="exp-bar"><span class="t">'+(kind==='cover'?'封面 · 反常识':'配图 · 名字vs实际波动')+'</span></div>'
    +'<div class="exp-bar exp-opts">'
-   +'<button data-kind="cover">封面</button><button data-kind="namegap">名字vs实际</button>'
+   +'<button data-kind="cover">封面</button><button data-kind="namegap">名字vs实际</button><button data-kind="basis">分类依据</button>'
    +'<span style="flex:1 0 0"></span>'
    +'<button data-size="xhs">小红书 2:3</button><button data-size="wide">公众号 3:2</button>'
    +'<button class="dl">下载 PNG</button></div><div class="exp-hint"></div>';
   const cv=document.createElement('canvas'); cv.width=S.w; cv.height=S.h;
   cv.style.cssText='width:100%;height:auto;display:block;'+(window.devicePixelRatio>1?'image-rendering:auto;':'');
   wrap.appendChild(cv); document.body.appendChild(wrap);
-  const paint=()=>{ (kind==='cover'?drawCover:drawNameGap)(cv);
+  const paint=()=>{ (kind==='cover'?drawCover:kind==='basis'?drawBasis:drawNameGap)(cv);
     wrap.querySelector('.exp-hint').textContent = S.w+'×'+S.h; };
   wrap.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>location.search='?export='+b.dataset.kind+'&size='+window.__EXP_SIZE);
   wrap.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{ window.__EXP_SIZE = b.dataset.size;
@@ -899,7 +973,7 @@ function initExport(){
     pool = q.get('export'); sizeKey = q.get('size'); rows = parseInt(q.get('rows') || '', 10) || null;
     bare = q.get('bare') === '1';
   } catch (e) { return false; }
-  if (pool === 'cover' || pool === 'namegap') return renderSpecial(pool, sizeKey);
+  if (pool === 'cover' || pool === 'namegap' || pool === 'basis') return renderSpecial(pool, sizeKey);
   if (!pool || !(D && D.funds)) return false;
   if (!EXPORT_SIZES[sizeKey]) sizeKey = 'xhs';
   const pools = exportPools();
