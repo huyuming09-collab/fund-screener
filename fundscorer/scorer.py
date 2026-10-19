@@ -24,16 +24,109 @@ SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "data" / "snapshots"
 
 
 # ================================================================ R0 分类
-def classify(f10: dict, nav_df: pd.DataFrame) -> str:
-    """返回 'short_bond' | 'long_bond' | 'fixed_plus'。
+# ---- 债券指数分池（跟踪标的久期） ----
+# 依据抽样实测（151 只债券指数，2026-10-19）：短端标的（1-3年/短融/同业存单）近5年波动
+# p50 0.65%、p90 0.79%；长端标的（1-5年/3-5年/7-10年/总财富）p50 1.21%、p10 0.89%——
+# 两端重叠仅 0.8~0.9% 一段，故按标的久期分池即可分离；可转债指数实测波动 7.7~9.6%，不入池。
+_IDX_EXCLUDE = ("可转债", "可交换", "转债")
+# 久期区间：解析 "0-2年"/"1-3年"/"7-10年" 等写法，按区间上限判（≤3 年端、≥5 年长端）。
+# 不解析裸 "N年"（如"30年国债""5年恒定久期"）——超长/固定久期极端性由实测波动终判更稳。
+_DURATION_RNG = re.compile(r"(\d+)\s*[-~—–至]\s*(\d+)\s*年")
+# 无区间写法时的兜底关键词（与上述实测分界一致）。不含"综合/信用债"——
+# 这两类无固定久期（京津冀综合实测 0.24% 归短、农发总指数 1.39% 归长），一律交实测终判。
+_IDX_SHORT = ("短融", "短期融资券", "同业存单", "存单", "超短", "短债")
+_IDX_LONG = ("长久期", "总财富", "总指数", "中长期")
 
-    规则：合同不投股票/可转债/可交换债 且近4季平均股票仓位≤2% → 纯债；
-    纯债再按久期（名称/类型含'短债'）分池。混合一级(可转债增强)按已确认口径归固收+。
+
+def _duration_pool(text: str) -> str | None:
+    """按跟踪标的久期判定债券指数归池。None = 需实测波动终判或含转债。"""
+    if not text:
+        return None
+    if any(k in text for k in _IDX_EXCLUDE):
+        return None
+    rng = _DURATION_RNG.findall(text)
+    if rng:
+        top = max(int(b) for _a, b in rng)
+        if top <= 3:
+            return "short_bond"
+        if top >= 5:
+            return "long_bond"
+        return None                             # 上限 4 年（罕见）→ 交实测
+    if any(k in text for k in _IDX_SHORT):
+        return "short_bond"
+    if any(k in text for k in _IDX_LONG):
+        return "long_bond"
+    return None                                 # 无区间也无关键词 → 交实测
+
+
+def index_pool(name: str, benchmark: str = "") -> str | None:
+    """债券指数基金分池：跟踪基准优先，名称兜底。
+
+    指数基金买的是跟踪标的，基准才是合同口径——冲突时以基准为准；
+    新成立基金名称若无久期关键词，靠基准文本判定（不沿用历史归池结果）。
+    """
+    if benchmark:
+        r = _duration_pool(benchmark)
+        if r is not None:
+            return r
+    return _duration_pool(name)
+
+
+def _nav_vol_5y(nav_df: pd.DataFrame) -> float | None:
+    """近5年年化波动（不足5年取全部），与指标层 vol_5y 同口径（√252）。"""
+    if nav_df is None or nav_df.empty or "nav" not in nav_df.columns:
+        return None
+    idx = "date" if "date" in nav_df.columns else nav_df.columns[0]
+    r = nav_df.set_index(idx)["nav"].sort_index().pct_change().dropna()
+    if len(r) < 126:                              # 半年以下不判（新基金数据不足不下结论）
+        return None
+    end = r.index.max()
+    r5 = r[r.index > end - pd.DateOffset(years=5)]
+    return float(r5.std() * np.sqrt(252))
+
+
+def classify(f10: dict, nav_df: pd.DataFrame) -> str:
+    """返回 'short_bond' | 'long_bond' | 'fixed_plus' | EXCLUDED_POOL。
+
+    规则：
+      · 债券指数 → 跟踪标的久期分池（文本判 + 实测波动终判，见下）；
+      · 混合二级/偏债混 → 固收+；混合一级按**行为**分层（近5年波动 < 固收+下限
+        归长债池，≥ 下限才是真转债增强型 → 固收+）；
+      · 纯债 → 短债/长债按久期（名称/类型含'短债'）。
     """
     type_text = f10.get("type_text", "")
     name = f10.get("name", "")
+    if type_text.startswith("指数型"):
+        # 债券指数三步分池（新成立基金不沿用历史归池，按当时基准+净值现算）：
+        #  ① 跟踪标的久期文本判（跟踪基准优先、名称兜底）；
+        #  ② 文本判不出（亚债中国/信用债综合/恒定久期/区域综合等）→ 近5年实测波动终判
+        #     （实测分界：短端指数 p90=0.79%、长端 p10=0.89%，取 0.7% 为界）；
+        #  ③ 可转债/可交换指数**无条件**排除（不看波动）；波动超纯债行为带(≥2.5%)、
+        #     净值不足以下久期结论的 → 不入任何池。
+        bench = f10.get("benchmark", "")
+        p = index_pool(name, bench)
+        if p is not None:
+            return p
+        if any(k in (name or "") + (bench or "") for k in _IDX_EXCLUDE):
+            return EXCLUDED_POOL                  # 可转债/可交换指数：无论波动一律不入池
+        v = _nav_vol_5y(nav_df)
+        if v is None:
+            return EXCLUDED_POOL                  # 新基金净值不足，不下久期结论
+        if v < 0.007:
+            return "short_bond"
+        if v < (C.SCREENS["fixed_plus"].get("vol_5y_min") or 0.025):
+            return "long_bond"
+        return EXCLUDED_POOL                      # 波动超纯债带：可转债指数/30年超长债等
     if "混合" in type_text and "债券" in type_text:
-        # 债券型-混合一级/二级：已确认口径 → 固收+
+        # 债券型-混合二级 → 固收+；混合一级按行为分层（2026-10-19 用户确认相似属性同池）：
+        # 近5年波动 < 固收+下限(2.5%) 的属长债类行为（含少量转债但实测波动与长债无异），
+        # 放长债池参与同类比较；≥2.5% 才是真转债增强型 → 固收+。数据不足则归固收+（现口径）。
+        if type_text.endswith("混合一级"):
+            v = _nav_vol_5y(nav_df)
+            thr = C.SCREENS["fixed_plus"].get("vol_5y_min") or 0.025
+            if v is not None and v < thr:
+                return "long_bond"
+            return "fixed_plus"
         return "fixed_plus"
     if "混合" in type_text or "偏债" in type_text or "灵活" in type_text:
         # 混合型-偏债/灵活：看基准是否含股指
@@ -47,8 +140,11 @@ def classify(f10: dict, nav_df: pd.DataFrame) -> str:
     return "long_bond"
 
 
-POOL_LABEL = {"short_bond": "纯债型·短债池", "long_bond": "纯债型·中长期纯债池",
+POOL_LABEL = {"short_bond": "纯债型·中短债池", "long_bond": "纯债型·长债池",
               "fixed_plus": "固收+池"}
+# 非入池标记：净值指标照常采集，但不参与任何池的筛选/评分（可转债指数、超长债指数、
+# 净值不足以判久期的新基金）。用专门值而非抛异常，避免每周重算都被计为失败并报警。
+EXCLUDED_POOL = "excluded"
 
 
 # ================================================================ 单基金指标采集
@@ -62,7 +158,8 @@ def collect_metrics(code: str) -> dict:
 
     # 短债池用短端基准（1年以下），其余池用中债综合财富（全久期）
     bench = data.fetch_bond_index(short=(pool == "short_bond"))
-    sig_floor = C.REPAIR["sig_dd_floor"][pool]
+    # 修复分档：EXCLUDED_POOL（不入任何池）无对应档，取长债档仅为把指标算完，不参与筛选
+    sig_floor = C.REPAIR["sig_dd_floor"].get(pool) or C.REPAIR["sig_dd_floor"]["long_bond"]
 
     m = {"code": code, "name": f10.get("name", ""), "pool": pool,
          "type_text": f10.get("type_text", ""), "manager": f10.get("manager", ""),

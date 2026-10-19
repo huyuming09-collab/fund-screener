@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """周更管线：刷新数据 → 两段筛选 → 筛后评分 → TOP_N → 导出（CSV + 卡片数据）。
 
-设计要点（docs/08-周更与卡片.md，多池扩展见 docs/09-中长债筛选与评分.md）：
-  1. 按 config.PIPELINE.pools 逐池处理（短债 + 中长债），不跑全市场打分；
+设计要点（docs/08-周更与卡片.md，多池扩展见 docs/09-长债筛选与评分.md）：
+  1. 按 config.PIPELINE.pools 逐池处理（中短债 + 长债 + 固收+），不跑全市场打分；
   2. collect_all 会复用陈旧缓存 → 本管线用 batch.refresh_pool_metrics 强制重算；
   3. nav_full 此前无写入代码 → crawl 后 batch.persist_nav 固化净值；
   4. 先筛后评：score_pool(score_only=候选份额, quota_n=该池全池规模)——
@@ -25,6 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import batch, cards, config as C
+from . import indexfund as IF
 from . import screen as S
 from .scorer import score_pool
 
@@ -188,6 +189,26 @@ def refresh(pool: str, log) -> dict:
     return rm
 
 
+def _is_index(r: dict) -> bool:
+    """份额记录是否为指数基金（按跟踪标的/费率/公司规模评估，不看基金经理业绩）。"""
+    return str(r.get("type_text") or "").startswith("指数型")
+
+
+def _index_meta(idx_recs: list[dict]) -> dict:
+    """指数候选穿插所需份额级元数据：费率、跟踪基准、公司非货规模（同指数去重排序键）。"""
+    cs = batch._load_company_scale()
+    out: dict[str, dict] = {}
+    for r in idx_recs:
+        code = r.get("code")
+        scale = None
+        if cs is not None and code in cs.index:
+            scale = float(cs.loc[code])
+        out[code] = {"fee_total": r.get("fee_total"),
+                     "benchmark": r.get("benchmark") or "",
+                     "company_scale": scale}
+    return out
+
+
 def _screen_pool(pool: str, top_n: int, asof: str | None, log) -> dict:
     """单池：筛选输入 → 两段筛选 → 筛后评分 → TOP-N → 环比。
 
@@ -202,19 +223,30 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log) -> dict:
     n_missing = sum(1 for v in navs.values() if v is None)
     if n_missing:
         log(f"[警告][{tag}] {n_missing} 个份额无净值文件（S5 数据不足不放行）")
-    log(f"[2][{tag}] 读取池记录 {len(records)} 份额")
+    # 指数基金与主动债基分流（用户 2026-10-19 决议：指数不看经理业绩，只看跟踪标的/费率/规模）
+    act_recs = [r for r in records if not _is_index(r)]
+    idx_recs = [r for r in records if _is_index(r)]
+    log(f"[2][{tag}] 读取池记录 {len(records)} 份额"
+        + (f"（主动 {len(act_recs)} / 指数 {len(idx_recs)}）" if idx_recs else ""))
 
-    # ---- 3. 两段筛选（先筛） ----
-    candidates, funnel = S.screen_candidates(records, spikes, yearly, cfg)
+    # ---- 3. 两段筛选（先筛；指数侧跳过 S2/S3 经理闸） ----
+    candidates, funnel = S.screen_candidates(act_recs, spikes, yearly, cfg)
     log(f"[3][{tag}] 筛选漏斗：" + " → ".join(f"{k} {v}" for k, v in funnel.items()))
     if len(candidates) < top_n:
         log(f"[警告][{tag}] 候选 {len(candidates)} 只 < TOP{top_n}！"
             "阈值为已定方法论不自动放宽，请检查数据或评估调整 SCREEN 阈值")
+    idx_cand = None
+    if idx_recs:
+        idx_cand, idx_funnel = S.screen_candidates(
+            idx_recs, spikes, yearly, cfg, index_fund=True)
+        log(f"[3][{tag}] 指数候选漏斗：" + " → ".join(f"{k} {v}" for k, v in idx_funnel.items()))
 
     # ---- 4. 筛后评分（只评候选；分位基准=本池全池 → 与全市场分数逐位一致） ----
+    # 指数基金单独打分：其分位不参与主动榜（主动榜不与指数同池比经理指标），
+    # 分数最终会被"业绩插值"覆盖，此处仅用于取指标与星级配额。
     cand_codes = {c for codes in candidates["codes"] for c in codes}
-    quota_n = sum(1 for r in records if not r.get("insufficient_history"))
-    scored = score_pool(records, score_only=cand_codes, quota_n=quota_n)
+    quota_n = sum(1 for r in act_recs if not r.get("insufficient_history"))
+    scored = score_pool(act_recs, score_only=cand_codes, quota_n=quota_n)
     snapshot = {r["code"]: r for r in scored if "score" in r
                 and not r.get("_unscored")}
     n_ok = sum(1 for c in cand_codes if snapshot.get(c, {}).get("score_capped") is not None)
@@ -223,8 +255,46 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log) -> dict:
     if n_ok == 0:
         raise RuntimeError(f"{tag} 候选全部打分失败")
 
+    idx_rows, idx_meta = None, {}
+    if not C.INDEX.get("enabled"):
+        idx_cand = None          # 债指暂不入榜：不评分、不穿插（总开关见 config.INDEX["enabled"]，docs/11 §零）
+    if idx_cand is not None and len(idx_cand):
+        idx_codes = {c for codes in idx_cand["codes"] for c in codes}
+        idx_quota = sum(1 for r in idx_recs if not r.get("insufficient_history"))
+        idx_scored = score_pool(idx_recs, score_only=idx_codes, quota_n=idx_quota)
+        idx_snap = {r["code"]: r for r in idx_scored if "score" in r
+                    and not r.get("_unscored")}
+        # 费率/跟踪基准/公司非货规模：供"同指数≤2只"去重排序，并把公司规模
+        # 送进卡片（用户口径：同指数优先费率低+公司规模大——需可核对）
+        idx_meta = _index_meta(idx_recs)
+        for _c, _m in idx_meta.items():
+            if _m.get("company_scale") is not None:
+                idx_snap.setdefault(_c, {})["company_scale"] = _m["company_scale"]
+        snapshot.update(idx_snap)              # 详情页取指标用（build_fund 按 code 查快照）
+        idx_rows = S.rank_candidates(idx_cand, idx_snap, cfg, top_n=None)
+
     # ---- 5. TOP-N 排序截取 ----
     res = S.rank_candidates(candidates, snapshot, cfg, top_n=top_n)
+    if res.empty:
+        raise RuntimeError(f"{tag} 排序结果为空")
+
+    # ---- 5a. 指数基金穿插排名（业绩对齐主动榜、分数插值、同指数≤2只） ----
+    idx_stats = {}
+    if idx_rows is not None:
+        res, idx_stats = IF.interleave(idx_rows, res, idx_meta, top_n=top_n)
+        if idx_stats["candidates"]:
+            in_list = res[res["is_index"]] if "is_index" in res.columns \
+                else res.iloc[0:0]
+            log(f"[5a][{tag}] 指数穿插：候选 {idx_stats['candidates']}"
+                f"（跟踪指数 {idx_stats['ids']} 个，同指数去重挤出 {idx_stats['capped']}"
+                f"）→ 入榜 {len(in_list)} 只；入榜者："
+                + ("、".join(f"{int(r['rank'])}.{r['name']}"
+                             for _, r in in_list.iterrows()) or "无"))
+    # 逐池自备该列：下游按 pd.concat 合并各池，缺列行会补 NaN（bool(np.nan)=True → 污染）
+    if "is_index" not in res.columns:
+        res["is_index"] = False
+    if "score_basis" not in res.columns:        # 仅指数行有值；主动行 None
+        res["score_basis"] = None
     if res.empty:
         raise RuntimeError(f"{tag} 排序结果为空")
     if len(res) < top_n:
@@ -241,7 +311,9 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log) -> dict:
         ups = int((res["rank_delta"] > 0).sum()) if len(res) else 0
         log(f"[5b][{tag}] 环比基准=上一期（{len(prev_ranks)} 只）：上升 {ups}，新增 {n_new}")
     return {"res": res, "funnel": funnel, "snapshot": snapshot, "navs": navs,
-            "prev_ranks": prev_ranks, "n_screened": len(candidates)}
+            "prev_ranks": prev_ranks,
+            "n_screened": len(candidates)
+            + (len(idx_cand) if idx_cand is not None else 0)}
 
 
 def run(skip_refresh: bool = False, top: int | None = None,
@@ -285,7 +357,11 @@ def run(skip_refresh: bool = False, top: int | None = None,
         tmp_csv = Path(str(CSV_PATH) + ".tmp")
         csv_df = combined.copy()
         csv_df.insert(0, "pool", csv_df["category"])
-        csv_df[["pool"] + S.REPORT_COLS + ["rank_prev", "rank_delta"]].to_csv(
+        if "is_index" not in csv_df.columns:        # 源端 _screen_pool 已保证；此处兜底防导出中途崩溃
+            csv_df["is_index"] = False
+        cols = S.REPORT_COLS.copy()
+        cols.insert(cols.index("name") + 1, "is_index")   # 紧邻名称：审阅时一眼分辨指数/主动
+        csv_df[["pool"] + cols + ["rank_prev", "rank_delta"]].to_csv(
             tmp_csv, index=False, encoding="utf-8-sig")
         tmp_csv.replace(CSV_PATH)
 

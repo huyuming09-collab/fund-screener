@@ -83,6 +83,23 @@ def _rec_metric(rec: dict, key: str, nd: int = 6):
     return _r(rec.get(key), nd)
 
 
+def _flag(row: pd.Series, key: str) -> bool:
+    """行内布尔标记（is_new / is_index）：缺列或 NaN 一律 False。
+
+    不能写 bool(row.get(key, False))——pd.concat 对缺该列的行补的是 np.nan，
+    而 bool(np.nan) is True：固收+池无指数基金时 res 缺 is_index 列，合并后
+    该池 20 只主动基金会被整体误标成指数基金。
+    """
+    v = row.get(key, False)
+    return bool(v) if pd.notna(v) else False
+
+
+def _opt_dict(row, key):
+    """行内可选字典列（score_basis）：缺列/NaN → None（dict 才透传）。"""
+    v = row.get(key, None) if hasattr(row, "get") else None
+    return v if isinstance(v, dict) else None
+
+
 def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
                max_points: int, category: str = "short_bond") -> dict:
     """单只基金的卡片+详情数据（row=榜单行，rec=排序份额的指标记录）。"""
@@ -100,7 +117,12 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         # 环比上一期：prev_rank=None 表示无历史（首期），is_new 仅在有历史且上期缺席时为 True
         "rank_prev": _i(row.get("rank_prev")),
         "rank_delta": _i(row.get("rank_delta")),
-        "is_new": bool(row.get("is_new", False)),
+        "is_new": _flag(row, "is_new"),
+        # 指数基金穿插入榜标记：前端据此可标注"按跟踪标的评估，不看经理业绩"口径
+        "is_index": _flag(row, "is_index"),
+        # 指数评分依据：业绩位置插值的上下邻锚点（主动基金为 None）——卡片可核对
+        # "业绩落在谁和谁之间、分数取这两个分数之间"
+        "score_basis": _opt_dict(row, "score_basis"),
         "metrics": {
             "ret_1y": _rec_metric(rec, "ret_1y"),
             "ret_3y": _rec_metric(rec, "ret_3y"),
@@ -148,6 +170,8 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
             "ms_rating": _rec_metric(rec, "ms_rating", 1),
             "inst_ratio": _rec_metric(rec, "inst_ratio", 4),
             "benchmark": rec.get("benchmark", ""),
+            # 指数基金同指数去重的优先键之一（非货规模，亿元）；主动基金无 → null
+            "company_scale": _r(rec.get("company_scale"), 2),
         },
         "screening": {
             "comp_pct": _r(row["comp_pct"], 4),             # 综合分位（P1 入选依据）

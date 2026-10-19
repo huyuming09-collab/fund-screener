@@ -142,16 +142,18 @@ const nDisabled = D.categories.filter(c=>!c.enabled).length;
 chk('启用分类均绑定 switchTab', (tabsHTML.match(/switchTab\\('/g)||[]).length === nEnabled);
 chk('禁用分类不可点击（toast 占位）', (tabsHTML.match(/toast\\(\\)/g)||[]).length === nDisabled);
 if (D.pools && D.pools.long_bond && longFunds.length) {
-  console.log('· 多池分支：短债 ' + shortFunds.length + ' 卡 / 中长债 ' + longFunds.length + ' 卡');
+  // 池显示名从 data.js 派生（2026-10-19 改名 中短债/长债/固收+），不再写死
+  const longLabel = (D.categories.find(c=>c.id==='long_bond')||{}).name || '长债';
+  console.log('· 多池分支：' + (D.categories.find(c=>c.id==='short_bond')||{}).name + ' ' + shortFunds.length + ' 卡 / ' + longLabel + ' ' + longFunds.length + ' 卡');
   switchTab('long_bond');
   const h = document.getElementById('list').innerHTML;
-  chk('中长债 tab 只显该池卡片',
+  chk('长债 tab 只显该池卡片',
       longFunds.every(f=>h.includes(f.code)) && shortFunds.every(f=>!h.includes(f.code)));
-  const seg = document.getElementById('tabs').innerHTML.split('<button').find(s=>s.includes('中长债')) || '';
-  chk('中长债 tab 激活态', /class="tab active/.test(seg));
+  const seg = document.getElementById('tabs').innerHTML.split('<button').find(s=>s.includes(longLabel)) || '';
+  chk('长债 tab 激活态', /class="tab active/.test(seg));
   const m = document.getElementById('meta').innerHTML;
-  chk('meta 显示中长债池口径（无筛出条）',
-      m.includes('中长债池 本期上榜 <b>'+longFunds.length+'</b> 只')
+  chk('meta 显示长债池口径（无筛出条）',
+      m.includes(longLabel+'池 本期上榜 <b>'+longFunds.length+'</b> 只')
       && !m.includes('筛出'));
   openDetail(longFunds[0].code);
   chk('长债详情分母 = 池内 n',
@@ -160,7 +162,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
   chk('长债详情 S5 阈值按池显示 2%', db2.includes('筛选阈值 &lt;2%'));
   chk('长债详情入选依据阈值（45%/55%/5亿）',
       db2.includes('（≥45%）') && db2.includes('（≥55%）') && db2.includes('（≥5亿）'));
-  chk('长债详情同类分位标题', db2.includes('同类分位（中长债池）'));
+  chk('长债详情同类分位标题', db2.includes('同类分位（'+longLabel+'池）'));
   switchTab('short_bond');
   const h2 = document.getElementById('list').innerHTML;
   chk('切回短债 tab 恢复短债卡片',
@@ -170,6 +172,50 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
       document.getElementById('d-body').innerHTML.includes('筛选阈值 &lt;1%'));
   chk('短债详情无风险预算行（三闸仅固收+）',
       !document.getElementById('d-body').innerHTML.includes('风险预算'));
+  // 指数基金穿插（2026-10-19）：标记、角标、详情口径与插值锚点
+  const idxAll = (D.funds||[]).filter(f=>f.is_index);
+  const actAll = (D.funds||[]).filter(f=>!f.is_index);
+  // 债指总开关关闭时（INDEX.enabled=false）入榜指数为 0 属合法状态 → 断言不强求 >0
+  chk('is_index：固收+无误标、主动数不为0、主动无插值锚点',
+      actAll.length>0
+      && (D.funds||[]).filter(f=>f.category==='fixed_plus').every(f=>!f.is_index)
+      && actAll.every(f=>f.score_basis==null));
+  if (idxAll.length) {
+    const ix = idxAll[0];
+    switchTab(ix.category);
+    const segIx = document.getElementById('list').innerHTML
+      .split('<div class="fundcard"').find(s=>s.includes(ix.code)) || '';
+    chk('指数卡片显示"指数"徽标', segIx.includes('rk idx') && segIx.includes('>指数<'));
+    chk('指数卡片不显示经理从业、改显示评估口径', segIx.includes('按跟踪标的/业绩/费率评估')
+        && !segIx.includes('经理从业'));
+    const ac = actAll.find(f=>f.category===ix.category);
+    if (ac) {
+      const segAc = document.getElementById('list').innerHTML
+        .split('<div class="fundcard"').find(s=>s.includes(ac.code)) || '';
+      chk('主动卡片仍显示经理从业、无指数徽标',
+          segAc.includes('经理从业') && !segAc.includes('rk idx'));
+    }
+    openDetail(ix.code);
+    const dbI = document.getElementById('d-body').innerHTML;
+    chk('指数详情用"指数评估口径"替代"基金经理"',
+        dbI.includes('<h3>指数评估口径') && !dbI.includes('<h3>基金经理')
+        && dbI.includes('跟踪基准') && dbI.includes('公司非货规模'));
+    // 断言用 <h3> 锚定：裸串会匹配到 HTML 注释（<!-- 评分明细…/评分依据… -->）
+    chk('指数详情"评分依据"展示插值锚点而非分项贡献分',
+        dbI.includes('<h3>评分依据') && !dbI.includes('<h3>评分明细')
+        && dbI.includes('下邻锚点') && dbI.includes('上邻锚点')
+        && dbI.includes('线性插值得分') && dbI.includes('近三年年化'));
+    if (ac) {
+      openDetail(ac.code);
+      const dbA = document.getElementById('d-body').innerHTML;
+      chk('主动详情仍显示"基金经理"+"评分明细·分项贡献分"',
+          dbA.includes('<h3>基金经理') && dbA.includes('<h3>评分明细')
+          && dbA.includes('分项贡献分') && !dbA.includes('<h3>评分依据'));
+    }
+    switchTab('short_bond');
+  } else {
+    console.log('· 无指数穿插标记（旧 data.js 或本期指数基金全部落榜）');
+  }
   if (fpFunds.length) {          // 固收+第三池接入（docs/10，2026-10-18）
     console.log('· 三池分支：固收+ ' + fpFunds.length + ' 卡');
     switchTab('fixed_plus');
@@ -227,7 +273,7 @@ chk('_deltaTxt 环比分支（↑/↓/新增/—/无历史空串）',
   && _deltaTxt({is_new:true,rank_delta:null},true)==='新增'
   && _deltaTxt({rank_delta:null},true)==='—' && _deltaTxt({rank_delta:3},false)==='');
 const poolsExp = exportPools();
-chk('exportPools：启用且有数据的池（多池=短债+中长债，旧单池回退默认池）',
+chk('exportPools：启用且有数据的池（多池=中短债+长债+固收+，旧单池回退默认池）',
   poolsExp.length >= (D.pools ? 2 : 1) && poolsExp.every(p => p && p.id && p.name)
   && (!D.pools || (poolsExp.some(p=>p.id==='short_bond') && poolsExp.some(p=>p.id==='long_bond'))));
 chk('drawExport 遍历全部可导出池：每池都有行且画布为请求尺寸',

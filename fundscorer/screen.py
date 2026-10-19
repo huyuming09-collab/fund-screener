@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""两段式筛选：先筛后评（按池；docs/07-短债筛选标准.md / docs/09-中长债筛选与评分.md）。
+"""两段式筛选：先筛后评（按池；docs/07-短债筛选标准.md / docs/09-长债筛选与评分.md）。
 
-阈值来自 config.SCREENS[pool]（短债 = config.SCREEN 默认，中长债 = SCREENS["long_bond"]）；
+阈值来自 config.SCREENS[pool]（中短债 = config.SCREEN 默认，长债 = SCREENS["long_bond"]）；
 漏斗键名中的阈值随 cfg 显示，故两池文案天然不同（短债 S5 标 >1%，长债标 >2%）。
 下文以短债池（用户 2026-10-15 基金级口径）为例描述流程：
 
@@ -32,7 +32,7 @@
 
 用法：
     python -m fundscorer.screen                     # 短债池筛选 + 漏斗 + 榜单
-    python -m fundscorer.screen --pool long_bond     # 中长债池（SCREENS[pool]）
+    python -m fundscorer.screen --pool long_bond     # 长债池（SCREENS[pool]）
     python -m fundscorer.screen --pool fixed_plus    # 固收+池（S1~S8，docs/10）
     python -m fundscorer.screen --csv out.csv       # 同时导出 CSV
     python -m fundscorer.screen --top 20            # 只保留前 20 名
@@ -248,13 +248,17 @@ def _pick_rank_share(classes: list[tuple[str, str]], rep_code: str,
 
 
 def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
-                      cfg: dict | None = None) -> tuple[pd.DataFrame, dict]:
+                      cfg: dict | None = None, *,
+                      index_fund: bool = False) -> tuple[pd.DataFrame, dict]:
     """阶段一+二（纯内存计算）：硬条件 S1~S5（固收+另含 S6~S8）+ 性能条件 P1~P2，返回候选表与漏斗。
 
-    records  池内份额级指标记录（metrics_cache 口径）
-    spikes   {code: 近5年单日最大涨幅}
-    yearly   {基础名: {完整年: 年收益}}（历史最久份额净值口径）
-    cfg      SCREENS[pool]（漏斗键名中的阈值随 cfg，长债池 S5 标 >2%）
+    records    池内份额级指标记录（metrics_cache 口径）
+    spikes     {code: 近5年单日最大涨幅}
+    yearly     {基础名: {完整年: 年收益}}（历史最久份额净值口径）
+    cfg        SCREENS[pool]（漏斗键名中的阈值随 cfg，长债池 S5 标 >2%）
+    index_fund True = 债券指数口径（用户 2026-10-19 决议）：不看基金经理业绩 → 跳过
+               S2/S3；成立年限闸放宽到 INDEX.min_nav_years=3 年（债券指数多为 2023 年
+               后成立，主动债基的 5 年门槛会挡掉绝大多数）。其余闸（规模/尖峰/分位）照常。
     """
     cfg = dict(C.SCREEN if cfg is None else cfg)
     pool = merge_shares(records)
@@ -263,12 +267,16 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
     # ---- 阶段一 硬条件 S1~S5 ----
     keep = pool["scale_sum"] >= cfg["scale_min_yi"]
     funnel[f"S1 规模合并≥{cfg['scale_min_yi']:g}亿"] = int(keep.sum())
-    keep &= pool["career"] >= cfg["mgr_career_min_years"]
-    funnel[f"S2 经理从业≥{cfg['mgr_career_min_years']:g}年"] = int(keep.sum())
-    keep &= pool["tenure"] >= cfg["mgr_tenure_min_days"]
-    funnel[f"S3 现经理任本基金≥{cfg['mgr_tenure_min_days'] / 365:g}年"] = int(keep.sum())
-    keep &= pool["nav_years"] >= cfg["min_nav_years"]
-    funnel[f"S4 成立≥{cfg['min_nav_years']:g}年"] = int(keep.sum())
+    if index_fund:
+        funnel["S2/S3 经理闸 不适用（指数基金按跟踪标的/业绩/费率/规模评估）"] = int(keep.sum())
+    else:
+        keep &= pool["career"] >= cfg["mgr_career_min_years"]
+        funnel[f"S2 经理从业≥{cfg['mgr_career_min_years']:g}年"] = int(keep.sum())
+        keep &= pool["tenure"] >= cfg["mgr_tenure_min_days"]
+        funnel[f"S3 现经理任本基金≥{cfg['mgr_tenure_min_days'] / 365:g}年"] = int(keep.sum())
+    min_years = C.INDEX["min_nav_years"] if index_fund else cfg["min_nav_years"]
+    keep &= pool["nav_years"] >= min_years
+    funnel[f"S4 成立≥{min_years:g}年" + ("（指数基金口径）" if index_fund else "")] = int(keep.sum())
     pool["max_gain_5y"] = pool["codes"].map(lambda cs: _fund_max_gain(cs, spikes))
     # 数据不足（NaN）不通过 S5：无法验证"无异常涨幅"则不放行
     keep &= pool["max_gain_5y"] <= cfg["spike_max_gain"]

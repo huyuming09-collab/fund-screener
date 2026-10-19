@@ -65,6 +65,41 @@ def _payload(prev_ranks=None, n_screened=25):
                                n_screened=n_screened)
 
 
+class TestIsIndexConcatSafety:
+    """回归：pd.concat 对缺 is_index 列的行补 np.nan，而 bool(np.nan) is True。
+
+    2026-10-19 实跑发现：固收+池无指数基金（res 不带该列），与两债池 concat 后
+    该池 20 只主动基金被整体误标成 is_index=True。此处锁死两个防御层。
+    """
+
+    def test_flag_treats_missing_and_nan_as_false(self):
+        assert cards._flag(pd.Series({"a": 1}), "is_index") is False   # 缺列
+        assert cards._flag(pd.Series({"is_index": True}), "is_index") is True
+        assert cards._flag(pd.Series({"is_index": False}), "is_index") is False
+        assert cards._flag(pd.Series({"is_index": np.nan}), "is_index") is False  # bool(nan)=True
+        assert cards._flag(pd.Series({"is_new": np.nan}), "is_new") is False
+
+    def test_pool_without_index_funds_not_polluted(self):
+        idx_row = _row(rank=4, code="110007", category="short_bond", is_index=True)
+        act_row = _row(rank=1, code="002438", category="short_bond", is_index=False)
+        fp_row = _row(rank=1, code="000001", category="fixed_plus")     # 缺 is_index 列
+        combined = pd.concat([pd.DataFrame([idx_row, act_row]),
+                              pd.DataFrame([fp_row])], ignore_index=True)
+        assert combined["is_index"].isna().sum() == 1                    # concat 补出的 NaN
+
+        snap = {"002438": _rec(), "110007": _rec(code="110007"),
+                "000001": _rec(code="000001", pool="fixed_plus")}
+        navs = {k: _nav() for k in snap}
+        stats = {p: {"n": 1, "n_screened": 25, "top_n": 20, "has_prev": False,
+                     "funnel": {}, "screen": {}}
+                 for p in ("short_bond", "fixed_plus")}
+        p = cards.build_payload(combined, snap, navs, pool_stats=stats)
+        by_code = {f["code"]: f for f in p["funds"]}
+        assert by_code["110007"]["is_index"] is True
+        assert by_code["002438"]["is_index"] is False
+        assert by_code["000001"]["is_index"] is False   # 关键：缺列池不得被误标
+
+
 class TestContract:
     def test_payload_top_keys(self):
         p = _payload(n_screened=25)

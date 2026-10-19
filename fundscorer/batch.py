@@ -19,7 +19,7 @@ import pandas as pd
 
 from . import config as C
 from . import data
-from .scorer import POOL_LABEL, collect_metrics, score_pool
+from .scorer import POOL_LABEL, collect_metrics, index_pool, score_pool
 
 UNIVERSE_PATH = Path(__file__).resolve().parent.parent / "data" / "universe.csv"
 _UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
@@ -34,7 +34,23 @@ _TYPE_TO_POOL = {
     "债券型-混合二级": "fixed_plus",
     "混合型-偏债": "fixed_plus",
 }
-BOND_TYPES = set(_TYPE_TO_POOL)
+# 指数型-固收（债券指数）：不走静态映射，按跟踪标的久期动态分池（见 index_pool()）
+INDEX_TYPE = "指数型-固收"
+BOND_TYPES = set(_TYPE_TO_POOL) | {INDEX_TYPE}
+
+# 明确排除（用户 2026-10-19 决议：FOF 全部不推荐、一律不入榜）。
+# 这些类型不在 BOND_TYPES 内本就不会被收进全集，此处列出以固化意图、
+# 防止将来扩展类型时误纳入。指数型-其他实为黄金/商品期货ETF联接，随"商品"一并排除。
+EXCLUDED_TYPES = {
+    "FOF-稳健型", "FOF-均衡型", "FOF-进取型",          # FOF：双层费率+份额锁定期，用户不推荐
+    "指数型-其他",                                     # 黄金ETF联接/商品期货ETF联接，属商品类
+    "混合型-绝对收益",                                 # 名字像稳定，实测1年胜率31.3%、年化-1.43%
+}
+
+
+# ---------------------------------------------------------------- 债券指数分池
+# 定义在 scorer.index_pool（R0 分类模块，classify() 与本处共用同一判据，避免两套逻辑漂移）。
+
 
 
 def fetch_fund_list() -> list[list]:
@@ -50,27 +66,75 @@ def fetch_fund_list() -> list[list]:
 
 
 def build_universe() -> pd.DataFrame:
-    """筛出债券类全集（债券型 6 子类 + 混合型-偏债）并分类分池，落盘 universe.csv。
+    """筛出债券类全集（债券型 6 子类 + 混合型-偏债 + 债券指数）并分类分池，落盘 universe.csv。
 
     排除封闭定开债（用户已确认）：名称含'XX个月定开'等定期开放结构的基金，
     多为摊余成本法估值、机构持有100%、封闭期66~88个月，净值近乎零回撤零波动
     是估值会计造成的假象（隐藏利率/流动性风险），且散户买不到，不适合入榜。
+
+    新成立基金：本函数每周重建（基金列表缓存 3 天），新发基金按当时 type_text 与
+    名称/跟踪基准即时判定归池，不沿用历史数据；债券指数久期不明者抓 F10 跟踪基准再判。
     """
     arr = fetch_fund_list()
-    rows = []
-    skipped_closed = 0
+    rows, pending_index = [], []
+    if not C.INDEX.get("enabled"):
+        # 债指关闭：跳过指数 F10 复判（append 处已加门控），指数据旧值留在缓存但永不入榜
+        pending_index = []
+    skipped_closed = skipped_excluded = 0
     for code, _url, name, ptype, _py in arr:
+        if ptype in EXCLUDED_TYPES:
+            skipped_excluded += 1
+            continue
         if ptype not in BOND_TYPES:
             continue
         if _is_closed_end(name):
             skipped_closed += 1
             continue
-        pool = _TYPE_TO_POOL[ptype]
-        rows.append({"code": code, "name": name, "type_text": ptype, "pool": pool})
+        if ptype == INDEX_TYPE:
+            # 债券指数分池三步：① 名称含久期 → 定案；② 名称判不出 → 抓 F10 跟踪基准复判；
+            # ③ 基准也判不出（亚债中国/信用债综合/恒定久期/区域综合等）→ 临时按长债归池
+            #    以触发抓取，终判权在 classify()（本处无净值；实测 125 只中 81 只 <0.7% 应归短债）
+            pool = index_pool(name)
+            rows.append({"code": code, "name": name, "type_text": ptype,
+                         "pool": pool or "long_bond"})
+            if pool is None:
+                pending_index.append(code)
+            continue
+        rows.append({"code": code, "name": name, "type_text": ptype, "pool": _TYPE_TO_POOL[ptype]})
+
+    # 名称判不出久期的债券指数：并行抓 F10 跟踪基准复判（缓存 7 天，只对这批冷启动）
+    unresolved: list[str] = []
+    if pending_index:
+        by_code = {r["code"]: r for r in rows}
+        with ThreadPoolExecutor(max_workers=12) as ex:
+            futs = {ex.submit(_f10_benchmark, c): c for c in pending_index}
+            for f in as_completed(futs):
+                code = futs[f]
+                try:
+                    bm = f.result()
+                except Exception:
+                    bm = ""
+                r = by_code[code]
+                p = index_pool(r["name"], bm)
+                if p is not None:
+                    r["pool"] = p                  # 跟踪基准能判 → 定案
+                else:
+                    unresolved.append(r["name"])   # 名称+基准都判不出 → 临时长债、待实测终判
+
     df = pd.DataFrame(rows).drop_duplicates("code").reset_index(drop=True)
+    if unresolved:
+        print(f"[分池] {len(unresolved)} 只债券指数久期文本+基准均判不出，临时按长债抓取、"
+              f"由近5年实测波动终判（可转债/超长期限指数终判不入池）："
+              + "、".join(unresolved[:6]), flush=True)
     df.to_csv(UNIVERSE_PATH, index=False, encoding="utf-8-sig")
-    print(f"全集 {len(df)} 只，排除封闭定开 {skipped_closed} 只", flush=True)
+    print(f"全集 {len(df)} 只，排除封闭定开 {skipped_closed} 只、排除类型(FOF等) {skipped_excluded} 只"
+          f"；分池 " + "、".join(f"{k} {v}" for k, v in df['pool'].value_counts().items()), flush=True)
     return df
+
+
+def _f10_benchmark(code: str) -> str:
+    return data.fetch_f10(code).get("benchmark", "") or ""
+
 
 
 # 封闭定开债：'66个月定开'、'定开'（含'广发鑫惠纯债定开'、'江信一年定开'等无月份前缀写法）、
