@@ -260,7 +260,7 @@ function screenOf(cat){
           spike_max_gain: cat==='long_bond' ? 0.02 : 0.01};
 }
 function renderTabs(active){
-  $('tabs').innerHTML = D.categories.map(c =>
+  $('tabs').innerHTML = D.categories.filter(c=>!(c&&c.hidden)).map(c =>
     `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
       ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast()"'}>
       ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
@@ -731,7 +731,7 @@ function exportDownload(canvas, pool, sizeKey){
 }
 function exportPools(){
   /* 可导出池：数据契约里 enabled 的分类，且该池当期确实有榜单行（旧单池 data.js 回退默认池） */
-  const cats = (D && D.categories) || [];
+  const cats = ((D && D.categories) || []).filter(c=>!(c&&c.hidden));
   const out = cats.filter(c => c && c.id && c.enabled !== false && exportRows(c.id).length > 0)
                   .map(c => ({id: c.id, name: c.name || CATEGORY_LABELS[c.id] || c.id}));
   if (out.length) return out;

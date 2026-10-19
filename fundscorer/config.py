@@ -287,7 +287,7 @@ CARD = {
     "categories": [   # 分类 tab（启用的分类由 PIPELINE.pools 供给数据）
         {"id": "short_bond", "name": "中短债", "enabled": True},
         {"id": "long_bond", "name": "长债", "enabled": True},
-        {"id": "fixed_plus", "name": "固收+", "enabled": True},
+        {"id": "fixed_plus", "hidden": True, "name": "固收+", "enabled": True},
         {"id": "index", "name": "指数", "enabled": False},
     ],
 }
