@@ -179,6 +179,9 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
                             for x in (rec.get("managers") or [])],
             # 任期卡玛（展示用、不计分）：任期年化收益 ÷ max(任期回撤, 0.5%)
             "tenure_calmar": _rec_metric(rec, "mgr_tenure_calmar", 2),
+            # 团队系数（v5.7 直觉规则，docs/12 §15）：满 3 年共管人数 + 经理块放大系数
+            "team_n": int(rec.get("mgr_team_n") or 0),
+            "team_coef": (_r(rec.get("mgr_team_coef"), 2) or 1.0),
             # "seats" = 该经理当期上榜占席数，build_payload 全榜统计后注入
         },
         "fund_info": {

@@ -730,7 +730,7 @@ function bodyHTML(f){
     <div class="mgr-name">${mg.name}${(mg.co_managers&&mg.co_managers.length>1)?'<span class="rk idx">共管</span>':''}${mg.seats>=2?`<span class="seats" title="该经理当期上榜占席数（集中度提示，不扣分）">占席 ×${mg.seats}</span>`:''}</div>
     <div class="mgr-sub">现任 ${f.name.replace(/[ABCDEF]$/,'')} 基金经理，任本基金
       ${mg.tenure_days==null?'—':(mg.tenure_days/365).toFixed(1)+' 年'}
-      ${(mg.co_managers&&mg.co_managers.length>1)?'<br>共管：'+mg.co_managers.map(c=>c.name+(c.is_primary?'（主责·任本基金最久）':'')+' '+(c.tenure_days==null?'':(c.tenure_days/365).toFixed(1)+'年')).join('、')+'。经理分取共管中任本基金满3年者的最好值（共享战功）':''}</div>
+      ${(mg.co_managers&&mg.co_managers.length>1)?'<br>共管：'+mg.co_managers.map(c=>c.name+(c.is_primary?'（主责·任本基金最久）':'')+' '+(c.tenure_days==null?'':(c.tenure_days/365).toFixed(1)+'年')).join('、')+'。经理分取共管中任本基金满3年者的最好值（共享战功）'+((mg.team_n>=2)?'；共管团队 '+mg.team_n+' 人满3年 → 经理块子项分 ×'+mg.team_coef+'（直觉规则）':''):''}</div>
     <div class="mgr-cards">
       <div class="mc"><div class="v">${mg.career_years==null?'—':mg.career_years+'年'}</div><div class="l">从业年限${(mg.co_managers&&mg.co_managers.length>1)?'（共管取max）':''}</div></div>
       <div class="mc"><div class="v">${mg.products_ann==null?'—':(mg.products_ann*100).toFixed(2)+'%'}</div><div class="l">在管产品年化中位数${mg.products_n?'（'+mg.products_n+'只）':''}</div></div>

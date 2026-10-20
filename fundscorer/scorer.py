@@ -248,11 +248,14 @@ def _manager_metrics(f10: dict, code: str) -> dict:
         name = f10.get("manager", "")
         career = data.fetch_manager_career_years(name, code) if name else None
         prods = data.fetch_manager_products_ann(f10.get("manager_id", ""))
+        tenure = _tenure_days(f10.get("manager_start", ""))
         return {"managers": [], "manager": name,
-                "mgr_tenure_days": _tenure_days(f10.get("manager_start", "")),
+                "mgr_tenure_days": tenure,
                 "mgr_career_years": career,
                 "mgr_products_ann": float(np.median(prods)) if prods else None,
-                "mgr_products_n": len(prods)}
+                "mgr_products_n": len(prods),
+                # 团队系数计数（v5.7）：现任中任本基金≥3年者；单经理回退按其任期
+                "mgr_team_n": 1 if (tenure or 0) >= MGR_QUAL_TENURE_DAYS else 0}
     recs = []
     for mg in mgrs:
         name = mg.get("name", "")
@@ -275,7 +278,10 @@ def _manager_metrics(f10: dict, code: str) -> dict:
                                 else _tenure_days(f10.get("manager_start", ""))),
             "mgr_career_years": max(careers) if careers else None,      # S2 门槛同源
             "mgr_products_ann": win["products_ann"] if win else None,
-            "mgr_products_n": win["products_n"] if win else 0}
+            "mgr_products_n": win["products_n"] if win else 0,
+            # 团队系数计数（v5.7，docs/12 §15）：满 3 年共管的真实人数（fallback 前统计）
+            "mgr_team_n": sum(1 for r in recs
+                              if (r["tenure_days"] or 0) >= MGR_QUAL_TENURE_DAYS)}
 
 
 def _tenure_calmar(nav_df, f10: dict, m: dict) -> float | None:
@@ -469,11 +475,19 @@ def _score_one(f: dict, peers: list[dict], weights: dict, pool: str,
     scores.update(q)
 
     # ---- 总分
+    # 共管团队系数（v5.7，直觉规则 docs/12 §15）：经理块子项分 ×系数（≥3 名满3年共管
+    # 封顶 1.10）。子项分与贡献同步放大 → 校验行 Σ贡献×100÷载分=评分 恒成立。
+    team_n = int(f.get("mgr_team_n") or 0)
+    coef = C.TEAM_COEF.get(min(team_n, 3), C.TEAM_COEF[1])
+    f["mgr_team_coef"] = coef
     total, detail = 0.0, {}
     for k, w in weights.items():
         sc = scores.get(k)
         if sc is None or (isinstance(sc, float) and np.isnan(sc)):
             continue   # 数据不足子项不计（R2/R5 折算：按可得分等比缩放到 100）
+        if k in C.MGR_BLOCK_KEYS and coef != 1.0:
+            sc = sc * coef
+            scores[k] = sc
         pts = w * sc / 100.0
         detail[k] = round(pts, 3)
         total += pts
