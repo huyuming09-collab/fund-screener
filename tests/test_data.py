@@ -56,3 +56,18 @@ def test_is_bond_like(monkeypatch):
     # 类型表未覆盖（含已离任/清盘的历史产品）→ 名称含"债"兜底，不猜测
     assert D._is_bond_like("999991", "某增强回报债券")
     assert not D._is_bond_like("999992", "某均衡配置混合")
+
+
+def test_fetch_f10_reads_and_writes_same_v3_key(monkeypatch):
+    """回归（2026-10-20 评审处置中发现）：fetch_f10 读端曾留在 v2、写端已在 v3——
+    旧 v2 缓存 7 天内直接命中 → 永不重抓、managers 永远解析不出来，
+    v5.5 共管与 v5.7 团队系数全失效。读写必须同键。"""
+    loaded, saved = [], []
+    monkeypatch.setattr(D, "_load_cache",
+                        lambda key, ttl: (loaded.append(key), None)[1])
+    monkeypatch.setattr(D, "_save_cache",
+                        lambda key, info: saved.append(key))
+    monkeypatch.setattr(D, "_http", lambda *a, **k: "<th>基金简称</th><td>测试债券A</td>")
+    D.fetch_f10("000001")
+    assert loaded == ["f10_v3_000001"]
+    assert saved == ["f10_v3_000001"]

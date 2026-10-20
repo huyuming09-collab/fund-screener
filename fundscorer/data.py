@@ -140,9 +140,12 @@ def _parse_purchase_fee(html: str) -> tuple[float | None, float | None]:
 def fetch_f10(code: str) -> dict:
     """基金基本概况：类型、成立日期、规模、费率（含申购原价/优惠价）、经理、基准。
 
-    缓存 7 天；key 含 v2：旧缓存字典缺 purchase_fee 字段，换 key 强制一次性重抓。
+    缓存 7 天；key v3 = 新 schema（managers 现任经理列表，v5.5 共管）。
+    2026-10-20 修复回归：读端曾留在 v2（旧 key 7 天内直接命中 → 永不重抓、
+    managers 永远为空、共管/团队系数全失效），写端已在 v3 → 读写不一致；
+    现读写统一 v3，旧 v2 缓存自然失效重抓。
     """
-    cached = _load_cache(f"f10_v2_{code}", 24 * 7)
+    cached = _load_cache(f"f10_v3_{code}", 24 * 7)
     if cached is not None:
         return cached.to_dict() if isinstance(cached, pd.Series) else cached
     html = _http(f"https://fundf10.eastmoney.com/jbgk_{code}.html", encoding="utf-8")
