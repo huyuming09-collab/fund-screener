@@ -471,7 +471,7 @@ def _score_one(f: dict, peers: list[dict], weights: dict, pool: str,
         scores["yearly_5y"] = _yearly_score(f, peers, pool)
 
     # ---- 质地绝对分档
-    q = _quality_scores(f, peers)
+    q = _quality_scores(f, peers, pool)
     scores.update(q)
 
     # ---- 总分
@@ -527,17 +527,18 @@ def _repair_scalar(p: dict, pool: str, weights: dict) -> float | None:
 
 
 def _manager_qualified(f: dict, peers: list[dict]) -> bool:
-    """R3：任职期内每年被超过 ≤50%（前半）且平均被超过 ≤33.3%（前1/3），可得年份≥3。
+    """R3：经理资质（v5.8 起允许一年跑输，长期仍须前 1/3，用户 2026-10-20 拍板）。
 
-    ranks = 池内收益分位（越高越好）；配置阈值语义为"被超过比例"（越低越好），
-    故取 1-r 后比较。2026-10-19 修复原方向反转 bug（r 与阈值直接比大小 → 精英判负、
-    垫底判胜）。
+    规则：可比年数 ≥3；被超过比例 b=1−r 允许 ≤1 年 >50%（优秀经理一年失手不否决）；
+    平均 b ≤ 33.3%（长期跑输仍一票否决）。2026-10-19 曾修复方向反转 bug（r 与阈值
+    直接比大小 → 精英判负、垫底判胜），现行语义自该日起为新。
     """
     ranks = [r for r in (f.get("_stab_ranks") or []) if r is not None]
     if len(ranks) < C.QUALIFIER["min_years"]:
         return False
     beaten = [1.0 - r for r in ranks]
-    return all(b <= C.QUALIFIER["yearly_rank_le"] for b in beaten) and \
+    fails = sum(1 for b in beaten if b > C.QUALIFIER["yearly_rank_le"])
+    return fails <= C.QUALIFIER["yearly_fail_max"] and \
         (sum(beaten) / len(beaten)) <= C.QUALIFIER["avg_rank_le"]
 
 
@@ -557,8 +558,8 @@ def _yearly_score(f: dict, peers: list[dict], pool: str) -> float | None:
     return (got / (2 * n)) * 100 if n else None
 
 
-def _quality_scores(f: dict, peers: list[dict]) -> dict:
-    """质地 9 项绝对分档 → 0~100。"""
+def _quality_scores(f: dict, peers: list[dict], pool: str | None = None) -> dict:
+    """质地 9 项绝对分档 → 0~100（pool 仅用于固收+经理资深分档，v5.8）。"""
     q = C.QUALITY
     out = {}
     # 成立年限
@@ -566,16 +567,23 @@ def _quality_scores(f: dict, peers: list[dict]) -> dict:
     out["age"] = None if age is None else (100 if age >= q["age_full_years"]
                                            else (60 if age >= q["age_mid_years"]
                                                  else max(0, age / q["age_mid_years"] * 60)))
-    # 本基金任职年限
+    # 本基金任职年限（v5.8：固收+ 用资深分档——10 年才满 100，5~10 年 85；债池旧档不动）
     t = f.get("mgr_tenure_days")
     if t is None:
         out["mgr_tenure"] = None
     else:
         ty = t / 365.25
-        out["mgr_tenure"] = 100 if ty >= 5 else (70 if ty >= 3 else (30 if ty >= 1 else 0))
-    # 从业年限
+        tiers = (q["tenure_tiers_fp"] if pool == "fixed_plus"
+                 else [(5, 100), (3, 70), (1, 30), (0, 0)])
+        out["mgr_tenure"] = next(v for lim, v in tiers if ty >= lim)
+    # 从业年限（v5.8：固收+ 资深分档——12 年才满 100，8~12 年 90；债池旧档不动）
     c = f.get("mgr_career_years")
-    out["mgr_career"] = None if c is None else (100 if c >= 8 else (70 if c >= 5 else (40 if c >= 3 else 0)))
+    if c is None:
+        out["mgr_career"] = None
+    else:
+        tiers = (q["career_tiers_fp"] if pool == "fixed_plus"
+                 else [(8, 100), (5, 70), (3, 40), (0, 0)])
+        out["mgr_career"] = next(v for lim, v in tiers if c >= lim)
     # 费率（同池分位，越低越好；A/C 份额差异由 fee_total 含销售服务费缓解，V6 分份额类别）
     fees = pd.Series({p["code"]: p.get("fee_total") for p in peers}, dtype=float)
     if f.get("fee_total") is None:

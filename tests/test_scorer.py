@@ -130,13 +130,16 @@ class TestWeightsSum:
     def test_fixed_plus_sums_100(self):
         assert sum(C.FIXED_PLUS_WEIGHTS.values()) == 100
 
-    def test_fixed_plus_v56_structure_block(self):
-        # v5.6 结构块重排（2026-10-20 用户拍板）：产品年化 11→4（口径过滤+零证据降权）、
-        # 规模 0→4（U 型入分）、从业 0→3（经验直觉，IC≈0 已标注）
+    def test_fixed_plus_v58_weights(self):
+        # v5.6 结构块重排 → v5.8 微调（2026-10-20 用户拍板）：
+        # 收益↑稳健↓（风险 35→31：回撤 9/7/5、波动 10）、ret_5y 0→2（反向证据已标注）、
+        # 经理块 10→12（任期 4、从业 4）
         w = C.FIXED_PLUS_WEIGHTS
-        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (4, 4, 3)
-        assert w["mdd_1y"] == 10 and w["mdd_3y"] == 8 and w["mdd_5y"] == 6  # S5 对照后保持
+        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (4, 4, 4)
+        assert (w["mdd_1y"], w["mdd_3y"], w["mdd_5y"], w["vol_5y"]) == (9, 7, 5, 10)
+        assert w["mgr_tenure"] == 4 and w["ret_5y"] == 2
         assert w["calmar_5y"] == 25 and w["sharpe_5y"] == 0
+        assert sum(w.values()) == 100
 
     def test_team_coef_contract(self):
         # v5.7：1/2/≥3 名满3年共管 = 1.00/1.05/1.10；经理块三键在三个池都计分
@@ -147,7 +150,7 @@ class TestWeightsSum:
 
 
 class TestManagerQualified:
-    """R3 经理资质（固收+回撤容差调节）：阈值语义 = 被超过比例，2026-10-19 方向修复回归。"""
+    """R3 经理资质（固收+回撤容差调节）：v5.8 允许一年跑输、长期须前 1/3（2026-10-20 拍板）。"""
 
     def test_elite_every_year_top_half_and_avg_top_third(self):
         # 每年收益分位 0.7/0.8/0.9 → 被超过 0.3/0.2/0.1，全过且均值 0.2 ≤ 1/3
@@ -157,9 +160,18 @@ class TestManagerQualified:
         # 常年垫底（分位 0.3/0.4/0.45）——方向反转 bug 下会误判合格，此为回归锚
         assert _manager_qualified({"_stab_ranks": [0.3, 0.4, 0.45]}, []) is False
 
-    def test_one_bad_year_fails_every_year_condition(self):
-        # 任一年跌出前半（0.4 → 被超过 0.6 > 0.5）即不合格
-        assert _manager_qualified({"_stab_ranks": [0.9, 0.9, 0.4]}, []) is False
+    def test_one_bad_year_allowed(self):
+        # v5.8（2026-10-20 拍板）：允许优秀经理一年跑输中位——[0.9,0.9,0.4]
+        # → 被超过 0.1/0.1/0.6，仅 1 年超线且均值 0.267 ≤ 1/3 → 合格
+        assert _manager_qualified({"_stab_ranks": [0.9, 0.9, 0.4]}, []) is True
+
+    def test_two_bad_years_fail(self):
+        # 两年跑输中位（0.4/0.35 → 被超过 0.6/0.65）→ 超过允许上限 → 不合格
+        assert _manager_qualified({"_stab_ranks": [0.9, 0.4, 0.35]}, []) is False
+
+    def test_one_bad_year_but_weak_average_fails(self):
+        # 仅 1 年超线，但单年大失手（0.05）拖垮均值 0.483 > 1/3 → 长期平庸仍否决
+        assert _manager_qualified({"_stab_ranks": [0.95, 0.55, 0.05]}, []) is False
 
     def test_ok_years_but_weak_average_fails(self):
         # 每年都前半（0.6 → 被超过 0.4）但均值 0.4 > 1/3 → 不合格
@@ -168,6 +180,33 @@ class TestManagerQualified:
     def test_insufficient_years_not_qualified(self):
         assert _manager_qualified({"_stab_ranks": [0.9, 0.9, None]}, []) is False
         assert _manager_qualified({"_stab_ranks": []}, []) is False
+
+
+class TestManagerTiersV58:
+    """v5.8 固收+经理资深分档：任期 ≥10 年满 100（5~10 年 85）、从业 ≥12 年满 100
+    （8~12 年 90）；债池/默认维持旧档（5/8 年即满 100），对外零冲击。"""
+
+    @staticmethod
+    def _f(ty, cy):
+        return {"code": f"t{ty}{cy}", "mgr_tenure_days": int(ty * 365.25),
+                "mgr_career_years": cy, "fee_total": 0.006, "ms_rating": 5.0,
+                "inst_ratio": 0.5, "scale_yi": 30.0}
+
+    def test_fixed_plus_veteran_tiers(self):
+        old, mid = self._f(11.4, 16.7), self._f(6.4, 6.0)
+        peers = [old, mid]
+        out_old = _quality_scores(old, peers, "fixed_plus")
+        assert out_old["mgr_tenure"] == 100 and out_old["mgr_career"] == 100
+        out_mid = _quality_scores(mid, peers, "fixed_plus")
+        assert out_mid["mgr_tenure"] == 85 and out_mid["mgr_career"] == 70
+        nine = self._f(9.0, 8.5)
+        out9 = _quality_scores(nine, peers + [nine], "fixed_plus")
+        assert out9["mgr_tenure"] == 85 and out9["mgr_career"] == 90
+
+    def test_debt_pools_keep_old_tiers(self):
+        mid = self._f(6.4, 6.0)
+        out = _quality_scores(mid, [mid])          # 默认路径 = 债池旧档
+        assert out["mgr_tenure"] == 100 and out["mgr_career"] == 70
 
 
 class TestRiskRatios:

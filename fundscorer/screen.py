@@ -207,8 +207,10 @@ def _fund_max_gain(codes: list[str], spikes: dict) -> float:
 def _qualify_flags(pool: pd.DataFrame, yearly: dict) -> pd.Series:
     """R3 经理资质（与 scorer._manager_qualified 同语义），基金级判定，供 S6 分级阈值用。
 
-    在池内逐年收益分位上判定"每一年被超过≤50%（前半）且平均被超过≤1/3"（可比年数
-    ≥3）。筛选期先于评分、且已是基金级口径，直接用 base 键的 yearly（历史最久份额净值）。
+    在池内逐年收益分位上判定（可比年数 ≥3）：被超过比例 >50% 的年数 ≤1
+    （v5.8 允许优秀经理一年跑输，用户 2026-10-20 拍板）且平均被超过 ≤1/3
+    （长期跑输仍一票否决）。筛选期先于评分、且已是基金级口径，直接用 base 键的
+    yearly（历史最久份额净值）。
     """
     q = C.QUALIFIER
     ranks: dict[str, list[float]] = {}
@@ -224,7 +226,7 @@ def _qualify_flags(pool: pd.DataFrame, yearly: dict) -> pd.Series:
         rs = ranks.get(base) or []
         beaten = [1.0 - r for r in rs]
         ok = (len(beaten) >= q["min_years"]
-              and all(b <= q["yearly_rank_le"] for b in beaten)
+              and sum(1 for b in beaten if b > q["yearly_rank_le"]) <= q["yearly_fail_max"]
               and (sum(beaten) / len(beaten)) <= q["avg_rank_le"])
         flags.append(ok)
     return pd.Series(flags, index=pool.index)
