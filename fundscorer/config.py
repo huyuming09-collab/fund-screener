@@ -17,6 +17,18 @@
 # 依据 docs/12 全链路验证（11 截面双段 IC / 冗余矩阵 / 方案对比 / 剂量曲线 / 逻辑回检）。
 MODEL_VERSION = "v5.9"
 
+# 池规则版本（v5.9 起记账，docs/15-评分体系版本变动管理.md 为账本）：
+#   MODEL_VERSION  = 产物/管线版本——任何评分或筛选规则变动都递增（含展示口径无关的重排）；
+#   POOL_VERSIONS  = 该池最后一次规则变动的 MODEL_VERSION，逐池独立，产物 payload 随字段携带
+#                    （top20.json/data.js 顶层 pool_versions + pools[池].pool_version）。
+# 变更流程（docs/15 §2）：拍板 → 证据留档 docs → 改 config → 四门验证（pytest/SMOKE/管线/
+#   位移对照）→ 同提交更新 docs/15 版本表 + STATUS §6。
+POOL_VERSIONS = {
+    "short_bond": "v5.9",   # 2026-10-21 D16-前置 B1+A / D16a / D16b / D17（docs/14 §6、§8）
+    "long_bond": "v5.9",    # 同上（repair_5y 保留 4 分为本池差异点）
+    "fixed_plus": "v5.8",   # 2026-10-20 R3 放宽 + 收益↑稳健↓ + 资深分档（docs/12 §16）
+}
+
 # ---------------------------------------------------------------- 窗口
 WINDOWS = {"primary_years": 5, "secondary_years": 3, "aux_years": 1}
 

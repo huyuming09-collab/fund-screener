@@ -729,7 +729,8 @@ def save_snapshot(results: list[dict], path: Path | None = None) -> Path:
     for r in results:
         slim.append({k: v for k, v in r.items()
                      if k not in ("_nav_df", "_peers_mdd1y", "_stab_ranks", "_unscored")})
-    payload = {"model_version": C.MODEL_VERSION, "generated_at": str(dt.datetime.now()),
+    payload = {"model_version": C.MODEL_VERSION, "pool_versions": C.POOL_VERSIONS,
+               "generated_at": str(dt.datetime.now()),
                "n": len(slim), "results": slim}
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str),
                     encoding="utf-8")

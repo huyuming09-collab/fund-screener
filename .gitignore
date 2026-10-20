@@ -8,6 +8,8 @@ __pycache__/
 data/cache/
 data/nav_full/
 data/snapshots/
+# 位移对照批次快照（docs/15 §2 四门验证用，体积大且逐批次再生）
+data/.snapshots/
 data/logs/
 data/*.pkl
 data/*.log

@@ -93,6 +93,16 @@
 - [ ] 管理类：`data/logs/`、`data/cache/`、`data/nav_full/` 按保留期清理
 
 ## 6. 最近变更
+- **2026-10-21** **评分体系版本变动管理 + 三池现行规则总览（两份新文档，代码侧仅加版本字段）**
+  `config.py` 新增 `POOL_VERSIONS = {short_bond: v5.9, long_bond: v5.9, fixed_plus: v5.8}`——
+  与全局 `MODEL_VERSION`（v5.9）分离：任何规则变动递增 MODEL_VERSION，池版本只记该池最后一次被波及的版本；
+  变更流程固化为「拍板 → 证据留档 → 四门验证（pytest/SMOKE/管线/位移对照）→ 同提交记账」。
+  产物携带：`top20.json`/`web/data.js` 顶层 `pool_versions` + `pools[池].pool_version`，打分快照同带——
+  榜单数据可直接追溯到产生它的池规则版本。
+  新文档：**docs/15**（版本账本：v5.1~v5.9 全量历史表、筛选规则版本线、挂起项索引、关联文档索引）、
+  **docs/16**（三池筛选+评分现行规则唯一总口径：漏斗闸值、权重全表、打分机制、公共口径纪律）。
+  验证：pytest 226 ✓、SMOKE PASS ✓、管线 1.8min ✓、产物 `pool_versions` 字段实测正确、榜单零位移
+  （纯版本字段加入，权重未动）。
 - **2026-10-21** **v5.9 两债池权重实装（D16-前置 B1+A / D16a / D16b / D17，用户拍板「开始做」）**
   `config.py`：短债 mgr_tenure 4→0、rank_stab 3→0、repair_5y 4→0（释放 11 分 → IC 池 61→72 等比放大，
   fee 8.91→10.51、ret_3y 8.65→10.21…）；长债 mgr_tenure/rank_stab 归零（释放 7 分 → 61→68，
@@ -241,3 +251,4 @@ cat data/top20.json | python -m json.tool | head -40
 ```
 
 入口文件三件套：**[README.md](README.md)** 怎么用 · **[AGENTS.md](AGENTS.md)** 什么规矩 · **本文件** 现在什么状态。
+| ☑ | **评分体系版本变动管理（2026-10-21 建立）**：`config.POOL_VERSIONS` 逐池规则版本（短债/长债 v5.9、固收+ v5.8）+ 产物携带 `pool_versions`（top20.json/data.js 顶层 + 逐池字段 + 打分快照）；变更流程与全量版本历史账本 `docs/15`，现行规则唯一总口径 `docs/16` | `config.py` + `cards.py` + `scorer.py` + `docs/15` + `docs/16` |

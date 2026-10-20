@@ -273,8 +273,10 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         pools[pid] = dict(st)
         pools[pid]["weights"] = C.POOL_WEIGHTS.get(pid)
         pools[pid]["weight_groups"] = C.WEIGHT_GROUPS.get(pid)
+        pools[pid]["pool_version"] = C.POOL_VERSIONS.get(pid)   # 池规则版本（docs/15）
     return {
         "model_version": C.MODEL_VERSION,
+        "pool_versions": C.POOL_VERSIONS,
         "generated_at": str(dt.datetime.now()),
         "asof": asof or str(dt.date.today()),
         "category": primary or "short_bond",
