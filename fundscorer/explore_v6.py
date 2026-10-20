@@ -495,6 +495,9 @@ def stage_dose() -> None:
                 "rho": _spearman(sc, g["fwd_calmar"]),
                 "H_repr": (float(top["grp"].eq("H").mean()) / p_h) if p_h > 0 else np.nan})
     d = pd.DataFrame(rows)
+    # 行级产物落盘（2026-10-20 评审要求逐节点显著性检验：符号检验/CI 需要节点明细）
+    d.to_csv(Path(__file__).resolve().parent.parent / "data" / "explore_v6_dose.csv",
+             index=False)
     base = d[d["scheme"] == "S0 现行B′"].set_index("T")["fwd_calmar"]
     pd.set_option("display.width", 220)
     log("\n=== ★跑后探索（非预注册）(a) 收益/超额剂量-反应 + (b) 同族择优 A/B ===")
