@@ -42,3 +42,17 @@ def test_parse_jjl_intro_empty_and_broken():
               '<div class="jl_intro"><a href="//fund.eastmoney.com/manager/1.html">x</a>'
               '<p><strong>上任日期：</strong>2020-01-01</p></div>')
     assert D._parse_jjl_intro(broken) == []
+
+
+def test_is_bond_like(monkeypatch):
+    # v5.6 经理产品口径（2026-10-20 拍板）：权益产品不参与经理全产品年化中位数
+    monkeypatch.setattr(D, "_fund_types", lambda: {
+        "001257": "债券型-混合二级", "110007": "混合型-偏债",
+        "161725": "混合型-偏股", "001186": "股票型-普通股票"})
+    assert D._is_bond_like("001257", "兴业收益增强债券")
+    assert D._is_bond_like("110007", "易方达稳健收益混合")
+    assert not D._is_bond_like("161725", "某某成长混合")
+    assert not D._is_bond_like("001186", "某某股票精选")
+    # 类型表未覆盖（含已离任/清盘的历史产品）→ 名称含"债"兜底，不猜测
+    assert D._is_bond_like("999991", "某增强回报债券")
+    assert not D._is_bond_like("999992", "某均衡配置混合")

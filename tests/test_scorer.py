@@ -57,11 +57,16 @@ class TestQuality:
         assert _quality_scores(huge, peers)["fund_scale"] < 100
 
     def test_inst_ratio_penalty_over_90(self):
+        # v5.6（2026-10-20 拍板）：>90% 悬崖改渐变——90%~100% 线性 100→20
         healthy = make_fund("x", inst_ratio=0.5)
+        slight = make_fund("s", inst_ratio=0.91)
         crowded = make_fund("y", inst_ratio=0.95)
-        peers = [healthy, crowded]
+        full = make_fund("f", inst_ratio=1.0)
+        peers = [healthy, slight, crowded, full]
         assert _quality_scores(healthy, peers)["inst_ratio"] == 100
-        assert _quality_scores(crowded, peers)["inst_ratio"] == 0
+        assert _quality_scores(slight, peers)["inst_ratio"] == pytest.approx(92)
+        assert _quality_scores(crowded, peers)["inst_ratio"] == pytest.approx(60)
+        assert _quality_scores(full, peers)["inst_ratio"] == pytest.approx(20)
 
     def test_young_manager_scores_zero(self):
         f = make_fund("n", mgr_tenure_days=100)
@@ -124,6 +129,14 @@ class TestWeightsSum:
 
     def test_fixed_plus_sums_100(self):
         assert sum(C.FIXED_PLUS_WEIGHTS.values()) == 100
+
+    def test_fixed_plus_v56_structure_block(self):
+        # v5.6 结构块重排（2026-10-20 用户拍板）：产品年化 11→4（口径过滤+零证据降权）、
+        # 规模 0→4（U 型入分）、从业 0→3（经验直觉，IC≈0 已标注）
+        w = C.FIXED_PLUS_WEIGHTS
+        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (4, 4, 3)
+        assert w["mdd_1y"] == 10 and w["mdd_3y"] == 8 and w["mdd_5y"] == 6  # S5 对照后保持
+        assert w["calmar_5y"] == 25 and w["sharpe_5y"] == 0
 
 
 class TestManagerQualified:

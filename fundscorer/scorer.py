@@ -573,14 +573,15 @@ def _quality_scores(f: dict, peers: list[dict]) -> dict:
     # 晨星
     r = f.get("ms_rating")
     out["ms_rating"] = 100 * q["ms_rating_map"].get(int(r), 0.5) if r else 50
-    # 机构比例
+    # 机构比例（v5.6，2026-10-20 用户拍板：>90% 悬崖改渐变——原 91% 即断崖 0，
+    # 90%~100% 线性 100→20：91%→92 / 95%→60 / 100%→20；20%~90% 满分、低档不变）
     ir = f.get("inst_ratio")
     if ir is None:
         out["inst_ratio"] = None
     elif q["inst_ratio_full"][0] <= ir <= q["inst_ratio_full"][1]:
         out["inst_ratio"] = 100
     elif ir > q["inst_ratio_full"][1]:
-        out["inst_ratio"] = 0
+        out["inst_ratio"] = max(20.0, 100.0 - (ir - q["inst_ratio_full"][1]) * 800)
     elif ir >= q["inst_ratio_mid"][0]:
         out["inst_ratio"] = 50
     else:

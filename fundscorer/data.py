@@ -313,9 +313,13 @@ def fetch_manager_career_years(manager_name: str, code: str | None = None) -> fl
 
 def fetch_manager_products_ann(manager_id: str) -> list[float]:
     """经理职业生涯全部产品（含已离任）的任职年化收益列表。
-    剔除：任职 <2 年的产品（年化无意义）、货币基金（与目标池无可比性）。
-    调用方对列表取中位数（scorer.collect_metrics），理由见 docs/01 §5.5。缓存 7 天。"""
-    cached = _load_cache(f"mgrprod_{manager_id}", 24 * 7)
+    剔除：任职 <2 年的产品（年化无意义）、货币基金（与目标池无可比性）、
+    **权益类产品（v5.6 口径，2026-10-20 用户拍板：股票经理的高年化与债基经理
+    不可比——只留债券型/混合偏债，类型取 metrics_cache 的 type_text，
+    缓存未覆盖时按名称含"债"兜底）**。
+    调用方对列表取中位数（scorer.collect_metrics），理由见 docs/01 §5.5。
+    缓存 7 天；键 v1→v2（口径变更，旧列表作废）。"""
+    cached = _load_cache(f"mgrprod_v2_{manager_id}", 24 * 7)
     if cached is not None:
         return list(cached)
     anns: list[float] = []
@@ -329,6 +333,8 @@ def fetch_manager_products_ann(manager_id: str) -> list[float]:
                      for c in re.findall(r"<td[^>]*>(.*?)</td>", r, re.S)]
             if len(cells) < 8 or not re.match(r"^\d{6}$", cells[0]):
                 continue
+            if not _is_bond_like(cells[0], cells[1]):
+                continue                     # 权益/未知类型产品不参与中位数（v5.6）
             days = _parse_tenure_days(cells[6]) if len(cells) > 6 else None
             ret_m = re.match(r"(-?[\d.]+)%", cells[7]) if len(cells) > 7 else None
             if not (days and ret_m):
@@ -344,8 +350,37 @@ def fetch_manager_products_ann(manager_id: str) -> list[float]:
                 continue
     except Exception:
         pass
-    _save_cache(f"mgrprod_{manager_id}", anns)
+    _save_cache(f"mgrprod_v2_{manager_id}", anns)
     return anns
+
+
+# ---------------------------------------------------------------- 4b. 经理产品类型过滤（v5.6）
+_FUND_TYPE_MAP: dict | None = None
+
+
+def _fund_types() -> dict:
+    """code → type_text（metrics_cache，进程内加载一次；文件级缓存即周更节奏）。"""
+    global _FUND_TYPE_MAP
+    if _FUND_TYPE_MAP is None:
+        m: dict = {}
+        try:
+            import pickle
+            p = Path(__file__).resolve().parent.parent / "data" / "metrics_cache.pkl"
+            for r in pickle.loads(p.read_bytes()):
+                if r.get("code") and r.get("type_text"):
+                    m[str(r["code"])] = str(r["type_text"])
+        except Exception:
+            pass
+        _FUND_TYPE_MAP = m
+    return _FUND_TYPE_MAP
+
+
+def _is_bond_like(code: str, name: str) -> bool:
+    """债基/偏债混债判定：类型命中 → 按类型；缓存未覆盖（含已离任清盘）→ 名称含"债"兜底。"""
+    t = _fund_types().get(str(code), "")
+    if t:
+        return t.startswith("债券型") or t == "混合型-偏债"
+    return "债" in (name or "")
 
 
 # ---------------------------------------------------------------- 5. 晨星评级
