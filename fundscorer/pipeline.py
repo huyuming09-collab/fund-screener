@@ -310,8 +310,15 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log) -> dict:
         n_new = int(res["is_new"].sum()) if len(res) else 0
         ups = int((res["rank_delta"] > 0).sum()) if len(res) else 0
         log(f"[5b][{tag}] 环比基准=上一期（{len(prev_ranks)} 只）：上升 {ups}，新增 {n_new}")
+    # v5.5 风格标签基准：本池候选中位（主动候选、有 5 年数据；仅展示不计分，docs/12 §8）
+    _cand_recs = [r for c, r in snapshot.items() if c in cand_codes]
+    _rets = [r.get("ret_5y") for r in _cand_recs if r.get("ret_5y") is not None]
+    _vols = [r.get("vol_5y") for r in _cand_recs if r.get("vol_5y") is not None]
+    style_base = {"ret_5y": pd.Series(_rets).median() if _rets else None,
+                  "vol_5y": pd.Series(_vols).median() if _vols else None}
     return {"res": res, "funnel": funnel, "snapshot": snapshot, "navs": navs,
             "prev_ranks": prev_ranks,
+            "style_base": style_base,
             "n_screened": len(candidates)
             + (len(idx_cand) if idx_cand is not None else 0)}
 
@@ -347,6 +354,8 @@ def run(skip_refresh: bool = False, top: int | None = None,
                      "top_n": top_n,
                      "has_prev": out[p]["prev_ranks"] is not None,
                      "funnel": out[p]["funnel"],
+                     # v5.5 风格标签基准（池内候选中位，仅展示）
+                     "style_base": out[p].get("style_base"),
                      # 三闸键（mdd_5y_max 等）仅固收+有 → 缺失不下发，两债池契约零变化
                      "screen": {k: C.SCREENS[p][k] for k in SCREEN_KEYS
                                 if k in C.SCREENS[p]}}

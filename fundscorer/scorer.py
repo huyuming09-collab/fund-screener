@@ -207,11 +207,10 @@ def collect_metrics(code: str) -> dict:
     m["purchase_fee_disc"] = f10.get("purchase_fee_disc")
     m["ms_rating"] = data.fetch_rating(code)
     m["inst_ratio"] = data.fetch_inst_ratio(code)
-    m["mgr_career_years"] = data.fetch_manager_career_years(m["manager"], code) if m["manager"] else None
-    prod_anns = data.fetch_manager_products_ann(f10.get("manager_id", ""))
-    m["mgr_products_ann"] = float(np.median(prod_anns)) if prod_anns else None
-    m["mgr_products_n"] = len(prod_anns)
-    m["mgr_tenure_days"] = _tenure_days(f10.get("manager_start", ""))
+    # 经理（v5.5 共管支持，docs/12 §9：主责=任本基金最久；共管满3年逐项取 max）
+    m.update(_manager_metrics(f10, code))
+    # 经理本基金任期卡玛（展示用、不计分——无前瞻证据，docs/12 §7）
+    m["mgr_tenure_calmar"] = _tenure_calmar(nav_df, f10, m)
     return m
 
 
@@ -229,6 +228,88 @@ def _tenure_days(start: str) -> int | None:
     except ValueError:
         return None
     return (dt.datetime.now() - d).days
+
+
+# 经理任期卡玛的回撤地板（与 explore_v6/backtest2 卡玛口径一致，防理财化小回撤爆炸）
+TENURE_CALMAR_FLOOR = 0.005
+MGR_QUAL_TENURE_DAYS = 1095      # 共管"共享战功"门槛：任本基金≥3年（docs/12 §9）
+
+
+def _manager_metrics(f10: dict, code: str) -> dict:
+    """现任经理 → 评分/筛选用字段（v5.5 共管支持，docs/12 §9）。
+
+    规则：主责 = 任本基金最久者；经理分 = 共管中"任本基金≥3年"者**逐项取 max**
+    （王牌共管满 3 年视同共享战功）；全都不足 3 年 → 按主责计分。
+    每位经理带上自己的上任日期/从业/全产品数据 → 新任<1年不会背上任战绩。
+    旧缓存无 managers 列表（f10_v2 及解析失败）→ 单经理回退，字段语义不变。
+    """
+    mgrs = f10.get("managers") or []
+    if not mgrs:
+        name = f10.get("manager", "")
+        career = data.fetch_manager_career_years(name, code) if name else None
+        prods = data.fetch_manager_products_ann(f10.get("manager_id", ""))
+        return {"managers": [], "manager": name,
+                "mgr_tenure_days": _tenure_days(f10.get("manager_start", "")),
+                "mgr_career_years": career,
+                "mgr_products_ann": float(np.median(prods)) if prods else None,
+                "mgr_products_n": len(prods)}
+    recs = []
+    for mg in mgrs:
+        name = mg.get("name", "")
+        prods = data.fetch_manager_products_ann(mg.get("id", ""))
+        recs.append({"name": name, "id": mg.get("id", ""), "start": mg.get("start", ""),
+                     "tenure_days": _tenure_days(mg.get("start", "")),
+                     "career_years": (data.fetch_manager_career_years(name, code)
+                                      if name else None),
+                     "products_ann": float(np.median(prods)) if prods else None,
+                     "products_n": len(prods)})
+    primary = max(recs, key=lambda r: (r["tenure_days"] is not None, r["tenure_days"] or 0))
+    qual = [r for r in recs if (r["tenure_days"] or 0) >= MGR_QUAL_TENURE_DAYS] or [primary]
+    careers = [r["career_years"] for r in qual if r["career_years"] is not None]
+    anns = [r for r in qual if r["products_ann"] is not None]
+    win = max(anns, key=lambda r: r["products_ann"]) if anns else None
+    return {"managers": recs,
+            "manager": primary["name"] or f10.get("manager", ""),
+            # 主责任期（=全现任中最久）：S3 门槛与任期分档同源
+            "mgr_tenure_days": (primary["tenure_days"] if primary["tenure_days"] is not None
+                                else _tenure_days(f10.get("manager_start", ""))),
+            "mgr_career_years": max(careers) if careers else None,      # S2 门槛同源
+            "mgr_products_ann": win["products_ann"] if win else None,
+            "mgr_products_n": win["products_n"] if win else 0}
+
+
+def _tenure_calmar(nav_df, f10: dict, m: dict) -> float | None:
+    """经理本基金任期卡玛 = 任期区间年化收益 ÷ max(任期回撤, 0.5%)。
+
+    仅详情页展示（不计分、不筛选）：历史经理归因不可回溯，无前瞻证据（docs/12 §7）。
+    起点取主责经理上任日期（与任期字段同源）；任期<1年或净值不足 → None。
+    """
+    start = ""
+    mgrs = f10.get("managers") or []
+    for mg in mgrs:                       # 主责优先；未命中退回第一块
+        if mg.get("name") == m.get("manager"):
+            start = mg.get("start", "")
+            break
+    if not start:
+        start = (mgrs[0].get("start", "") if mgrs else "") or f10.get("manager_start", "")
+    if not start or nav_df is None or nav_df.empty:
+        return None
+    try:
+        ts = dt.datetime.strptime(start[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+    sub = nav_df[nav_df["date"] >= ts]
+    # 以时长为准（真实净值为日频；月频合成样本同样适用），不足 1 年不出数
+    if len(sub) < 4:
+        return None
+    days = (sub["date"].iloc[-1] - sub["date"].iloc[0]).days
+    if days < 365:
+        return None
+    ann = (sub["nav"].iloc[-1] / sub["nav"].iloc[0]) ** (365.25 / days) - 1
+    mdd = metrics.max_drawdown(sub, 99)        # 窗口大于可得 → 取任期全期
+    if mdd is None:                            # 注意：mdd 恰为 0（单调上涨）是合法值 → 走地板
+        return None
+    return ann / max(mdd, TENURE_CALMAR_FLOOR)
 
 
 # ================================================================ 池内打分

@@ -172,10 +172,37 @@ def fetch_f10(code: str) -> dict:
         jjjl = _http(f"https://fundf10.eastmoney.com/jjjl_{code}.html", encoding="utf-8")
         m = re.search(r"<td>([\d-]{10})</td><td>至今</td>", jjjl)
         info["manager_start"] = m.group(1) if m else ""
+        # v5.5：现任经理全量（共管支持）——"现任基金经理简介"区每个 jl_intro 块 =
+        # 一位现任经理（姓名/链接/上任日期）。共管基金此前只记第一位（如某混合 A 记甲
+        # 漏乙，docs/12 §9）；每位经理配自己的上任日期，新任<1年不会背上任战绩。
+        info["managers"] = _parse_jjl_intro(jjjl)
     except Exception:
         info["manager_start"] = ""
-    _save_cache(f"f10_v2_{code}", info)
+        info["managers"] = []
+    # 缓存键 v2→v3：新 schema（managers 列表）；旧 v2 缓存无此键，升版强制按新口径重抓
+    _save_cache(f"f10_v3_{code}", info)
     return info
+
+
+def _parse_jjl_intro(jjjl_html: str) -> list[dict]:
+    """基金经理页 → 现任经理列表 [{name, id, start}]。
+
+    jl_intro 块结构（fundf10/jjjl_*.html）：
+        <div class="jl_intro">…<a href="//fund.eastmoney.com/manager/<id>.html">姓名</a>
+        …<strong>上任日期：</strong>YYYY-MM-DD…</div>
+    解析失败/字段缺失的块跳过（数据不足不猜测）。
+    """
+    out = []
+    for b in re.split(r'class="jl_intro"', jjjl_html)[1:]:
+        seg = b[:1200]                     # 块头截断，防越界吃进下一区块
+        mid = re.search(r"manager/(\d+)\.html", seg)
+        name = re.search(r"姓名：</strong><a[^>]*>([^<]+)<", seg)
+        start = re.search(r"上任日期：</strong>([\d-]{10})", seg)
+        if not (mid and name):
+            continue
+        out.append({"name": name.group(1).strip(), "id": mid.group(1),
+                    "start": start.group(1) if start else ""})
+    return out
 
 
 def _parse_tenure_days(text: str) -> int | None:

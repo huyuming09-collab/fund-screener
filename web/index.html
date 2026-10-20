@@ -85,6 +85,14 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 /* 指数基金徽标：与主动基金区分（评估口径不同——看跟踪标的/业绩/费率，不看经理） */
 .rk.idx{color:#3b6fd4;background:#eef3fd;border-radius:5px;padding:0 5px;
         font-size:10.5px;margin-left:5px;font-weight:600;}
+/* v5.5 风格标签（池内相对：vs 候选中位切四象限）与经理占席（全榜统计）——均仅展示不计分 */
+.rk.style{border-radius:8px;padding:1px 6px;font-size:10.5px;margin-left:5px;font-weight:600;}
+.rk.style.aggr{background:#fff1e6;color:#c05c00;}      /* 进取型：收益波动双高 */
+.rk.style.steady{background:#e8f6ec;color:#1a7f37;}    /* 稳健型：收益高波动低 */
+.rk.style.defen{background:#e8f1fd;color:#1d5bb8;}     /* 防守型：收益波动双低 */
+.rk.style.wave{background:#f3ecfd;color:#7237c0;}      /* 震荡型：收益低波动高 */
+.seats{color:#a15c00;background:#fff7e0;border-radius:8px;padding:1px 6px;
+       font-size:10.5px;font-weight:600;}
 .idx-foot{color:#3b6fd4;}
 .empty-tip{color:var(--sub);text-align:center;font-size:13px;padding:30px 0;}
 
@@ -345,6 +353,8 @@ const DIM_LABELS = {
   mgr_products_ann:'经理全产品年化', age:'基金年龄', ms_rating:'晨星评级', inst_ratio:'机构持有占比',
   fund_scale:'合并规模', company_scale:'公司非货规模', calmar_5y:'卡玛比(5年)', sharpe_5y:'夏普(5年)'
 };
+/* v5.5 风格标签 → 徽标配色类（标签由服务端按池内候选中位计算，此处仅展示） */
+const STYLE_CLS = {'进取型':'aggr','稳健型':'steady','防守型':'defen','震荡型':'wave'};
 const num = (v, nd) => v == null ? '—' : Number(v).toFixed(nd == null ? 2 : nd);
 /* 维度 → 原始值（有真实来源的才映射；否则回落 sub 分） */
 const RAW_OF = {
@@ -433,6 +443,9 @@ function openCmp(){
   H += grp('综合概览');
   H += row('综合分', fs.map(f => f.score == null ? '—' : f.score.toFixed(2)), bestOf(fs.map(f => f.score)));
   H += row('榜内排名', fs.map(f => '#' + f.rank), bestOf(fs.map(f => f.rank == null ? null : -f.rank)));
+  H += row('风格', fs.map(f => f.style || '—'), -1);            /* v5.5 池内相对，仅展示 */
+  H += row('经理', fs.map(f => ((f.manager && f.manager.name) || '—')
+    + (f.manager && f.manager.seats >= 2 ? '（占席×' + f.manager.seats + '）' : '')), -1);
   H += row('较上期', fs.map(rkTxt), -1);
   H += row('红线', fs.map(f => (f.redlines && f.redlines.length) ? '⚠ ' + f.redlines.length + ' 条' : '—'), -1);
   if(W) H += row('载分率', fs.map(f => f.earned_weight == null ? '—'
@@ -510,6 +523,9 @@ function cmpTSV(fs, W, totW){
   L.push(['基金'].concat(fs.map(f => f.name)).join('\t'));
   L.push(['代码'].concat(fs.map(f => f.code)).join('\t'));
   L.push(['榜内排名'].concat(fs.map(f => '#' + f.rank)).join('\t'));
+  L.push(['风格'].concat(fs.map(f => f.style || '—')).join('\t'));   /* v5.5 池内相对 */
+  L.push(['经理'].concat(fs.map(f => ((f.manager && f.manager.name) || '—')
+    + (f.manager && f.manager.seats >= 2 ? '（占席×' + f.manager.seats + '）' : ''))).join('\t'));
   L.push(['综合分'].concat(fs.map(f => f.score)).join('\t'));
   if(W){
     L.push(['载分率'].concat(fs.map(f => f.earned_weight == null ? '—'
@@ -571,7 +587,7 @@ function renderList(){
       <div class="fc-head">
         <div class="rank ${f.rank<=3?'top'+f.rank:''}">${f.rank}</div>
         <div style="flex:1;min-width:0">
-          <div class="fc-name">${f.name}${f.is_index?'<span class="rk idx">指数</span>':''}</div>
+          <div class="fc-name">${f.name}${f.is_index?'<span class="rk idx">指数</span>':''}${f.style?`<span class="rk style ${STYLE_CLS[f.style]||''}">${f.style}</span>`:''}</div>
           <div class="fc-code">${f.code}<span class="dot">·</span>${catLabel(f.category)}
             <span class="dot">·</span><span class="score">评分 ${f.score}</span>${rkHTML(f)}</div>
         </div>
@@ -585,6 +601,7 @@ function renderList(){
         ${f.is_index
           ? '<span class="idx-foot">指数基金·按跟踪标的/业绩/费率评估</span>'
           : '<span>经理从业 '+(f.manager.career_years==null?'—':f.manager.career_years+'年')+'</span>'}
+        ${(f.manager&&f.manager.seats>=2)?`<span class="seats" title="该经理当期上榜占席数（集中度提示，不扣分）">占席×${f.manager.seats}</span>`:''}
         <span>·</span>
         <span class="fee">${feeLine(f.fund_info)}</span>
       </div>
@@ -614,7 +631,8 @@ function openDetail(code){
   else if(CUR.rank_delta!=null) rk += CUR.rank_delta>0 ? `（较上期 ↑${CUR.rank_delta}）`
       : CUR.rank_delta<0 ? `（较上期 ↓${-CUR.rank_delta}）` : '（较上期 持平）';
   $('d-rank').textContent  = rk;
-  $('d-code').textContent  = CUR.code + ' · ' + catLabel(CUR.category);
+  $('d-code').textContent  = CUR.code + ' · ' + catLabel(CUR.category)
+    + (CUR.style ? ' · ' + CUR.style : '');      /* v5.5 风格标签（池内相对，仅展示） */
   $('d-disc').textContent  = D.disclaimer;
   syncDetailPick();
   $('d-body').innerHTML = bodyHTML(CUR);
@@ -709,13 +727,15 @@ function bodyHTML(f){
     </div>
   </div>` : `
   <div class="sec"><h3>基金经理</h3>
-    <div class="mgr-name">${mg.name}</div>
+    <div class="mgr-name">${mg.name}${(mg.co_managers&&mg.co_managers.length>1)?'<span class="rk idx">共管</span>':''}${mg.seats>=2?`<span class="seats" title="该经理当期上榜占席数（集中度提示，不扣分）">占席 ×${mg.seats}</span>`:''}</div>
     <div class="mgr-sub">现任 ${f.name.replace(/[ABCDEF]$/,'')} 基金经理，任本基金
-      ${mg.tenure_days==null?'—':(mg.tenure_days/365).toFixed(1)+' 年'}</div>
+      ${mg.tenure_days==null?'—':(mg.tenure_days/365).toFixed(1)+' 年'}
+      ${(mg.co_managers&&mg.co_managers.length>1)?'<br>共管：'+mg.co_managers.map(c=>c.name+(c.is_primary?'（主责·任本基金最久）':'')+' '+(c.tenure_days==null?'':(c.tenure_days/365).toFixed(1)+'年')).join('、')+'。经理分取共管中任本基金满3年者的最好值（共享战功）':''}</div>
     <div class="mgr-cards">
-      <div class="mc"><div class="v">${mg.career_years==null?'—':mg.career_years+'年'}</div><div class="l">从业年限</div></div>
+      <div class="mc"><div class="v">${mg.career_years==null?'—':mg.career_years+'年'}</div><div class="l">从业年限${(mg.co_managers&&mg.co_managers.length>1)?'（共管取max）':''}</div></div>
       <div class="mc"><div class="v">${mg.products_ann==null?'—':(mg.products_ann*100).toFixed(2)+'%'}</div><div class="l">在管产品年化中位数${mg.products_n?'（'+mg.products_n+'只）':''}</div></div>
       <div class="mc"><div class="v">${mg.tenure_days==null?'—':(mg.tenure_days/365).toFixed(1)+'年'}</div><div class="l">任本基金</div></div>
+      <div class="mc"><div class="v">${mg.tenure_calmar==null?'—':mg.tenure_calmar.toFixed(2)}</div><div class="l">任期卡玛<span style="color:var(--sub);font-weight:400">（展示·不计分）</span></div></div>
     </div>
   </div>`}
 

@@ -408,3 +408,72 @@ class TestCompareFields:
         """旧快照无评分明细时字段为 None（网页降级显示，不报错）。"""
         f = _payload()["funds"][0]
         assert f["raw_score"] is None and f["earned_weight"] is None
+
+
+class TestStyleAndManagerSeats:
+    """v5.5 风格标签 + 经理占席 + 共管字段（docs/12 §8/§9：仅展示、不计分）。"""
+
+    @staticmethod
+    def _stats(**over):
+        st = {"n": 1, "n_screened": 25, "top_n": 20, "has_prev": False,
+              "funnel": {}, "screen": {}}
+        st.update(over)
+        return {"short_bond": st}
+
+    def test_style_label_four_quadrants(self):
+        # 判向：vs 池内中位（收益、波动）双高=进取；收益高波低=稳健；双低=防守；收益低波高=震荡
+        assert cards._style_label(0.05, 0.06, 0.04, 0.04) == "进取型"
+        assert cards._style_label(0.05, 0.03, 0.04, 0.04) == "稳健型"
+        assert cards._style_label(0.03, 0.03, 0.04, 0.04) == "防守型"
+        assert cards._style_label(0.03, 0.06, 0.04, 0.04) == "震荡型"
+        assert cards._style_label(None, 0.06, 0.04, 0.04) is None
+        assert cards._style_label(0.05, 0.06, None, 0.04) is None
+
+    def test_payload_style_from_pool_median(self):
+        res = pd.DataFrame([_row(score=90.0),
+                            _row(rank=2, code="110017", name="易方达增强回报A",
+                                 base="110017", src_code="110017", score=88.0,
+                                 manager="李某")])
+        recs = {"002438": _rec(ret_5y=0.05, vol_5y=0.06),
+                "110017": _rec(code="110017", name="易方达增强回报A",
+                               ret_5y=0.03, vol_5y=0.03, manager="李某")}
+        p = cards.build_payload(res, recs, {"002438": _nav(), "110017": _nav()},
+                                pool_stats=self._stats(
+                                    style_base={"ret_5y": 0.04, "vol_5y": 0.04}))
+        by = {f["code"]: f for f in p["funds"]}
+        assert by["002438"]["style"] == "进取型"
+        assert by["110017"]["style"] == "防守型"
+
+    def test_seats_count_across_board(self):
+        res = pd.DataFrame([_row(score=90.0),
+                            _row(rank=2, code="000385", name="景顺长城景颐双利A",
+                                 base="000385", src_code="000385", score=88.0)])
+        recs = {"002438": _rec(), "000385": _rec(code="000385", name="景顺长城景颐双利A")}
+        # 无 style_base（旧统计）→ 标签 None，不渲染；同一经理两只 → 各记占席 2
+        p = cards.build_payload(res, recs, {"002438": _nav(), "000385": _nav()},
+                                pool_stats=self._stats())
+        assert all(f["style"] is None for f in p["funds"])
+        assert all(f["manager"]["seats"] == 2 for f in p["funds"])   # 同为"张某"
+
+    def test_manager_contract_co_managers_and_tenure_calmar(self):
+        rec = _rec(manager="甲",
+                   managers=[{"name": "甲", "id": "1", "start": "2016-01-01",
+                              "tenure_days": 4000, "career_years": 12.0,
+                              "products_ann": 0.05, "products_n": 9},
+                             {"name": "乙", "id": "2", "start": "2018-05-01",
+                              "tenure_days": 3100, "career_years": 8.0,
+                              "products_ann": 0.07, "products_n": 5}],
+                   mgr_tenure_calmar=2.34)
+        res = pd.DataFrame([_row(manager="甲")])
+        p = cards.build_payload(res, {"002438": rec}, {"002438": _nav()},
+                                pool_stats=self._stats())
+        m = p["funds"][0]["manager"]
+        assert [c["name"] for c in m["co_managers"]] == ["甲", "乙"]
+        assert m["co_managers"][0]["is_primary"] is True
+        assert m["co_managers"][1]["is_primary"] is False
+        assert m["tenure_calmar"] == pytest.approx(2.34)
+        # 旧缓存（无 managers 列表）→ []，前端按单经理渲染
+        p2 = cards.build_payload(pd.DataFrame([_row()]), {"002438": _rec()},
+                                 {"002438": _nav()}, pool_stats=self._stats())
+        assert p2["funds"][0]["manager"]["co_managers"] == []
+        assert p2["funds"][0]["manager"]["tenure_calmar"] is None

@@ -100,6 +100,24 @@ def _opt_dict(row, key):
     return v if isinstance(v, dict) else None
 
 
+def _style_label(ret, vol, med_ret, med_vol):
+    """风格标签（池内相对，仅展示不计分，docs/12 §8）：按本池候选中位切四象限。
+
+    进取型 = 收益波动双高；稳健型 = 收益高波动低；防守型 = 双低；震荡型 = 收益低波动高。
+    任一输入缺失 → None（前端不渲染标签）。
+    """
+    if ret is None or vol is None or med_ret is None or med_vol is None:
+        return None
+    hi_r, hi_v = ret >= med_ret, vol >= med_vol
+    if hi_r and hi_v:
+        return "进取型"
+    if hi_r:
+        return "稳健型"
+    if hi_v:
+        return "震荡型"
+    return "防守型"
+
+
 def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
                max_points: int, category: str = "short_bond") -> dict:
     """单只基金的卡片+详情数据（row=榜单行，rec=排序份额的指标记录）。"""
@@ -153,6 +171,15 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
             "tenure_days": _r(row.get("tenure"), 0),  # 基金级：同经理份额最大任期
             "products_ann": _rec_metric(rec, "mgr_products_ann", 4),
             "products_n": _rec_metric(rec, "mgr_products_n", 0),  # 计入中位数的产品数（透明化）
+            # v5.5 共管（docs/12 §9）：现任经理全量；主责=任本基金最久（is_primary 标记）。
+            # 旧缓存无 managers → []，前端按单经理渲染。
+            "co_managers": [{"name": x.get("name", ""),
+                             "tenure_days": _r(x.get("tenure_days"), 0),
+                             "is_primary": bool(x.get("name") == row["manager"])}
+                            for x in (rec.get("managers") or [])],
+            # 任期卡玛（展示用、不计分）：任期年化收益 ÷ max(任期回撤, 0.5%)
+            "tenure_calmar": _rec_metric(rec, "mgr_tenure_calmar", 2),
+            # "seats" = 该经理当期上榜占席数，build_payload 全榜统计后注入
         },
         "fund_info": {
             "scale_yi": _r(row["scale_sum"], 2),            # 基金级合并规模
@@ -218,6 +245,21 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         funds.append(build_fund(row, rec, nav, max_points, category=cat))
     primary = next(iter(pool_stats), None) if pool_stats else None
     ps = pool_stats.get(primary, {}) if primary else {}
+    # v5.5 风格标签（池内相对、仅展示不计分）：按本池候选中位切四象限
+    for f in funds:
+        sb = (pool_stats or {}).get(f["category"], {}).get("style_base") or {}
+        f["style"] = _style_label((f.get("metrics") or {}).get("ret_5y"),
+                                  (f.get("metrics") or {}).get("vol_5y"),
+                                  sb.get("ret_5y"), sb.get("vol_5y"))
+    # v5.5 经理占席（全榜跨池统计，提示集中度；仅展示不扣分，docs/12 §9）
+    seats: dict = {}
+    for f in funds:
+        nm = (f.get("manager") or {}).get("name")
+        if nm:
+            seats[nm] = seats.get(nm, 0) + 1
+    for f in funds:
+        nm = (f.get("manager") or {}).get("name")
+        f["manager"]["seats"] = seats.get(nm) if nm else None
     # 各池统计 + 评分权重/分块（权重来自 config.POOL_WEIGHTS，供网页「池内横向对比」复算与分区）
     pools = {}
     for pid, st in (pool_stats or {}).items():

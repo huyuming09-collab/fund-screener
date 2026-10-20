@@ -80,19 +80,47 @@ chk('详情无申购+托管费旧口径', !db.includes('申购+托管费'));
 const den0 = (D.pools && D.pools[shortFunds[0].category] && D.pools[shortFunds[0].category].n) || D.n;
 chk('详情头部名次（分母=所属池 n）',
   document.getElementById('d-rank').textContent.includes('第 '+shortFunds[0].rank+' 名 / '+den0));
-chk('头部分类标签非硬编码',
-  document.getElementById('d-code').textContent.endsWith('· '+catLabel(shortFunds[0].category)));
+chk('头部分类标签非硬编码', (() => {
+  const t = document.getElementById('d-code').textContent;
+  /* v5.5 头部追加风格后缀（code · 池名 · 风格）→ 用 startsWith+includes 校验池名动态 */
+  return t.startsWith(shortFunds[0].code + ' · ') && t.includes('· '+catLabel(shortFunds[0].category));
+})());
 chk('同类分位标题动态分类', db.includes('同类分位（'+catLabel(shortFunds[0].category)+'池）'));
 
-// 5. 环比/新增：按 D.has_prev 分支；再用合成数据覆盖 ↑/↓/新增 三个渲染分支
+// 4b. v5.5（docs/12 §8/§9/§11）：风格标签 / 经理占席 / 共管 / 任期卡玛——均仅展示不计分
+const styledAll = (D.funds||[]).filter(f=>f.style!=null);
+chk('风格标签：有值且为四象限之一',
+    styledAll.length>0 && styledAll.every(f=>['进取型','稳健型','防守型','震荡型'].includes(f.style)));
+chk('列表卡风格徽标渲染（当前池）', /class="rk style /.test(listHTML));
+chk('详情头部带风格后缀（无标签时可缺席）',
+    !shortFunds[0].style || document.getElementById('d-code').textContent.split(' · ').length>=3);
+chk('详情经理区：任期卡玛（展示·不计分）',
+    db.includes('任期卡玛') && db.includes('展示·不计分'));
+chk('经理占席契约：逐只有值；当前池有占席≥2 则徽标渲染',
+    shortFunds.every(f=>f.manager && f.manager.seats!=null)
+    && (!shortFunds.some(f=>f.manager.seats>=2) || listHTML.includes('占席×')));
+chk('共管字段契约：一律为数组（旧缓存空数组，前端按单经理渲染）',
+    (D.funds||[]).every(f=>Array.isArray(f.manager.co_managers)));
+
+// 5. 环比/新增：按 D.has_prev 分支，逐池检查（DOM 只渲染当前 tab → 合同按池限定，
+//    否则"新增落在固收+、断言查中短债 DOM"会误报）
 const baseList = document.getElementById('list').innerHTML;
 const origHasPrev = D.has_prev;
 if (D.has_prev) {
-  const anyDelta = D.funds.some(f=>f.rank_delta!=null);
-  const anyNew = D.funds.some(f=>f.is_new);
-  chk('有历史：环比徽标/新增标记随契约渲染',
-      (!anyDelta || /class="rk (up|dn|flat)">/.test(baseList))
-      && (!anyNew || baseList.includes('rk new')));
+  const poolIds = D.pools ? Object.keys(D.pools) : ['short_bond'];
+  let okAll = true;
+  for (const pid of poolIds) {
+    const tabFunds = (D.funds||[]).filter(f=>(f.category || D.category || 'short_bond')===pid);
+    if (!tabFunds.length) continue;
+    switchTab(pid);
+    const h = document.getElementById('list').innerHTML;
+    const anyDelta = tabFunds.some(f=>f.rank_delta!=null);
+    const anyNew = tabFunds.some(f=>f.is_new);
+    okAll = okAll && (!anyDelta || /class="rk (up|dn|flat)">/.test(h))
+                  && (!anyNew || h.includes('rk new'));
+  }
+  switchTab('short_bond');
+  chk('有历史：环比徽标/新增标记随契约渲染（逐池）', okAll);
 } else {
   chk('首期列表无环比徽标/新增标记',
       !baseList.includes('rk up') && !baseList.includes('rk new') && !baseList.includes('新增'));
@@ -303,6 +331,13 @@ if (shortFunds.length >= 2) {
   chk('对比表含四分区与校验行',
       cb.includes('综合概览') && cb.includes('评分明细') && cb.includes('关键指标')
       && cb.includes('Σ 贡献分') && cb.includes('= 卡片上的评分'));
+  const selCmp = CMP.map(c=>D.funds.find(f=>f.code===c));
+  const tsvCmp = cmpTSV(selCmp, null, 0);
+  const anySeat = selCmp.some(f=>f.manager && f.manager.seats>=2);
+  chk('对比表含风格/经理行（v5.5 仅展示）',
+      cb.includes('>风格<') && cb.includes('>经理<')
+      && tsvCmp.includes('风格') && tsvCmp.includes('经理')
+      && (/占席×\\d/.test(tsvCmp) === anySeat));
   chk('对比列数 = 选中只数', (cb.match(/<th><span class="nm">/g)||[]).length===CMP.length);
   const sel = CMP.map(c=>D.funds.find(f=>f.code===c));
   chk('契约字段齐备：raw_score/earned_weight/weights',

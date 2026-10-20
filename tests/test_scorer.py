@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """评分器单元测试：合成指标数据验证打分方向、红线、星级配额（不依赖网络）。"""
+import datetime as dt
+
 import numpy as np
+import pandas as pd
 import pytest
 
 from fundscorer import config as C
@@ -170,4 +173,84 @@ class TestRiskRatios:
         # 权重表引用的派生因子必须在 PERCENTILE_METRICS 注册（否则分位分不生效）
         for k in ("calmar_5y", "sharpe_5y"):
             assert C.PERCENTILE_METRICS[k] == "higher"
-            assert k in C.FIXED_PLUS_WEIGHTS and C.FIXED_PLUS_WEIGHTS[k] > 0
+        # v6（docs/12，11 截面双段验证）：比率族同族择优——夏普与卡玛 ρ=0.902 冗余，
+        # 并入卡玛（卡玛为唯一代表）；族总权重不变（15+10 → 25+0），只换族内代表
+        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] == 25
+        assert C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 0
+        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] + C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 25
+
+
+class TestMultiManager:
+    """v5.5 共管规则（docs/12 §9）：主责=任本基金最久；共管满3年逐项取 max；不足按主责。"""
+
+    @staticmethod
+    def _patch(monkeypatch, careers, products):
+        from fundscorer import data as D
+        monkeypatch.setattr(D, "fetch_manager_career_years",
+                            lambda name, code=None: careers.get(name))
+        monkeypatch.setattr(D, "fetch_manager_products_ann", lambda mid: products.get(mid, []))
+
+    def test_core_managers_take_max(self, monkeypatch):
+        from fundscorer.scorer import _manager_metrics
+        self._patch(monkeypatch, careers={"甲": 12.0, "乙": 6.0},
+                    products={"1": [0.05], "2": [0.08, 0.09]})
+        f10 = {"managers": [{"name": "甲", "id": "1", "start": "2019-06-01"},
+                            {"name": "乙", "id": "2", "start": "2022-01-01"}]}
+        out = _manager_metrics(f10, "000001")
+        assert out["manager"] == "甲"                          # 主责 = 任期最久
+        assert out["mgr_tenure_days"] == (dt.date.today() - dt.date(2019, 6, 1)).days
+        assert out["mgr_career_years"] == 12.0                 # 共管满3年 → 从业取 max
+        assert out["mgr_products_ann"] == pytest.approx(0.085)  # 全产品年化取 max（中位0.085）
+        assert out["mgr_products_n"] == 2
+        assert [x["name"] for x in out["managers"]] == ["甲", "乙"]
+
+    def test_young_core_falls_back_to_primary(self, monkeypatch):
+        # 全部共管<3年 → 按主责计分；各自数据各归各人 → 新任<1年不背前任战绩
+        from fundscorer.scorer import _manager_metrics
+        self._patch(monkeypatch, careers={"甲": 12.0, "乙": 6.0},
+                    products={"1": [0.06], "2": [0.02]})
+        f10 = {"managers": [{"name": "甲", "id": "1", "start": "2026-09-01"},
+                            {"name": "乙", "id": "2", "start": "2026-05-01"}]}
+        out = _manager_metrics(f10, "000001")
+        assert out["manager"] == "乙"                          # 主责 = 任期最长（仍<3年）
+        assert out["mgr_career_years"] == 6.0                  # 只按主责，不取甲的 12
+        assert out["mgr_products_ann"] == pytest.approx(0.02)   # 甲的 0.06 不进入
+
+    def test_fallback_without_managers_list(self, monkeypatch):
+        from fundscorer.scorer import _manager_metrics
+        self._patch(monkeypatch, careers={"丙": 9.0}, products={"9": [0.04]})
+        f10 = {"managers": [], "manager": "丙", "manager_id": "9",
+               "manager_start": "2020-01-01"}
+        out = _manager_metrics(f10, "000001")
+        assert out["manager"] == "丙" and out["managers"] == []   # 旧缓存单经理回退
+        assert out["mgr_career_years"] == 9.0
+        assert out["mgr_products_ann"] == pytest.approx(0.04)
+        assert out["mgr_tenure_days"] == (dt.date.today() - dt.date(2020, 1, 1)).days
+
+
+class TestTenureCalmar:
+    """经理本基金任期卡玛：展示用（不计分），任期窗口年化 ÷ max(任期回撤, 0.5%)。"""
+
+    @staticmethod
+    def _nav():
+        dates = pd.date_range("2020-01-31", periods=80, freq="ME")
+        return pd.DataFrame({"date": dates, "nav": 1.0015 ** np.arange(80)})
+
+    def test_annual_over_floor(self):
+        from fundscorer.scorer import _tenure_calmar
+        nav = self._nav()
+        f10 = {"managers": [{"name": "甲", "id": "1", "start": "2021-01-01"}]}
+        v = _tenure_calmar(nav, f10, {"manager": "甲"})
+        sub = nav[nav["date"] >= pd.Timestamp("2021-01-01")]
+        days = (sub["date"].iloc[-1] - sub["date"].iloc[0]).days
+        ann = (sub["nav"].iloc[-1] / sub["nav"].iloc[0]) ** (365.25 / days) - 1
+        assert v == pytest.approx(ann / 0.005, rel=1e-6)   # 单调上涨 → 任期回撤0 → 走地板
+
+    def test_none_when_short_or_missing(self):
+        from fundscorer.scorer import _tenure_calmar
+        nav = self._nav()
+        recent = (dt.date.today() - dt.timedelta(days=100)).isoformat()
+        assert _tenure_calmar(nav, {"managers": [{"name": "甲", "id": "1", "start": recent}]},
+                              {"manager": "甲"}) is None      # 任期<1年不出数
+        assert _tenure_calmar(nav, {"managers": []}, {"manager": "甲"}) is None  # 无起点
+        assert _tenure_calmar(None, {"managers": []}, {"manager": "甲"}) is None
