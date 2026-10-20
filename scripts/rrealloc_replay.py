@@ -192,6 +192,7 @@ def main() -> None:
             ("D16b rank_stab→0 (B1-A)", ["rank_stab"], None, "A"),
             ("D17 repair→0 敏感性 (B1-A)", ["repair_5y"], None, "A"),
             ("D10A winrate→0 (B1-A)", ["winrate_m_5y"], None, "A"),
+            ("TR 两因子 (B1-A)",    ["mgr_tenure", "rank_stab"], None, "A"),
             ("TRW 三因子 (B1-A)",   ["mgr_tenure", "rank_stab", "winrate_m_5y"], None, "A"),
             ("TRW 三因子 (B1-B)",   ["mgr_tenure", "rank_stab", "winrate_m_5y"], None, "B"),
             ("B2 tenure→career",    ["mgr_tenure"], ("mgr_tenure", "mgr_career"), "A"),

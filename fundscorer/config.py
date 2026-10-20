@@ -15,7 +15,7 @@
 
 # v5.5（2026-10-19）：固收+评分卡 v6 = B′ 同族择优（卡玛 25 / 夏普 0）+ 多经理共管规则，
 # 依据 docs/12 全链路验证（11 截面双段 IC / 冗余矩阵 / 方案对比 / 剂量曲线 / 逻辑回检）。
-MODEL_VERSION = "v5.8"
+MODEL_VERSION = "v5.9"
 
 # ---------------------------------------------------------------- 窗口
 WINDOWS = {"primary_years": 5, "secondary_years": 3, "aux_years": 1}
@@ -41,24 +41,36 @@ INDEX = {
 #   与跨周期保险，不参与 IC 加权）；其余 61 分按 2019H1~2022H1 训练段方向对齐 IC 分配，
 #   单因子上限 15。组合层验证：前20%持有1年胜率 现行0.565 → 混合B 0.601（验证段三池全部提升）。
 # 下表为短债池分配（fee/ret_1y/winrate 按短债池训练段 IC）；中长期纯债用 PURE_BOND_WEIGHTS_LONG。
+# v5.9（2026-10-20 用户拍板，docs/14 §6 R-REALLOC 重放验证）：D16-前置=B1 固定块缩水 + 口径 A 等比放大——
+#   mgr_tenure 4→0（D16a：S3 闸后 tenure≈老基金，选择偏差 tenure–年龄 corr 0.61/0.53，验证段反向 t −4.7/−5.9）；
+#   rank_stab 3→0（D16b：验证段原始 IC +0.225/t 11.0 反设计，"稳者弱"债牛状态依赖，展示保留）；
+#   短债 repair_5y 4→0（D17：验证段 IC≈0；长债保留 4 分 valid +0.044）；
+#   释放权重 11 分按口径 A 进 IC 池（61→72 等比放大），单因子上限 15 无触顶；
+#   重放验证段前20%胜率 0.622 → 0.655（scripts/rrealloc_replay.py）。
 PURE_BOND_WEIGHTS = {
-    # 风险块 15（固定；门槛式打分，只排除尾部不做排序——IC为负系债牛状态依赖）
-    "mdd_5y": 5, "mdd_3y": 3, "mdd_1y": 2, "repair_5y": 4, "vol_5y": 1,
-    # IC 池 61：低费率+近端动量被证实最强
-    "fee": 8.91, "ret_3y": 8.65, "ret_5y": 8.46, "ret_1y": 7.69, "yearly_5y": 7.49,
-    "q_excess_20q": 7.10, "lvi_5y": 6.22, "lvi_3y": 6.02, "winrate_m_5y": 0.46, "age": 0,
-    # 固定块：稳定性 3 + 经理 20（任期4+从业年限5+全产品年化11）+ 晨星 1
-    "rank_stab": 3, "mgr_tenure": 4, "mgr_career": 5, "mgr_products_ann": 11,
+    # 风险块 11（固定；门槛式打分，只排除尾部不做排序——IC为负系债牛状态依赖）
+    # v5.9：repair_5y 4→0（D17 短债归零，修复天数验证段 IC≈0；改门槛式为备选未采纳）
+    "mdd_5y": 5, "mdd_3y": 3, "mdd_1y": 2, "repair_5y": 0, "vol_5y": 1,
+    # IC 池 72（v5.9：61 等比放大 ×72/61，吸收 tenure/rank_stab/repair 释放的 11 分）
+    "fee": 10.51, "ret_3y": 10.21, "ret_5y": 9.99, "ret_1y": 9.08, "yearly_5y": 8.84,
+    "q_excess_20q": 8.38, "lvi_5y": 7.34, "lvi_3y": 7.11, "winrate_m_5y": 0.54, "age": 0,
+    # 固定块：稳定性 0（v5.9 rank_stab 归零，D16b）+ 经理 16（任期0+从业5+全产品年化11）
+    #   + 晨星 1
+    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 11,
     "ms_rating": 1, "inst_ratio": 0, "fund_scale": 0, "company_scale": 0,
 }
 
 # 中长期纯债池（同结构，IC 池内按该池训练段 IC 分配；winrate IC 为正故权重高于短债）
+# v5.9（同上拍板）：mgr_tenure 4→0、rank_stab 3→0（释放 7 分等比放大 IC 池 61→68）；
+# repair_5y 保留 4（D17：长债验证段 valid +0.044/t 3.0 边缘正，拍板保留）；
+# 重放验证段前20%胜率 0.622 → 0.633（TR 两因子 B1-A 场景）。
 PURE_BOND_WEIGHTS_LONG = {
     "mdd_5y": 5, "mdd_3y": 3, "mdd_1y": 2, "repair_5y": 4, "vol_5y": 1,
-    "ret_1y": 9.97, "ret_3y": 8.82, "lvi_3y": 8.27, "yearly_5y": 7.29,
-    "q_excess_20q": 6.92, "ret_5y": 6.48, "lvi_5y": 5.49, "winrate_m_5y": 4.25,
-    "fee": 3.51, "age": 0,
-    "rank_stab": 3, "mgr_tenure": 4, "mgr_career": 5, "mgr_products_ann": 11,
+    # IC 池 68（v5.9：61 等比放大 ×68/61，吸收 tenure/rank_stab 释放的 7 分）
+    "ret_1y": 11.12, "ret_3y": 9.83, "lvi_3y": 9.22, "yearly_5y": 8.13,
+    "q_excess_20q": 7.71, "ret_5y": 7.22, "lvi_5y": 6.12, "winrate_m_5y": 4.74,
+    "fee": 3.91, "age": 0,
+    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 11,
     "ms_rating": 1, "inst_ratio": 0, "fund_scale": 0, "company_scale": 0,
 }
 
