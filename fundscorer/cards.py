@@ -27,6 +27,7 @@ import datetime as dt
 import pandas as pd
 
 from . import config as C
+from . import data as D
 from . import metrics
 
 DISCLAIMER = ("本页榜单由程序基于公开历史数据自动生成，仅为数据分析研究结论，"
@@ -138,6 +139,9 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         "is_new": _flag(row, "is_new"),
         # 指数基金穿插入榜标记：前端据此可标注"按跟踪标的评估，不看经理业绩"口径
         "is_index": _flag(row, "is_index"),
+        # 申购状态（2026-10-20 用户要求）：suspended = 暂停/封闭/未开放（"限大额"仍可小额申购）
+        "purchase_status": rec.get("purchase_status"),
+        "suspended": D.sgzt_suspended(rec.get("purchase_status")),
         # 指数评分依据：业绩位置插值的上下邻锚点（主动基金为 None）——卡片可核对
         # "业绩落在谁和谁之间、分数取这两个分数之间"
         "score_basis": _opt_dict(row, "score_basis"),

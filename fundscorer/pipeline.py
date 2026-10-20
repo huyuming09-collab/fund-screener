@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import batch, cards, config as C
+from . import batch, cards, config as C, data as D
 from . import indexfund as IF
 from . import screen as S
 from .scorer import score_pool
@@ -209,7 +209,8 @@ def _index_meta(idx_recs: list[dict]) -> dict:
     return out
 
 
-def _screen_pool(pool: str, top_n: int, asof: str | None, log) -> dict:
+def _screen_pool(pool: str, top_n: int, asof: str | None, log,
+                 refresh: bool = False) -> dict:
     """单池：筛选输入 → 两段筛选 → 筛后评分 → TOP-N → 环比。
 
     返回 {res（含 category 列）, funnel, snapshot, navs, prev_ranks, n_screened}；
@@ -247,6 +248,10 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log) -> dict:
     cand_codes = {c for codes in candidates["codes"] for c in codes}
     quota_n = sum(1 for r in act_recs if not r.get("insufficient_history"))
     scored = score_pool(act_recs, score_only=cand_codes, quota_n=quota_n)
+    # 申购状态（2026-10-20 用户要求：暂停申购在卡片标注）：刷新日联网补缺失，平时只读缓存
+    sgzt = D.fetch_purchase_status(sorted(cand_codes), refresh=refresh)
+    for r in scored:
+        r["purchase_status"] = sgzt.get(r["code"])
     snapshot = {r["code"]: r for r in scored if "score" in r
                 and not r.get("_unscored")}
     n_ok = sum(1 for c in cand_codes if snapshot.get(c, {}).get("score_capped") is not None)
@@ -346,7 +351,7 @@ def run(skip_refresh: bool = False, top: int | None = None,
         # ---- 2~5b. 逐池筛选评分（全部算完才进入导出，单池失败=整体失败） ----
         out: dict[str, dict] = {}
         for pool in pools:
-            out[pool] = _screen_pool(pool, top_n, asof, log)
+            out[pool] = _screen_pool(pool, top_n, asof, log, refresh=not skip_refresh)
 
         # ---- 6. 导出（全部池就绪后原子替换；历史最后写，失败不污染基准） ----
         stats = {p: {"n": len(out[p]["res"]),

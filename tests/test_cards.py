@@ -477,3 +477,24 @@ class TestStyleAndManagerSeats:
                                  {"002438": _nav()}, pool_stats=self._stats())
         assert p2["funds"][0]["manager"]["co_managers"] == []
         assert p2["funds"][0]["manager"]["tenure_calmar"] is None
+
+
+class TestPurchaseStatusCard:
+    """卡片透传申购状态（2026-10-20 用户要求：暂停申购标注）。"""
+
+    def test_suspended_passthrough(self):
+        p = cards.build_payload(pd.DataFrame([_row()]),
+                                {"002438": _rec(purchase_status="暂停申购")},
+                                {"002438": _nav()})
+        f = p["funds"][0]
+        assert f["purchase_status"] == "暂停申购"
+        assert f["suspended"] is True
+
+    def test_open_limit_or_missing_not_flagged(self):
+        for st in ("开放申购", "限大额", None):
+            p = cards.build_payload(pd.DataFrame([_row()]),
+                                    {"002438": _rec(purchase_status=st)},
+                                    {"002438": _nav()})
+            f = p["funds"][0]
+            assert f["purchase_status"] == st
+            assert f["suspended"] is False

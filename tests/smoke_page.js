@@ -81,9 +81,11 @@ const den0 = (D.pools && D.pools[shortFunds[0].category] && D.pools[shortFunds[0
 chk('详情头部名次（分母=所属池 n）',
   document.getElementById('d-rank').textContent.includes('第 '+shortFunds[0].rank+' 名 / '+den0));
 chk('头部分类标签非硬编码', (() => {
+  /* 2026-10-20 用户要求：基金代码移到标题行内（d-code-inline），scoreline 改为
+     池名·风格·申购状态 → 校验代码精确 + 池名动态 */
+  const ci = document.getElementById('d-code-inline').textContent;
   const t = document.getElementById('d-code').textContent;
-  /* v5.5 头部追加风格后缀（code · 池名 · 风格）→ 用 startsWith+includes 校验池名动态 */
-  return t.startsWith(shortFunds[0].code + ' · ') && t.includes('· '+catLabel(shortFunds[0].category));
+  return ci === shortFunds[0].code && t.includes(catLabel(shortFunds[0].category));
 })());
 chk('同类分位标题动态分类', db.includes('同类分位（'+catLabel(shortFunds[0].category)+'池）'));
 
@@ -93,7 +95,7 @@ chk('风格标签：有值且为四象限之一',
     styledAll.length>0 && styledAll.every(f=>['进取型','稳健型','防守型','震荡型'].includes(f.style)));
 chk('列表卡风格徽标渲染（当前池）', /class="rk style /.test(listHTML));
 chk('详情头部带风格后缀（无标签时可缺席）',
-    !shortFunds[0].style || document.getElementById('d-code').textContent.split(' · ').length>=3);
+    !shortFunds[0].style || document.getElementById('d-code').textContent.includes('· '+shortFunds[0].style));
 chk('详情经理区：任期卡玛（展示·不计分）',
     db.includes('任期卡玛') && db.includes('展示·不计分'));
 chk('经理占席契约：逐只有值；当前池有占席≥2 则徽标渲染',

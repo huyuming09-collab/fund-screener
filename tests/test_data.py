@@ -71,3 +71,44 @@ def test_fetch_f10_reads_and_writes_same_v3_key(monkeypatch):
     D.fetch_f10("000001")
     assert loaded == ["f10_v3_000001"]
     assert saved == ["f10_v3_000001"]
+
+
+class TestPurchaseStatus:
+    """申购状态（2026-10-20 用户要求：暂停申购在卡片标注）。"""
+
+    HTML_LIM = ('<span>交易状态：</span><span class="staticCell">限大额  '
+                '(<span>单日累计购买上限5000.00万元</span>)</span>')
+    HTML_SUS = '<span>交易状态：</span><span class="staticCell">暂停申购</span>'
+
+    def test_parse_sgzt(self):
+        assert D._parse_sgzt(self.HTML_LIM) == "限大额"
+        assert D._parse_sgzt(self.HTML_SUS) == "暂停申购"
+        assert D._parse_sgzt("<html>没有状态字段</html>") is None
+
+    def test_sgzt_suspended(self):
+        assert D.sgzt_suspended("暂停申购") is True
+        assert D.sgzt_suspended("暂停交易") is True
+        assert D.sgzt_suspended("封闭期") is True
+        assert D.sgzt_suspended("未开放") is True
+        assert D.sgzt_suspended("限大额") is False   # 限大额仍可小额申购，不标"不能申购"
+        assert D.sgzt_suspended("开放申购") is False
+        assert D.sgzt_suspended(None) is False
+
+    def test_fetch_readonly_skips_network(self, monkeypatch):
+        # --skip-refresh 语义：只读缓存，缓存缺失也不联网
+        monkeypatch.setattr(D, "_load_cache", lambda key, h: None)
+
+        def boom(*a, **k):
+            raise AssertionError("readonly 模式不得联网")
+        monkeypatch.setattr(D, "_http", boom)
+        assert D.fetch_purchase_status(["000001"], refresh=False) == {}
+
+    def test_fetch_refresh_cache_hit_and_new(self, monkeypatch):
+        saved = {}
+        monkeypatch.setattr(D, "_load_cache",
+                            lambda key, h: "开放申购" if key == "sgzt_v1_000002" else None)
+        monkeypatch.setattr(D, "_save_cache", lambda key, obj: saved.update({key: obj}))
+        monkeypatch.setattr(D, "_http", lambda *a, **k: self.HTML_SUS)
+        out = D.fetch_purchase_status(["000001", "000002"], refresh=True, sleep_s=0)
+        assert out == {"000001": "暂停申购", "000002": "开放申购"}
+        assert saved == {"sgzt_v1_000001": "暂停申购"}

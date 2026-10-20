@@ -263,7 +263,45 @@ def fetch_inst_ratio(code: str) -> float | None:
     return val
 
 
-# ---------------------------------------------------------------- 4. 基金经理全产品年化
+# ---------------------------------------------------------------- 4. 申购状态（开放/限大额/暂停…）
+def _parse_sgzt(html: str) -> str | None:
+    """基金页"交易状态"字段（开放申购 / 限大额 / 暂停申购 / 暂停交易 / 封闭期…）。"""
+    m = re.search(r"交易状态：</span>\s*<span class=\"staticCell\">\s*([^<(\n]+)", html)
+    return m.group(1).strip() if m else None
+
+
+def sgzt_suspended(status: str | None) -> bool:
+    """是否**暂时不能申购**（暂停/封闭/未开放）；"限大额"仍可小额申购 → False。"""
+    return bool(status) and any(k in status for k in ("暂停", "封闭", "未开放"))
+
+
+def fetch_purchase_status(codes: list[str], refresh: bool = False,
+                          sleep_s: float = 0.12) -> dict[str, str]:
+    """申购状态字典 {code: 状态文本}。缓存 `sgzt_v1_{code}`（7 天）。
+
+    refresh=False 只读缓存（--skip-refresh 语义，不联网）；refresh=True 仅对缓存缺失
+    的代码抓取（每只一个轻量页面，sleep 限频）。2026-10-20 用户授权当日随 v5.8 一并
+    落数据（候选池约 300 只）。
+    """
+    out: dict[str, str] = {}
+    for code in codes:
+        cached = _load_cache(f"sgzt_v1_{code}", 24 * 7)
+        if cached is None and refresh:
+            try:
+                cached = _parse_sgzt(_http(f"https://fund.eastmoney.com/{code}.html",
+                                           encoding="utf-8",
+                                           referer=f"https://fund.eastmoney.com/{code}.html"))
+            except Exception:
+                cached = None
+            if cached is not None:
+                _save_cache(f"sgzt_v1_{code}", cached)
+            time.sleep(sleep_s)
+        if cached is not None:
+            out[code] = str(cached)
+    return out
+
+
+# ---------------------------------------------------------------- 5. 基金经理全产品年化
 _MGR_TABLE_CACHE: pd.DataFrame | None = None
 
 

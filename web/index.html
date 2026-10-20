@@ -90,6 +90,9 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .rk.style.aggr{background:#fff1e6;color:#c05c00;}      /* 进取型：收益波动双高 */
 .rk.style.steady{background:#e8f6ec;color:#1a7f37;}    /* 稳健型：收益高波动低 */
 .rk.style.defen{background:#e8f1fd;color:#1d5bb8;}     /* 防守型：收益波动双低 */
+.rk.sgz{color:#c0392b;background:#fdecea;border-radius:5px;padding:0 5px;
+  border:1px solid rgba(192,57,43,.35);font-size:10.5px;}   /* 暂停申购标注（2026-10-20） */
+.d-code-inline{opacity:.55;font-size:12px;margin-left:8px;font-weight:600;letter-spacing:.5px;}
 .rk.style.wave{background:#f3ecfd;color:#7237c0;}      /* 震荡型：收益低波动高 */
 .seats{color:#a15c00;background:#fff7e0;border-radius:8px;padding:1px 6px;
        font-size:10.5px;font-weight:600;}
@@ -242,7 +245,7 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
   <div id="detail" aria-hidden="true">
     <div class="d-head">
       <div class="d-title"><button class="back" onclick="closeDetail()">‹</button>
-        <span class="n" id="d-name">—</span></div>
+        <span class="n" id="d-name">—</span><span class="d-code-inline" id="d-code-inline"></span></div>
       <div class="d-scoreline">
         <span>综合评分 <b id="d-score">—</b></span>
         <span id="d-rank"></span>
@@ -587,7 +590,7 @@ function renderList(){
       <div class="fc-head">
         <div class="rank ${f.rank<=3?'top'+f.rank:''}">${f.rank}</div>
         <div style="flex:1;min-width:0">
-          <div class="fc-name">${f.name}${f.is_index?'<span class="rk idx">指数</span>':''}${f.style?`<span class="rk style ${STYLE_CLS[f.style]||''}">${f.style}</span>`:''}</div>
+          <div class="fc-name">${f.name}${f.is_index?'<span class="rk idx">指数</span>':''}${f.style?`<span class="rk style ${STYLE_CLS[f.style]||''}">${f.style}</span>`:''}${f.suspended?'<span class="rk sgz" title="该基金当前暂停申购/封闭，勿直接下单">暂停申购</span>':''}</div>
           <div class="fc-code">${f.code}<span class="dot">·</span>${catLabel(f.category)}
             <span class="dot">·</span><span class="score">评分 ${f.score}</span>${rkHTML(f)}</div>
         </div>
@@ -631,8 +634,10 @@ function openDetail(code){
   else if(CUR.rank_delta!=null) rk += CUR.rank_delta>0 ? `（较上期 ↑${CUR.rank_delta}）`
       : CUR.rank_delta<0 ? `（较上期 ↓${-CUR.rank_delta}）` : '（较上期 持平）';
   $('d-rank').textContent  = rk;
-  $('d-code').textContent  = CUR.code + ' · ' + catLabel(CUR.category)
-    + (CUR.style ? ' · ' + CUR.style : '');      /* v5.5 风格标签（池内相对，仅展示） */
+  $('d-code-inline').textContent = CUR.code;      /* 详情标题行内代码（2026-10-20 用户要求） */
+  $('d-code').textContent  = catLabel(CUR.category)
+    + (CUR.style ? ' · ' + CUR.style : '')        /* v5.5 风格标签（池内相对，仅展示） */
+    + (CUR.purchase_status ? ' · 申购：' + CUR.purchase_status : '');
   $('d-disc').textContent  = D.disclaimer;
   syncDetailPick();
   $('d-body').innerHTML = bodyHTML(CUR);
