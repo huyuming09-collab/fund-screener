@@ -240,6 +240,28 @@ SCHEMES = {
         "ret_5y": 6, "q_excess_20q": 6,                           # 收益可见度 12（挪自结构块）
         "fee": 10, "age": 3, "mgr_tenure": 5,
         "inst_ratio": 2, "fund_scale": 2},
+    # ---- 2026-10-20 追加（探索性，非原预注册）：mdd 窗口嵌套去重实验 ----
+    # 背景：ρ(1y,3y)=0.875 ρ(3y,5y)=0.906，panel 中 66% 样本 mdd_3y==mdd_5y（同一深谷
+    # 被计两次分）；用户问"近1年回撤同时压近3年近5年分数是否合理"。三组变体只动风险块
+    # 内部（总重保持 24），其余维度与 S0 完全一致 → 差异可归因于窗口结构。
+    "S5a 去重3y": {                                        # 3y 与 5y ρ0.91 且 66% 同值 → 砍掉
+        "mdd_1y": 14, "mdd_3y": 0, "mdd_5y": 10, "vol_5y": 11,
+        "calmar_5y": 15, "sharpe_5y": 10,
+        "winrate_m_5y": 9, "q_win_20q": 8,
+        "fee": 6, "mgr_tenure": 3,
+        "inst_ratio": 2, "mgr_products_ann": 11, "ms_rating": 1},
+    "S5b 1y5y对半": {                                      # 只留两个低相关窗口（ρ0.792）
+        "mdd_1y": 12, "mdd_3y": 0, "mdd_5y": 12, "vol_5y": 11,
+        "calmar_5y": 15, "sharpe_5y": 10,
+        "winrate_m_5y": 9, "q_win_20q": 8,
+        "fee": 6, "mgr_tenure": 3,
+        "inst_ratio": 2, "mgr_products_ann": 11, "ms_rating": 1},
+    "S5c 现状加陡": {                                      # 保留 3y 但近期更陡（13/4/7）
+        "mdd_1y": 13, "mdd_3y": 4, "mdd_5y": 7, "vol_5y": 11,
+        "calmar_5y": 15, "sharpe_5y": 10,
+        "winrate_m_5y": 9, "q_win_20q": 8,
+        "fee": 6, "mgr_tenure": 3,
+        "inst_ratio": 2, "mgr_products_ann": 11, "ms_rating": 1},
 }
 
 TOPN = 20          # 榜单规模（与线上 TOP_N 同口径）
