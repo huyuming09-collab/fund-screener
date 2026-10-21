@@ -114,39 +114,65 @@ class TestPurchaseStatus:
         assert saved == {"sgzt_v1_000001": "暂停申购"}
 
 
-# ---- 2026-10-21 回归接管任期虚增修复（用户发现某长债 top1 经理实际任期<2年却过了 S3 闸） ----
-# 任职记录表（每位经理一行，"至今"行 = 本轮任期权威源；实抓样本裁剪自 006212）：
-JJJL_REJOIN = '''
-<div class="boxitem w790"><h4 class="t"><label class="left">现任基金经理简介</label></h4>
-<div class="jl_intro"><a href="//fund.eastmoney.com/manager/30437326.html"><img src="a.jpg"/></a><div class="text">
-<p><strong>姓名：</strong><a style='color:#333;' href="//fund.eastmoney.com/manager/30437326.html">吴萍萍</a></p>
-<p><strong>上任日期：</strong>2018-08-24</p></div></div></div>
+# ---- 2026-10-21 经理任期口径修复（用户发现某长债 top1 经理实际任期<2年却过了 S3 闸；
+# 当日二改：用户校正"共管期也算真实任期"——任职记录表每行可含多位共管经理，口径 =
+# 连续在任（含共管期），与经理侧历任表一致）----
+# 任职记录表实抓样本裁剪自 006212（注意 2025-03-05~2025-12-16 行内两人共管）：
+JJJL_TABLE_006212 = '''
 <table class="w790"><tbody>
 <tr><td>2025-12-17</td><td>至今</td><td><a href='http://fund.eastmoney.com/manager/30437326.html'>吴萍萍</a> </td><td>308天</td></tr>
-<tr><td>2025-03-05</td><td>2025-12-16</td><td><a href='http://fund.eastmoney.com/manager/30500700.html'>刘长俊</a> </td><td>1年又72天</td></tr>
+<tr><td>2025-03-05</td><td>2025-12-16</td><td><a href='http://fund.eastmoney.com/manager/30500700.html'>刘长俊</a> <a href='http://fund.eastmoney.com/manager/30437326.html'>吴萍萍</a> </td><td>286天</td></tr>
+<tr><td>2023-10-25</td><td>2025-03-04</td><td><a href='http://fund.eastmoney.com/manager/30500700.html'>刘长俊</a> </td><td>1年又131天</td></tr>
+<tr><td>2021-01-28</td><td>2023-10-24</td><td><a href='http://fund.eastmoney.com/manager/30698282.html'>车日楠</a> </td><td>2年又269天</td></tr>
+<tr><td>2020-04-30</td><td>2021-01-27</td><td><a href='http://fund.eastmoney.com/manager/30437326.html'>吴萍萍</a> <a href='http://fund.eastmoney.com/manager/30698282.html'>车日楠</a> </td><td>272天</td></tr>
+<tr><td>2019-04-30</td><td>2020-04-29</td><td><a href='http://fund.eastmoney.com/manager/30437326.html'>吴萍萍</a> </td><td>1年又0天</td></tr>
+<tr><td>2018-08-24</td><td>2019-02-28</td><td><a href='http://fund.eastmoney.com/manager/30437326.html'>吴萍萍</a> </td><td>188天</td></tr>
 </tbody></table>'''
 
+JJJL_INTRO_STALE = '''
+<div class="jl_intro"><a href="//fund.eastmoney.com/manager/30437326.html"><img src="a.jpg"/></a><div class="text">
+<p><strong>姓名：</strong><a style='color:#333;' href="//fund.eastmoney.com/manager/30437326.html">吴萍萍</a></p>
+<p><strong>上任日期：</strong>2018-08-24</p></div></div>'''
 
-class TestMgrRejoinTenureFix:
-    """回归接管（离任后又回来）时 jl_intro 简介日期仍是首次上任日，任职表"至今"行
-    才是本轮任期权威口径（2026-10-21 修复：简介日期令任期虚增成全基金年龄，
-    S3 现经理任本基金≥3年 闸误过、卡片任期虚高）。"""
 
-    def test_current_stints_parse(self):
-        assert D._parse_current_stints(JJJL_REJOIN) == {"30437326": "2025-12-17"}
+class TestMgrTenureContinuousRun:
+    """经理任本基金口径 = **连续在任（含共管期）**（2026-10-21 二改，用户校正）。
 
-    def test_reconcile_overrides_intro_date(self):
+    - jl_intro 简介日期是首次上任日，回归接管时不更新 → 不作数（虚增）；
+    - 任职表"至今"行起始只覆盖独任期 → 漏共管期（少算）；
+    - 正确 = 表内全部区间按经理合并，与"至今"段无缝相接（间隔 ≤7 天）的往期并入。
+    例：006212 东方臻选 吴萍萍 = 2018-08~2021-01 离任 + 2025-03 增聘共管 +
+    2025-12 转独任 → 真实任期 2025-03-05 起 ≈1.63 年（经理侧历任表同口径）。
+    """
+
+    def test_parse_multi_manager_rows(self):
+        st = D._parse_manager_stints(JJJL_TABLE_006212)
+        # 共管行同时记入两位经理
+        assert ["2025-03-05", "2025-12-16"] in st["30437326"]
+        assert ["2025-03-05", "2025-12-16"] in st["30500700"]
+        assert ["2025-12-17", ""] in st["30437326"]   # "" = 至今（表格自上而下倒序）
+
+    def test_continuous_run_includes_co_mgmt(self):
+        st = D._parse_manager_stints(JJJL_TABLE_006212)
+        # 吴萍萍：共管段无缝并入 → 2025-03-05（非"至今"行 2025-12-17，更非简介 2018）
+        assert D._current_run_start(st["30437326"]) == "2025-03-05"
+
+    def test_old_stint_with_gap_not_merged(self):
+        st = D._parse_manager_stints(JJJL_TABLE_006212)
+        # 刘长俊：无"至今"行 → 非现任
+        assert D._current_run_start(st["30500700"]) is None
+
+    def test_reconcile_overrides_stale_intro(self):
         info = {"manager_id": "30437326", "manager_start": "2025-12-17",
-                "managers": [{"name": "吴萍萍", "id": "30437326", "start": "2018-08-24"}]}
-        assert D._reconcile_mgr_starts(info)["managers"][0]["start"] == "2025-12-17"
+                "managers": [{"name": "吴萍萍", "id": "30437326", "start": "2018-08-24"}],
+                "current_stints": {"30437326": "2025-03-05"}}
+        assert D._reconcile_mgr_starts(info)["managers"][0]["start"] == "2025-03-05"
 
-    def test_reconcile_prefers_stints_and_keeps_later(self):
-        info = {"managers": [{"name": "甲", "id": "1", "start": "2020-01-01"},
-                             {"name": "乙", "id": "2", "start": "2025-06-01"}],
-                "current_stints": {"1": "2024-05-01", "2": "2024-01-01"}}
-        out = D._reconcile_mgr_starts(info)
-        assert out["managers"][0]["start"] == "2024-05-01"   # 早于权威 → 覆盖为本轮
-        assert out["managers"][1]["start"] == "2025-06-01"   # 权威更早 → 保守不动（更短任期）
+    def test_reconcile_fallback_primary_only(self):
+        # 旧缓存无 current_stints：回退 主经理 ↔ 独任期起点（保守，可能少共管期）
+        info = {"manager_id": "9", "manager_start": "2025-12-17",
+                "managers": [{"name": "甲", "id": "9", "start": "2018-08-24"}]}
+        assert D._reconcile_mgr_starts(info)["managers"][0]["start"] == "2025-12-17"
 
     def test_reconcile_noop_without_managers(self):
         info = {"manager_id": "1", "manager_start": "2024-01-01"}

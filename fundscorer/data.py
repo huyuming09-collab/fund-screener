@@ -183,14 +183,18 @@ def fetch_f10(code: str) -> dict:
         # 一位现任经理（姓名/链接/上任日期）。共管基金此前只记第一位（如某混合 A 记甲
         # 漏乙，docs/12 §9）；每位经理配自己的上任日期，新任<1年不会背上任战绩。
         info["managers"] = _parse_jjl_intro(jjjl)
-        # 2026-10-21 修复：任职记录表（每位经理一行，含"至今"行的起始日+经理 id）
-        # 是**本轮任期**的权威源；jl_intro 简介里的日期在经理离任后回归接管时仍是
-        # 首次上任日（简介不更新）→ 任期虚增、S3 闸误过。按表逐 id 覆盖。
-        stints = _parse_current_stints(jjjl)
-        info["current_stints"] = stints
+        # 2026-10-21 修复（当日二改，用户校正口径）：任职记录表是任期权威源——
+        # 每行 = 一个任期区间，**可含多位共管经理**（如某债基 2025-03~2025-12 行内
+        # 同列两人）；jl_intro 简介日期在回归接管时仍是首次上任日 → 任期虚增。
+        # 口径 = **连续在任（含共管期）**：与"至今"区间无缝相接（间隔 ≤7 天）的
+        # 往期并入本轮段，取本轮段起始（经理侧历任表同口径，如 006212 = 1.63 年）。
+        stints = _parse_manager_stints(jjjl)
+        info["mgr_stints"] = stints
+        runs = {mid: s for mid, ss in stints.items() if (s := _current_run_start(ss))}
+        info["current_stints"] = runs
         for mg in info["managers"]:
-            if str(mg.get("id") or "") in stints:
-                mg["start"] = stints[str(mg["id"])]
+            if str(mg.get("id") or "") in runs:
+                mg["start"] = runs[str(mg["id"])]
     except Exception:
         info["manager_start"] = ""
         info["managers"] = []
@@ -200,21 +204,55 @@ def fetch_f10(code: str) -> dict:
     return info
 
 
-def _parse_current_stints(jjjl_html: str) -> dict[str, str]:
-    """任职记录表 → 现任区间 {经理id: 本轮起始日}（end == "至今" 的每行一位现任经理）。"""
-    out: dict[str, str] = {}
+def _parse_manager_stints(jjjl_html: str) -> dict[str, list[list[str]]]:
+    """任职记录表 → {经理id: [[起始, 截止（"" = 至今）], ...]}。
+
+    每行 = 一个任期区间，单元格内**可含多位共管经理**（2026-10-21 校正：此前只抓
+    每行第一位链接，共管期被整行归给前一位、漏掉共管方）。
+    """
+    out: dict[str, list[list[str]]] = {}
     for m in re.finditer(
-            r"<td>([\d-]{10})</td><td>至今</td>\s*<td><a href='[^']*?/manager/(\d+)\.html'",
+            r"<td>([\d-]{10})</td><td>([\d-]{10}|至今)</td>"
+            r"<td>((?:<a href='[^']*?/manager/\d+\.html'>[^<]*</a>\s*)+)</td>",
             jjjl_html):
-        out[m.group(2)] = m.group(1)
+        start, end, cell = m.group(1), m.group(2), m.group(3)
+        for mid in re.findall(r"/manager/(\d+)\.html", cell):
+            out.setdefault(mid, []).append([start, "" if end == "至今" else end])
     return out
 
 
-def _reconcile_mgr_starts(info: dict) -> dict:
-    """用权威本轮起始修正 managers[].start（读端兜底，缓存条目同样受益）。
+def _current_run_start(stints: list[list[str]], slack_days: int = 7) -> str | None:
+    """连续在任（含共管期）的本轮段起始：与"至今"区间相接（间隔 ≤ slack_days）
+    的往期并入；真离任后回归（有明显空窗）则从新段起算。
 
-    优先用 current_stints（新写入的缓存自带）；旧条目回退 manager_id ↔ manager_start
-    （jbgk 页"基金经理人" = 主经理，jjjl 首行"至今"起始 = 其本轮上任日）。
+    例（006212 东方臻选）：吴萍萍 2018-08~2021-01 离任、2025-03 增聘共管、
+    2025-12 转独任 → 本轮段 = 2025-03-05 起（1.63 年，与经理侧历任表一致），
+    而非简介日期 2018-08-24（虚增 8 年）或"至今"行 2025-12-17（漏共管期）。
+    """
+    if not any(not e for _, e in stints):
+        return None
+    rows = sorted(stints, key=lambda x: x[0])
+    cur = next(s for s, e in reversed(rows) if not e)
+    for s, e in reversed(rows):
+        if not e:
+            continue
+        try:
+            gap = (dt.date.fromisoformat(cur) - dt.date.fromisoformat(e)).days
+        except ValueError:
+            break
+        if gap <= slack_days:
+            cur = s
+        else:
+            break
+    return cur
+
+
+def _reconcile_mgr_starts(info: dict) -> dict:
+    """用权威连续在任起始修正 managers[].start（读端兜底，缓存条目同样受益）。
+
+    优先用 current_stints（新写入的缓存自带连续段起始）；旧条目回退
+    manager_id ↔ manager_start（jbgk"基金经理人" = 主经理，jjjl 首行"至今"起始 =
+    其独任期起点——共管期暂缺，周更刷新后补齐）。
     """
     mgrs = info.get("managers") or []
     if not mgrs:
