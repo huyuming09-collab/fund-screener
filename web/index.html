@@ -575,7 +575,12 @@ const METRIC_CELLS = f => [
   ['近1年收益',  pct(f.metrics.ret_1y),  cls(f.metrics.ret_1y)],
   ['近五年年化', pct(f.metrics.ret_5y),  cls(f.metrics.ret_5y)],
   ['近五年最大回撤', pct(f.metrics.mdd_5y), ''],   /* 回撤全称展示，绿→负值语义但此处用中性 */
-  ['夏普比率',   f.metrics.sharpe_5y==null?'—':f.metrics.sharpe_5y.toFixed(2), ''],
+  /* 固收+ 卡片：展示卡玛（5年年化/最大回撤），不展示夏普（用户 2026-10-21 要求；
+     数值口径与详情指标面板 calmar_5y 一致；fp 上榜必满 5 年净值，缺值显 —） */
+  ...(f.category === 'fixed_plus'
+      ? [['卡玛比(5年)', (f.metrics.mdd_5y && f.metrics.ret_5y != null)
+          ? (f.metrics.ret_5y / f.metrics.mdd_5y).toFixed(2) : '—', '']]
+      : [['夏普比率', f.metrics.sharpe_5y==null?'—':f.metrics.sharpe_5y.toFixed(2), '']]),
 ];
 
 function renderList(){
