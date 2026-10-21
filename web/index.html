@@ -6,10 +6,11 @@
 <title>基金筛选 · 周榜 TOP20</title>
 <style>
 :root{
-  --bg:#f5f6f8; --card:#fff; --ink:#1f2329; --sub:#6b7280; --line:#eceef1;
-  --up:#e64545;      /* 涨/收益红 */
-  --down:#12a05c;    /* 跌/回撤绿 */
-  --accent:#ff6a00;  /* 主色（支付宝橙风） */
+  --bg:#f5f6f8; --card:#fff; --ink:#1f2329; --sub:#656d7b; --line:#eceef1;
+  --up:#d13535;      /* 涨/收益红（白底 4.9:1，2026-10-22 加深） */
+  --down:#17803d;    /* 跌/回撤绿（白底 5.0:1，2026-10-22 加深） */
+  --accent:#ff6a00;  /* 主色（支付宝橙风，仅填充/渐变） */
+  --accent-ink:#c54300; /* 强调橙·文字用（最差底 4.58:1，2026-10-22 对比度整改） */
   --gold:#ffb400;
   --radius:14px;
 }
@@ -42,15 +43,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 
 /* ---------- 顶部 ---------- */
 header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#ff8a3d,#ff6a00);
-       color:#fff;padding:14px 16px 10px;}
-header h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.5px;}
+       color:#fff;padding:10px 16px 8px;}
+header h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.5px;}
 header .meta{font-size:11px;opacity:1;font-weight:500;margin-top:4px;text-shadow:0 1px 2px rgba(90,35,0,.30);}
 header .meta b.asof{font-size:12.5px;letter-spacing:.2px;text-shadow:0 0 8px rgba(255,209,102,.35);}
-.tabs{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px;}
+.tabs{display:flex;gap:8px;margin-top:8px;overflow-x:auto;padding-bottom:2px;}
 /* 页签（2026-10-22 对比度重做：非激活 半透白底+深棕字 5.5:1；激活 纯白底+深橙字 4.6:1） */
-.tab{flex:0 0 auto;padding:5px 14px;border-radius:14px;font-size:13px;background:rgba(255,255,255,.55);
+.tab{flex:0 0 auto;min-height:36px;display:inline-flex;align-items:center;padding:8px 14px;border-radius:14px;font-size:13px;background:rgba(255,255,255,.55);
      color:#7c3a12;white-space:nowrap;border:none;}
-.tab.active{background:#fff;color:#d14310;font-weight:700;box-shadow:0 2px 6px rgba(140,50,0,.25);}
+.tab.active{background:#fff;color:var(--accent-ink);font-weight:700;box-shadow:0 2px 6px rgba(140,50,0,.25);}
 .tab.disabled{opacity:.45;}
 .tab .soon{font-size:10px;margin-left:3px;}
 
@@ -61,14 +62,14 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .fundcard:active{transform:scale(.985);}
 .fundcard:hover{box-shadow:0 4px 14px rgba(20,24,40,.10);}
 .fc-head{display:flex;align-items:center;gap:9px;}
-.rank{flex:0 0 auto;width:26px;height:26px;border-radius:8px;background:#fff2ea;color:var(--accent);
+.rank{flex:0 0 auto;width:26px;height:26px;border-radius:8px;background:#fff2ea;color:var(--accent-ink);
       font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;}
-.rank.top1{background:#fff0f0;color:var(--up);} .rank.top2{background:#fff6e8;color:#ff9800;}
-.rank.top3{background:#fff9e0;color:#e0a800;}
+.rank.top1{background:#fff0f0;color:#cf3232;} .rank.top2{background:#fff6e8;color:#a85c00;}
+.rank.top3{background:#fff9e0;color:#8a6200;}
 .fc-name{font-size:15.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
          white-space:nowrap;}
 .fc-code{font-size:11.5px;color:var(--sub);margin-top:2px;display:flex;gap:6px;align-items:center;}
-.fc-code .score{color:#d14310;font-weight:600;}
+.fc-code .score{color:var(--accent-ink);font-weight:600;}
 .fc-code .dot{color:#d8dbe0;}
 .fc-metrics{display:grid;grid-template-columns:repeat(4,1fr);margin-top:11px;
             background:#fafbfc;border-radius:10px;padding:8px 2px;}
@@ -82,15 +83,15 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .fc-foot .fee{color:var(--sub);}
 /* 环比：升红/降绿/平灰（涨红跌绿约定）；新增橙标 */
 .rk{font-weight:600;margin-left:4px;}
-.rk.up{color:var(--up);} .rk.dn{color:var(--down);} .rk.flat{color:#9aa0a6;}
-.rk.new{color:#ff8a3d;background:#fff4ec;border-radius:5px;padding:0 5px;
+.rk.up{color:var(--up);} .rk.dn{color:var(--down);} .rk.flat{color:var(--sub);}
+.rk.new{color:#a85100;background:#fff4ec;border-radius:5px;padding:0 5px;
         font-size:10.5px;margin-left:5px;}
 /* 指数基金徽标：与主动基金区分（评估口径不同——看跟踪标的/业绩/费率，不看经理） */
 .rk.idx{color:#2456b8;background:#e6eefc;border-radius:5px;padding:0 5px;
         font-size:10.5px;margin-left:5px;font-weight:600;}
 /* v5.5 风格标签（池内相对：vs 候选中位切四象限）与经理占席（全榜统计）——均仅展示不计分 */
 .rk.style{border-radius:8px;padding:1px 6px;font-size:10.5px;margin-left:5px;font-weight:600;}
-.rk.style.aggr{background:#fff1e6;color:#c05c00;}      /* 进取型：收益波动双高 */
+.rk.style.aggr{background:#fff1e6;color:#a85100;}      /* 进取型：收益波动双高 */
 .rk.style.steady{background:#e8f6ec;color:#1a7f37;}    /* 稳健型：收益高波动低 */
 .rk.style.defen{background:#e8f1fd;color:#1d5bb8;}     /* 防守型：收益波动双低 */
 .rk.sgz{color:#c0392b;background:#fdecea;border-radius:5px;padding:0 5px;
@@ -100,7 +101,7 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .seats{color:#a15c00;background:#fff7e0;border-radius:8px;padding:1px 6px;
        font-size:10.5px;font-weight:600;}
 /* 债指分组头（2026-10-22 重做：原浅底白字对比度 1.07 不可读 → 蓝底深字 9.2:1） */
-.idx-group{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;row-gap:4px;
+.idx-group{grid-column:1/-1;display:flex;   /* 桌面 2 列网格下跨双列（2026-10-22）*/justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;row-gap:4px;
            padding:9px 13px;margin:16px 0 8px;border-radius:12px;background:#eef3fd;border-left:4px solid #3b6fd4;
            color:#1d3f7a;font-size:13.5px;font-weight:700;}
 .idx-group .sub{font-weight:400;font-size:11px;color:#4a6fae;}
@@ -114,7 +115,7 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 #detail.show{display:block;transform:translateX(0);}
 
 /* ---------- 池内横向对比 ---------- */
-.pick{flex:0 0 auto;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);
+.pick{flex:0 0 auto;width:36px;height:36px;font-size:16px;border-radius:50%;border:1.5px solid var(--line);
       background:#fff;color:var(--sub);font-size:16px;line-height:27px;text-align:center;cursor:pointer;}
 .fundcard.picked{box-shadow:inset 0 0 0 2px var(--accent);background:#fff7f1;}
 .fundcard.picked .pick{background:var(--accent);border-color:var(--accent);color:#fff;}
@@ -122,10 +123,10 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
          background:#fff;border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));
          box-shadow:0 -4px 16px rgba(20,24,40,.10);}
 .cmp-bar .cnt{flex:1;font-size:12px;color:var(--sub);line-height:1.35;}
-.cmp-bar .cnt b{color:var(--accent);font-size:15px;}
+.cmp-bar .cnt b{color:var(--accent-ink);font-size:15px;}
 .cmp-bar button{border:none;border-radius:16px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;}
-.cmp-bar .go{background:var(--accent);color:#fff;}
-.cmp-bar .go:disabled{background:#d8dbe0;color:#fff;cursor:default;}
+.cmp-bar .go{background:var(--accent-ink);color:#fff;}
+.cmp-bar .go:disabled{background:#e4e7ec;color:#5c6370;cursor:default;}
 .cmp-bar .clr{background:#f1f2f5;color:var(--sub);}
 #cmp{position:absolute;inset:0;background:var(--bg);z-index:60;transform:translateX(100%);
      transition:transform .22s ease;overflow-y:auto;display:none;}
@@ -152,24 +153,24 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .toast.show{opacity:1;}
 .d-head{background:linear-gradient(180deg,#ff8a3d,#ff6a00);color:#fff;padding:14px 16px 16px;
         position:sticky;top:0;z-index:5;}
-.back{display:inline-block;font-size:15px;color:#fff;background:rgba(255,255,255,.22);
-      border:none;border-radius:50%;width:28px;height:28px;line-height:26px;text-align:center;
-      margin-right:10px;cursor:pointer;}
+.back{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;
+      border:none;border-radius:50%;font-size:17px;line-height:1;color:#fff;
+      background:rgba(255,255,255,.22);margin-right:10px;cursor:pointer;}
 .d-title{display:flex;align-items:center;}
 .d-title .n{font-size:17px;font-weight:600;}
 .d-scoreline{display:flex;gap:14px;margin-top:10px;font-size:12px;align-items:baseline;}
 .d-scoreline b{font-size:20px;font-weight:700;}
 .d-pick{margin-left:auto;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.55);color:#fff;
-        border-radius:14px;padding:4px 11px;font-size:11.5px;cursor:pointer;flex:0 0 auto;}
-.d-pick.on{background:#fff;color:var(--accent);font-weight:600;}
+        border-radius:14px;min-height:36px;padding:9px 14px;font-size:12.5px;cursor:pointer;flex:0 0 auto;}
+.d-pick.on{background:#fff;color:var(--accent-ink);font-weight:600;}
 .sec{background:#fff;border-radius:var(--radius);margin:12px;padding:13px 14px;
      box-shadow:0 1px 4px rgba(20,24,40,.05);}
 .sec h3{margin:0 0 10px;font-size:14.5px;font-weight:650;display:flex;justify-content:space-between;
         align-items:center;}
 .sec h3 .hint{font-size:11px;color:var(--sub);font-weight:400;}
 .winbar{display:flex;gap:6px;margin-bottom:8px;}
-.win{padding:3px 10px;font-size:12px;border-radius:12px;background:#f2f4f7;color:var(--sub);border:none;}
-.win.on{background:var(--accent);color:#fff;}
+.win{min-height:36px;display:inline-flex;align-items:center;padding:6px 12px;font-size:12px;border-radius:12px;background:#f2f4f7;color:var(--sub);border:none;}
+.win.on{background:var(--accent-ink);color:#fff;}
 canvas{width:100%;height:150px;display:block;}
 .stage{display:grid;grid-template-columns:repeat(6,1fr);}
 .stage .m .v{font-size:13px;}
@@ -200,7 +201,7 @@ table.yr tr:last-child td{border-bottom:none;}
 .mgr-sub{font-size:12px;color:var(--sub);margin-top:4px;line-height:1.6;}
 .mgr-cards{display:flex;gap:8px;margin-top:9px;}
 .mgr-cards .mc{flex:1;background:#fafbfc;border-radius:10px;padding:7px 8px;text-align:center;}
-.mgr-cards .mc .v{font-size:15px;font-weight:650;color:var(--accent);}
+.mgr-cards .mc .v{font-size:15px;font-weight:650;color:var(--accent-ink);}
 .mgr-cards .mc .l{font-size:10.5px;color:var(--sub);margin-top:2px;}
 .disclaimer{font-size:11px;color:#69707e;line-height:1.7;padding:6px 16px 26px;}
 /* 列表页常显免责底栏（小程序停做改网页后按公开页面口径挂载）
@@ -211,7 +212,7 @@ table.yr tr:last-child td{border-bottom:none;}
 /* 公众号引流位（列表页底部，免责声明上方） */
 .page-mp{flex:0 0 auto;text-align:center;font-size:11.5px;color:var(--sub);
          padding:9px 14px 1px;background:var(--bg);}
-.page-mp b{color:var(--accent);font-weight:650;}
+.page-mp b{color:var(--accent-ink);font-weight:650;}
 .redline-tag{display:inline-block;background:#fff0f0;color:var(--up);border-radius:6px;
              font-size:11px;padding:1px 6px;margin-left:6px;}
 /* ---------- 隐藏导出模式：?export=<pool>（仅 URL 触发，页面无入口） ----------
@@ -620,7 +621,7 @@ function renderList(){
   $('meta').innerHTML = `数据基准 <b class="asof">${D.asof}</b> · `
     + `${catLabel(cat)}${grouped ? '榜' : '池'} 本期上榜 <b>${funds.length}</b> 只`
     + (grouped ? `（${['short_bond','long_bond'].filter(g=>gcount(g))
-        .map(g=>`${catLabel(g)} ${gcount(g)}`).join(' · ')}；评分与本池主动榜同尺，跨池不可比）` : '');
+        .map(g=>`${catLabel(g)} ${gcount(g)}`).join(' · ')})` : '');
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
   const cardHTML = f => `
     <div class="fundcard${f.is_index?' is-index':''}" data-code="${f.code}" onclick='openDetail(${JSON.stringify(f.code)})'>
