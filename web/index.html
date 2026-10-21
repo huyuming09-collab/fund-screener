@@ -287,7 +287,7 @@ const yi  = v => v==null ? '—' : v.toFixed(2)+'亿';
 const $ = id => document.getElementById(id);
 /* 分类标签：优先取 data.js 的 categories（config.CARD 为单一真源——2026-10-19 池名
    改为 中短债/长债/固收+ 后只需改 config 一处）；data.js 缺失/旧版时回退本地映射 */
-const CATEGORY_LABELS = {short_bond:'中短债', long_bond:'长债', fixed_plus:'固收+', index:'指数'};
+const CATEGORY_LABELS = {short_bond:'中短债', long_bond:'长债', fixed_plus:'固收+', index:'债指'};
 const catLabel = c => {
   const hit = ((D && D.categories) || []).find(x => x && x.id === c);
   return (hit && hit.name) || CATEGORY_LABELS[c] || c || '';
@@ -405,7 +405,8 @@ function syncDetailPick(){
   const on = CMP.indexOf(CUR.code) >= 0;
   b.textContent = on ? '移出对比' : '加入对比';
   b.classList.toggle('on', on);
-  b.style.display = (D && D.pools && D.pools[CUR.category || D.category]) ? '' : 'none';
+  /* 债指不参与横向对比：组间/跨池分数不可比，且单列榜行已隐藏勾选按钮 */
+  b.style.display = ((D && D.pools && D.pools[CUR.category || D.category]) && !CUR.is_index) ? '' : 'none';
 }
 function clearCmp(){ CMP = []; renderPick(); }
 function renderPick(){
@@ -582,10 +583,15 @@ function renderList(){
   const ps = poolStat(cat);
   /* 按 tab 过滤；旧 data.js 的 funds 无 category → 按顶层 category（单池）归类 */
   const funds = (D.funds || []).filter(f => (f.category || D.category || 'short_bond') === cat);
+  /* v5.12 债指单列（docs/17 §9）：按来源池分组展示——组间分数不可横向比较 */
+  const grouped = cat === 'index';
+  const gcount = g => funds.filter(f => f.idx_group === g).length;
   $('meta').innerHTML = `数据基准 ${D.asof} · `
-    + `${catLabel(cat)}池 本期上榜 <b>${funds.length}</b> 只`;
+    + `${catLabel(cat)}${grouped ? '榜' : '池'} 本期上榜 <b>${funds.length}</b> 只`
+    + (grouped ? `（${['short_bond','long_bond'].filter(g=>gcount(g))
+        .map(g=>`${catLabel(g)} ${gcount(g)}`).join(' · ')}；组间分数不可比）` : '');
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
-  $('list').innerHTML = funds.map(f => `
+  const cardHTML = f => `
     <div class="fundcard" data-code="${f.code}" onclick='openDetail(${JSON.stringify(f.code)})'>
       <div class="fc-head">
         <div class="rank ${f.rank<=3?'top'+f.rank:''}">${f.rank}</div>
@@ -594,7 +600,7 @@ function renderList(){
           <div class="fc-code">${f.code}<span class="dot">·</span>${catLabel(f.category)}
             <span class="dot">·</span><span class="score">评分 ${f.score}</span>${rkHTML(f)}</div>
         </div>
-        <button class="pick" title="加入对比" aria-label="加入对比">＋</button>
+        ${f.is_index ? '' : '<button class="pick" title="加入对比" aria-label="加入对比">＋</button>'}
       </div>
       <div class="fc-metrics">
         ${METRIC_CELLS(f).map(([l,v,c])=>`<div class="m"><div class="v ${c}">${v}</div><div class="l">${l}</div></div>`).join('')}
@@ -602,13 +608,27 @@ function renderList(){
       <div class="fc-foot">
         <span>合并规模 ${yi(f.fund_info.scale_yi)}</span><span>·</span>
         ${f.is_index
-          ? '<span class="idx-foot">指数基金·按跟踪标的/业绩/费率评估</span>'
+          ? '<span class="idx-foot">债指单列榜·同指数只展示1只 · 评估卡真分</span>'
           : '<span>经理从业 '+(f.manager.career_years==null?'—':f.manager.career_years+'年')+'</span>'}
         ${(f.manager&&f.manager.seats>=2)?`<span class="seats" title="该经理当期上榜占席数（集中度提示，不扣分）">占席×${f.manager.seats}</span>`:''}
         <span>·</span>
         <span class="fee">${feeLine(f.fund_info)}</span>
       </div>
-    </div>`).join('');
+    </div>`;
+  if (grouped) {
+    const GRP_HEAD = ['short_bond','long_bond'].map(g => {
+      const gs = funds.filter(f => f.idx_group === g);
+      if (!gs.length) return '';
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;`
+        + `padding:9px 13px;margin:14px 0 8px;border-radius:12px;background:rgba(255,255,255,.16);`
+        + `color:#fff;font-size:13px;font-weight:600">${catLabel(g)}债指 · ${gs.length} 只`
+        + `<span style="font-weight:400;font-size:11px;opacity:.75">组内相对评分 · 与主动榜分数不可比</span></div>`
+        + gs.map(cardHTML).join('');
+    }).join('');
+    $('list').innerHTML = GRP_HEAD;
+  } else {
+    $('list').innerHTML = funds.map(cardHTML).join('');
+  }
   renderPick();                                  /* 恢复已勾选态（重渲染后不丢选择） */
 }
 /* 榜单行勾选按钮：**捕获阶段**委托（冒泡阶段会先触发卡片自身的 openDetail） */
@@ -629,7 +649,10 @@ function openDetail(code){
   $('d-score').textContent = CUR.score;
   /* 头部名次：分母 = 该基金所在池的 n（pools 缺失回退顶层 n）；含环比后缀 */
   const ps = poolStat(CUR.category);
-  let rk = `第 ${CUR.rank} 名 / ${(ps && ps.n) || D.n}`;
+  /* v5.12 债指单列：名次分母 = 所在组（中短债/长债各自成榜，跨组分数不可比） */
+  const gn = CUR.idx_group_n || (ps && ps.n) || D.n;
+  let rk = `第 ${CUR.rank} 名 / ${gn}`
+    + (CUR.idx_group ? `（${catLabel(CUR.idx_group)}债指）` : '');
   if(CUR.is_new) rk += '（新增）';
   else if(CUR.rank_delta!=null) rk += CUR.rank_delta>0 ? `（较上期 ↑${CUR.rank_delta}）`
       : CUR.rank_delta<0 ? `（较上期 ↓${-CUR.rank_delta}）` : '（较上期 持平）';
@@ -658,7 +681,6 @@ function bodyHTML(f){
   const scoreRows = Object.entries(f.score_detail)
       .filter(([k,v])=>v!=null).sort((a,b)=>b[1]-a[1]);
   const w = Math.max(...scoreRows.map(([,v])=>v), 1);
-  const sb = f.score_basis || {};              /* 指数基金插值锚点（主动基金无 → 空对象） */
   return `
   <!-- 阶段收益 -->
   <div class="sec"><h3>阶段收益<span class="hint">累计收益</span></h3>
@@ -700,16 +722,16 @@ function bodyHTML(f){
       ${years.map(y=>`<td class="${cls(f.yearly[y])}">${pct(f.yearly[y])}</td>`).join('')}</tr></table>
   </div>
 
-  <!-- 同类分位 -->
-  <div class="sec"><h3>同类分位（${catLabel(f.category)}池）<span class="hint">越高越靠前</span></h3>
-    <div class="l" style="font-size:12px;color:var(--sub)">业绩综合分位</div>
+  <!-- 同类分位（债指 = 3 年族同族相对，v5.12 单列口径） -->
+  <div class="sec"><h3>${f.is_index ? `同族分位（${fi.idx_fam||'指数'} · 族内相对）` : `同类分位（${catLabel(f.category)}池）`}<span class="hint">越高越靠前</span></h3>
+    <div class="l" style="font-size:12px;color:var(--sub)">${f.is_index ? '3年族四项综合分位' : '业绩综合分位'}</div>
     <div class="pctbar"><div class="fill" style="width:${(f.screening.comp_pct*100).toFixed(1)}%"></div>
       <div class="lbl">超过 ${(f.screening.comp_pct*100).toFixed(1)}% 的同类基金</div></div>
-    <div class="l" style="font-size:12px;color:var(--sub);margin-top:8px">逐年收益中位分位</div>
+    <div class="l" style="font-size:12px;color:var(--sub);margin-top:8px">${f.is_index ? '同族年度分位中位（≥3完整年）' : '逐年收益中位分位'}</div>
     <div class="pctbar"><div class="fill" style="width:${(f.screening.yearly_med*100).toFixed(1)}%"></div>
       <div class="lbl">超过 ${(f.screening.yearly_med*100).toFixed(1)}% 的同类基金</div></div>
     <div style="font-size:11.5px;color:var(--sub);margin-top:8px">
-      近5年最大单日涨幅 ${pct(f.screening.max_gain_5y)}（筛选阈值 &lt;${fpct(screenOf(f.category).spike_max_gain)}）</div>
+      近5年最大单日涨幅 ${pct(f.screening.max_gain_5y)}（筛选阈值 &lt;${fpct(screenOf(f.is_index && f.idx_group ? f.idx_group : f.category).spike_max_gain)}）</div>
     ${(() => { const s = screenOf(f.category);
       /* 固收+专属风险预算闸（docs/10 S6/S7；v2：S6 分级、S8 删除）：仅该池有阈值时展示 */
       if (s.mdd_5y_max == null) return '';
@@ -720,11 +742,13 @@ function bodyHTML(f){
       return `<div style="font-size:11.5px;color:var(--sub);margin-top:4px">风险预算：近5年最大回撤 ${pct(m.mdd_5y)}（${mb}） · 年化波动 ${pct(m.vol_5y)}（${vb}）${rb}</div>`; })()}
   </div>
 
-  <!-- 基金经理；指数基金不看经理业绩 → 换成跟踪/费率/公司规模口径 -->
+  <!-- 基金经理；债指单列（v5.12）不看经理业绩 → 换成跟踪/费率/公司规模口径 -->
   ${f.is_index ? `
   <div class="sec"><h3>指数评估口径<span class="hint">不看基金经理业绩</span></h3>
-    <div class="mgr-sub">按跟踪标的、业绩、费率与公司规模评估，与主动基金同榜穿插排名。
-      同一跟踪指数最多入榜 2 只，优先低费率与公司规模大者（跟踪基准见"基本信息"）。</div>
+    <div class="mgr-sub">债指单列榜：按跟踪标的、业绩、费率与公司规模评估（指数评估卡，族内相对评分）。
+      同一跟踪指数只展示 1 只——优先费率低、公司非货规模大，其次跟踪偏离小（同组中位收益代理）。
+      同指数其他优秀基金见本页下方。</div>
+    <div class="kv"><span class="k">指数族 / 久期段</span><span>${fi.idx_fam||'—'} / ${fi.idx_dur||'—'}</span></div>
     <div class="mgr-cards">
       <div class="mc"><div class="v">${fi.fee_total==null?'—':fpct(fi.fee_total)}</div><div class="l">总费率（申购+管理+托管+销售）</div></div>
       <div class="mc"><div class="v">${fi.company_scale==null?'—':yi(fi.company_scale)}</div><div class="l">基金公司非货规模</div></div>
@@ -758,29 +782,30 @@ function bodyHTML(f){
     <div class="kv"><span class="k">业绩基准</span><span style="max-width:60%;text-align:right">${fi.benchmark||'—'}</span></div>
   </div>
 
-  <!-- 评分明细（主动·分项贡献分）/ 评分依据（指数·业绩位置插值，逐条可核对） -->
-  <div class="sec"><h3>${f.is_index ? '评分依据' : '评分明细'}<span class="hint">${f.is_index ? '近三年业绩位置插值' : 'v5.2 · 分项贡献分'}</span></h3>
-    ${f.is_index ? `
-      <div class="mgr-sub">指数基金不套用主动评分卡（不看基金经理业绩）：以近三年业绩对齐同池主动 TOP 榜，
-        业绩落在谁和谁之间就排在它们之间，分数取该两只分数的线性插值——下列锚点即插值区间。
-        <br><span style="color:var(--sub)">锚点按<strong>业绩</strong>升序排列；主动榜按分数排序，业绩与分数非单调，
-        因此下邻的分数可能高于上邻（不是算错）。</span></div>
-      <div class="kv"><span class="k">本基金近三年年化</span><span>${pct(sb.ret)}</span></div>
-      <div class="kv"><span class="k">下邻锚点</span><span>${sb.lo ? '主动第'+sb.lo.rank+'名 '+sb.lo.name+'｜'+pct(sb.lo.ret)+'｜'+sb.lo.score+' 分' : '低于全部主动基金（榜末之后）'}</span></div>
-      <div class="kv"><span class="k">上邻锚点</span><span>${sb.hi ? '主动第'+sb.hi.rank+'名 '+sb.hi.name+'｜'+pct(sb.hi.ret)+'｜'+sb.hi.score+' 分' : '高于全部主动基金（榜首之前）'}</span></div>
-      <div class="kv"><span class="k">线性插值得分</span><span>${f.score}</span></div>
-    ` : scoreRows.map(([k,v])=>`
+  <!-- 评分明细：主动 = v5.2 分项贡献分；债指单列（v5.12）= 指数评估卡分项贡献（族内相对）。
+       （merged 回退路径的"业绩位置插值"渲染随 display="merged" 再接，docs/17 §8 甲案休眠） -->
+  <div class="sec"><h3>评分明细<span class="hint">${f.is_index ? '指数评估卡 · 族内相对贡献分' : 'v5.2 · 分项贡献分'}</span></h3>
+    ${scoreRows.map(([k,v])=>`
       <div class="bar-row"><div class="bl">${LABELS[k]||k}</div>
         <div class="bar-bg"><div class="bar" style="width:${(v/w*100).toFixed(1)}%"></div></div>
         <div class="bv">${v.toFixed(1)}</div></div>`).join('')}
     ${f.redlines.length
       ? `<div style="margin-top:6px;font-size:12px">红线：${f.redlines.map(r=>`<span class="redline-tag">${r}</span>`).join('')}</div>`
-      : `<div style="margin-top:6px;font-size:12px;color:var(--down)">✓ 未触碰任何红线项</div>`}
+      : `<div style="margin-top:6px;font-size:12px;color:var(--down)">${f.is_index ? '✓ 指数基金无主动红线项（评估卡口径）' : '✓ 未触碰任何红线项'}</div>`}
     <div style="margin-top:8px;font-size:11.5px;color:var(--sub)">
-      入选依据：业绩综合分位 ${pct(f.screening.comp_pct)}（≥${fpct(screenOf(f.category).comp_pct_min)}）·
-      年度分位中位 ${pct(f.screening.yearly_med)}（≥${fpct(screenOf(f.category).yearly_median_min)}）·
+      入选依据：${f.is_index ? '3年族综合分位' : '业绩综合分位'} ${pct(f.screening.comp_pct)}（≥${fpct(screenOf(f.category).comp_pct_min)}）·
+      ${f.is_index ? '同族年度分位中位（≥3完整年）' : '年度分位中位'} ${pct(f.screening.yearly_med)}（≥${fpct(screenOf(f.category).yearly_median_min)}）·
       合并规模 ${yi(f.screening.scale_sum)}（≥${screenOf(f.category).scale_min_yi}亿）</div>
-  </div>`;
+  </div>
+
+  <!-- v5.12 债指单列：同指数其他优秀基金（评估卡分 top3；无同指数其他基金 → 隐藏本块） -->
+  ${(f.is_index && (f.index_peers||[]).length) ? `
+  <div class="sec"><h3>同指数其他优秀基金<span class="hint">同指数按评估卡评分取前 3</span></h3>
+    ${f.index_peers.map(p=>`<div class="kv"><span class="k">${p.name}</span>
+      <span>${p.score==null?'—':p.score} 分 · 费率${fpct(p.fee_total)} · 公司${yi(p.company_scale)}</span></div>`).join('')}
+    <div style="margin-top:6px;font-size:11.5px;color:var(--sub)">同一跟踪指数只在榜单展示 1 只（优先费率低、公司非货规模大，其次跟踪偏离小）；
+      此处为同指数评分最高的其他基金，供替代选择。池内相对评分，与主动榜分数不可比。</div>
+  </div>` : ''}`;
 }
 
 const LABELS = {
@@ -791,6 +816,8 @@ const LABELS = {
   mgr_tenure:'经理任期', mgr_career:'经理从业', mgr_products_ann:'经理业绩',
   fee:'费率（A类）', ms_rating:'晨星评级', inst_ratio:'机构占比', fund_scale:'基金合并规模',
   age:'成立年限', company_scale:'公司规模',
+  /* v5.12 指数评估卡因子（INDEX.card_weights，与主动因子同用 bars 渲染） */
+  fee_total:'总费率', scale:'基金规模（族内相对）',
 };
 
 /* ============ 走势图 ============ */

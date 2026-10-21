@@ -211,6 +211,91 @@ def _index_meta(idx_recs: list[dict]) -> dict:
     return out
 
 
+def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
+    """债指单列榜行（v5.12 display=separate，用户 2026-10-21 拍板，docs/17 §9）。
+
+    规则：① 同一跟踪指数只展示 1 只——组内按 费率↑ → 公司非货规模↑ → 跟踪偏离↓
+    （|ret_3y − 同组中位|，组≥3 可算）取第 1（IF.pick_per_index）；
+    ② 按指数评估卡真分（score_capped）降序截 INDEX.list_top_n；
+    ③ 每只挂「同指数其他优秀基金」×3（同指数基金级卡分次高者，排除自己）。
+    行不进主动 res / CSV / 历史：主动 TOP20 与 INDEX-off 逐位相同（零位移不变量）。
+    返回 (DataFrame, 归一后候选数)。"""
+    # ---- 基金级同源映射（候选行与跟踪偏离共用一套分组，防 idx 口径不一致） ----
+    base_bm, base_info = {}, {}
+    for r in idx_recs:
+        b = S.base_name(r["name"])
+        bm = (r.get("benchmark") or "").strip()
+        if bm and not base_bm.get(b):
+            base_bm[b] = bm
+        info = base_info.setdefault(b, {"name": r.get("name"), "ret": None, "fee": None})
+        if info["ret"] is None and r.get("ret_3y") is not None:
+            info["ret"] = r.get("ret_3y")
+        fee = r.get("fee_total")
+        if fee is not None and (info["fee"] is None or fee < info["fee"]):
+            info["fee"] = fee
+    base_mid = {b: IF.index_id(base_bm.get(b, ""), info["name"] or "")
+                for b, info in base_info.items()}
+    dev_map = IF.track_dev([(b, base_mid[b], info["ret"])
+                            for b, info in base_info.items()])
+    # ---- ① 同指数归一（候选行挂 meta / 跟踪偏离） ----
+    rows = []
+    for _, r in idx_rows.iterrows():
+        m = (idx_meta.get(str(r["code"]))
+             or idx_meta.get(str(r.get("rep_code"))) or {})
+        b = r["base"]
+        rows.append({**r.to_dict(),
+                     "idx": base_mid.get(b, ""),
+                     "fee": m.get("fee_total") if m.get("fee_total") is not None
+                     else base_info.get(b, {}).get("fee"),
+                     "cs": m.get("company_scale"),
+                     "dev": dev_map.get(b)})
+    picks = IF.pick_per_index(rows)
+    # ---- ② 评估卡真分排序截展示条数（同分按 code 保序，与主榜一致） ----
+    picks.sort(key=lambda r: (-(r.get("score") or float("-inf")),
+                              str(r.get("code") or "")))
+    show = picks[: int(C.INDEX.get("list_top_n") or 10)]
+    # ---- ③ 同指数其他优秀基金 ×3（全部已打分指数基金 → 基金级取最好份额 → 同组卡分次高） ----
+    best: dict[str, dict] = {}
+    for code, rec in (idx_snap or {}).items():
+        if rec.get("score_capped") is None:
+            continue
+        nm = rec.get("name") or ""
+        b = S.base_name(nm)
+        if b not in base_mid:
+            continue
+        row = {"base": b, "idx": base_mid[b], "code": code, "name": nm,
+               "score": rec.get("score_capped"), "fee_total": rec.get("fee_total"),
+               "company_scale": rec.get("company_scale"), "ret_3y": rec.get("ret_3y")}
+        cur = best.get(b)
+        if cur is None or (-(row["score"] or -1), str(code)) < \
+                (-(cur["score"] or -1), str(cur["code"])):
+            best[b] = row
+    out_rows = []
+    for i, r in enumerate(show, 1):
+        same = sorted((f for f in best.values()
+                       if f["idx"] == r.get("idx") and f["base"] != r["base"]),
+                      key=lambda x: (-(x["score"] or -1), str(x["code"])))
+        row = dict(r)
+        row["rank"] = i
+        row["is_index"] = True
+        row["score_basis"] = None
+        row["rank_prev"] = None
+        row["rank_delta"] = None
+        row["is_new"] = False
+        row["idx_group"] = pool
+        row["index_peers"] = [{k: p[k] for k in
+                               ("code", "name", "score", "fee_total",
+                                "company_scale", "ret_3y")} for p in same[:3]]
+        out_rows.append(row)
+    df = pd.DataFrame(out_rows)
+    if not df.empty:
+        df["idx_group_n"] = len(df)
+    log(f"[5a][{tag}] 债指单列榜：候选 {len(idx_rows)} → 同指数归一 {len(picks)}"
+        f" → 展示 {len(df)}（选中键 fee低→公司规模大→跟踪偏离小；评估卡真分排序；"
+        f"偏离可算基金 {len(dev_map)} 只）")
+    return df, len(picks)
+
+
 def _screen_pool(pool: str, top_n: int, asof: str | None, log,
                  refresh: bool = False) -> dict:
     """单池：筛选输入 → 两段筛选 → 筛后评分 → TOP-N → 环比。
@@ -264,16 +349,19 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log,
 
     idx_rows, idx_meta = None, {}
     if not C.INDEX.get("enabled"):
-        idx_cand = None          # 债指暂不入榜：不评分、不穿插（总开关见 config.INDEX["enabled"]，docs/11 §零）
+        idx_cand = None          # 债指不入榜：不评分、不穿插（总开关见 config.INDEX["enabled"]，docs/11 §零）
     if idx_cand is not None and len(idx_cand):
         idx_codes = {c for codes in idx_cand["codes"] for c in codes}
         idx_quota = sum(1 for r in idx_recs if not r.get("insufficient_history"))
-        # 费率/跟踪基准/公司非货规模/名称：同指数≤2 去重排序键 + 族分类输入（v5.11）
+        # 费率/跟踪基准/公司非货规模/名称：同指数去重排序键 + 族分类输入（v5.11）
         idx_meta = _index_meta(idx_recs)
         # v5.11 D-I2：指数评估卡（族内相对、无经理因子）替代主动卡打分；
-        # 公司非货规模注入其"池内绝对分位"因子（缺 → 载分折算）
+        # 公司非货规模注入其"池内绝对分位"因子（缺 → 载分折算）。
+        # v5.12 单列模式：全部指数基金打分（详情页「同指数其他优秀基金」需候选外基金真分）；
+        # merged 模式维持只评候选（分数仅供插值取指标）。
+        _sep = C.INDEX.get("display") == "separate"
         idx_scored = score_index_pool(
-            idx_recs, score_only=idx_codes, quota_n=idx_quota,
+            idx_recs, score_only=None if _sep else idx_codes, quota_n=idx_quota,
             company_scale={c: m["company_scale"] for c, m in idx_meta.items()
                            if m.get("company_scale") is not None})
         idx_snap = {r["code"]: r for r in idx_scored if "score" in r
@@ -293,9 +381,15 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log,
     if res.empty:
         raise RuntimeError(f"{tag} 排序结果为空")
 
-    # ---- 5a. 指数基金穿插排名（业绩对齐主动榜、分数插值、同指数≤2只） ----
+    # ---- 5a. 指数基金：单列（v5.12，默认）或穿插（merged，休眠回退路径） ----
     idx_stats = {}
-    if idx_rows is not None:
+    idx_list, idx_n_pick = None, 0
+    if idx_rows is not None and C.INDEX.get("display") == "separate":
+        # v5.12 用户 2026-10-21 拍板「单列上线」：指数行不进主动榜 → 主动 TOP20 与
+        # INDEX-off 逐位相同（零位移不变量）；独立「债指」页签按组展示
+        idx_list, idx_n_pick = _build_index_list(idx_rows, idx_recs, idx_meta,
+                                                 idx_snap, pool, log, tag)
+    elif idx_rows is not None:
         # v5.11 H1′：全体已评分主动候选 = 分支 B（业绩越下界）的锚点池（docs/17 §4.3）
         full_anchors = S.rank_candidates(candidates, snapshot, cfg, top_n=None)
         res, idx_stats = IF.interleave(idx_rows, res, idx_meta, top_n=top_n,
@@ -339,6 +433,9 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log,
     return {"res": res, "funnel": funnel, "snapshot": snapshot, "navs": navs,
             "prev_ranks": prev_ranks,
             "style_base": style_base,
+            # v5.12 单列债指：本池指数榜行（不进 res/CSV/历史，仅随 payload 下发）
+            "idx_list": idx_list,
+            "idx_screened": len(idx_cand) if idx_cand is not None else 0,
             "n_screened": len(candidates)
             + (len(idx_cand) if idx_cand is not None else 0)}
 
@@ -382,6 +479,32 @@ def run(skip_refresh: bool = False, top: int | None = None,
                  for p in pools}
         combined = pd.concat([out[p]["res"] for p in pools], ignore_index=True)
 
+        # ---- 6a. 债指单列榜（v5.12 display=separate）：指数行不进 CSV/历史
+        #      （主动榜与 INDEX-off 逐位相同），仅并入卡片 payload 的独立「债指」页签 ----
+        idx_frames = [out[p]["idx_list"] for p in pools
+                      if out[p].get("idx_list") is not None
+                      and not out[p]["idx_list"].empty]
+        cards_df = combined
+        if idx_frames:
+            idx_df = pd.concat(idx_frames, ignore_index=True, sort=False)
+            idx_df["category"] = "index"
+            stats["index"] = {"n": int(len(idx_df)),
+                              "n_screened": int(sum(out[p]["idx_screened"] for p in pools)),
+                              "top_n": int(C.INDEX.get("list_top_n") or 10),
+                              "has_prev": False,               # 首期无历史，环比字段全空
+                              "funnel": {},
+                              # 详情「入选依据」文案（S1≥5亿 / P1″≥45% / P2″≥55%）；
+                              # 尖峰阈值按来源池展示（详情用 idx_group 取 branch screen）
+                              "screen": {"scale_min_yi": 5, "comp_pct_min": 0.45,
+                                         "yearly_median_min": 0.55},
+                              "style_base": None}              # 风格标签仅主动池有（v5.5）
+            cards_df = pd.concat([combined, idx_df], ignore_index=True, sort=False)
+            log(f"[6][债指] 单列榜随 payload 下发：共 {len(idx_df)} 只"
+                + "、".join(f"{_POOL_NAMES.get(p, p)}{len(out[p]['idx_list'])}"
+                            for p in pools if out[p].get("idx_list") is not None
+                            and not out[p]["idx_list"].empty)
+                + "（不进 CSV/历史，主动榜零位移）")
+
         CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp_csv = Path(str(CSV_PATH) + ".tmp")
         csv_df = combined.copy()
@@ -396,7 +519,7 @@ def run(skip_refresh: bool = False, top: int | None = None,
 
         merged_snap = {k: v for p in pools for k, v in out[p]["snapshot"].items()}
         merged_navs = {k: v for p in pools for k, v in out[p]["navs"].items()}
-        payload = cards.build_payload(combined, merged_snap, merged_navs,
+        payload = cards.build_payload(cards_df, merged_snap, merged_navs,
                                       pool_stats=stats)
         cards.write_payload(payload, JSON_PATH, JS_PATH)
         for pool in pools:                   # 导出成功后才写历史（失败不污染基准）

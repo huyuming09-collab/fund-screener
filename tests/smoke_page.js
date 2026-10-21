@@ -221,7 +221,9 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     const segIx = document.getElementById('list').innerHTML
       .split('<div class="fundcard"').find(s=>s.includes(ix.code)) || '';
     chk('指数卡片显示"指数"徽标', segIx.includes('rk idx') && segIx.includes('>指数<'));
-    chk('指数卡片不显示经理从业、改显示评估口径', segIx.includes('按跟踪标的/业绩/费率评估')
+    // v5.12 单列债指（docs/17 §9）：卡脚 = 单列榜口径（旧"穿插评估"文案已随结构拍板废弃）
+    chk('指数卡片不显示经理从业、改显示单列评估口径',
+        segIx.includes('债指单列榜') && segIx.includes('评估卡真分')
         && !segIx.includes('经理从业'));
     const ac = actAll.find(f=>f.category===ix.category);
     if (ac) {
@@ -232,14 +234,15 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     }
     openDetail(ix.code);
     const dbI = document.getElementById('d-body').innerHTML;
-    chk('指数详情用"指数评估口径"替代"基金经理"',
+    chk('指数详情用"指数评估口径"替代"基金经理"（含指数族行）',
         dbI.includes('<h3>指数评估口径') && !dbI.includes('<h3>基金经理')
-        && dbI.includes('跟踪基准') && dbI.includes('公司非货规模'));
-    // 断言用 <h3> 锚定：裸串会匹配到 HTML 注释（<!-- 评分明细…/评分依据… -->）
-    chk('指数详情"评分依据"展示插值锚点而非分项贡献分',
-        dbI.includes('<h3>评分依据') && !dbI.includes('<h3>评分明细')
-        && dbI.includes('下邻锚点') && dbI.includes('上邻锚点')
-        && dbI.includes('线性插值得分') && dbI.includes('近三年年化'));
+        && dbI.includes('指数族 / 久期段') && dbI.includes('公司非货规模'));
+    // 断言用 <h3> 锚定：裸串会匹配到 HTML 注释（<!-- 评分明细… -->）
+    // v5.12：评分明细 = 指数评估卡分项贡献（merged 回退路径的插值锚点渲染休眠）
+    chk('指数详情"评分明细"展示评估卡分项贡献而非插值锚点',
+        dbI.includes('<h3>评分明细') && !dbI.includes('<h3>评分依据')
+        && dbI.includes('指数评估卡 · 族内相对贡献分') && dbI.includes('总费率')
+        && !dbI.includes('下邻锚点') && !dbI.includes('线性插值得分'));
     if (ac) {
       openDetail(ac.code);
       const dbA = document.getElementById('d-body').innerHTML;
@@ -270,7 +273,28 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('切回短债后固收+卡片消失',
         shortFunds.every(f=>h4.includes(f.code)) && fpFunds.every(f=>!h4.includes(f.code)));
   }
-  chk('禁用分类切换被忽略', (switchTab('index'), ACTIVE==='short_bond'));
+  // v5.12 单列债指（docs/17 §9）：分组头 / 组内名次分母 / 同指数其他优秀基金 / 无对比按钮
+  switchTab('index');
+  const listIx = document.getElementById('list').innerHTML;
+  chk('债指 tab 分组头（来源池各自成榜，组间分数不可比）',
+      listIx.includes('债指 · ') && listIx.includes('组内相对评分 · 与主动榜分数不可比'));
+  const ixWithPeers = (D.funds||[]).find(f=>f.is_index && (f.index_peers||[]).length);
+  if (ixWithPeers) {
+    openDetail(ixWithPeers.code);
+    const dbP = document.getElementById('d-body').innerHTML;
+    chk('详情"同指数其他优秀基金"块渲染且注明口径',
+        dbP.includes('<h3>同指数其他优秀基金')
+        && dbP.includes('同一跟踪指数只在榜单展示 1 只')
+        && dbP.includes('与主动榜分数不可比'));
+    chk('债指详情名次分母 = 组内只数',
+        document.getElementById('d-rank').textContent
+          .includes('第 '+ixWithPeers.rank+' 名 / '+ixWithPeers.idx_group_n));
+    chk('指数卡隐藏对比按钮',
+        !(listIx.split('<div class="fundcard"').find(s=>s.includes(ixWithPeers.code)) || '')
+          .includes('class="pick"'));
+  }
+  switchTab('short_bond');
+  chk('未知分类切换被忽略', (switchTab('nonexistent_cat'), ACTIVE==='short_bond'));
 } else {
   console.log('· 单池 data.js：多池切换分支未适用（跑完周更管线后应出现多池分支）');
   switchTab('short_bond');

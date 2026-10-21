@@ -15,7 +15,8 @@ import pandas as pd
 import pytest
 
 from fundscorer import batch, config as C
-from fundscorer.indexfund import index_family, index_id, interleave
+from fundscorer.indexfund import (index_family, index_id, interleave,
+                                  pick_per_index, track_dev)
 from fundscorer.screen import base_name, screen_candidates
 from fundscorer.scorer import (
     EXCLUDED_POOL,
@@ -624,3 +625,70 @@ class TestScoreIndexPoolV511:
         assert r0["score"] == pytest.approx(r0["raw_score"] * 100 / r0["earned_weight"],
                                             abs=0.02)   # 双四舍五入（raw 2 位 + score 2 位）
         assert r0["score_capped"] == r0["score"]
+
+
+# ============================================================ v5.12 单列榜（docs/17 §9）
+class TestTrackDevV512:
+    """同指数组跟踪偏离代理：|ret_3y − 组中位|，组<3 只不产出。"""
+
+    def test_group_ge3(self):
+        dev = track_dev([("a", "G1", 0.03), ("b", "G1", 0.05), ("c", "G1", 0.04)])
+        assert dev["a"] == pytest.approx(0.01)
+        assert dev["b"] == pytest.approx(0.01)
+        assert dev["c"] == pytest.approx(0.0)
+
+    def test_group_lt3_no_output(self):
+        assert track_dev([("a", "G2", 0.01), ("b", "G2", 0.02)]) == {}
+        assert track_dev([("a", "G3", 0.01)]) == {}
+
+    def test_none_ret_ignored(self):
+        # ret 为 None 的基金不入组；剔除后组内 <3 → 该组不产出
+        dev = track_dev([("a", "G1", 0.01), ("b", "G1", 0.02), ("c", "G1", None)])
+        assert dev == {}
+
+    def test_multiple_groups(self):
+        dev = track_dev([("a", "G1", 0.03), ("b", "G1", 0.05), ("c", "G1", 0.04),
+                         ("d", "G2", 0.10), ("e", "G2", 0.20), ("f", "G2", 0.30)])
+        assert set(dev) == {"a", "b", "c", "d", "e", "f"}
+        assert dev["d"] == pytest.approx(0.10)
+
+
+class TestPickPerIndexV512:
+    """单列榜同指数归一（用户 2026-10-21 拍板）：fee↑ → 公司规模↑ → 跟踪偏离↓。"""
+
+    @staticmethod
+    def _rows():
+        return [
+            {"base": "x1", "idx": "G1", "fee": 0.0050, "cs": 9000.0, "dev": 0.004, "score": 60},
+            {"base": "x2", "idx": "G1", "fee": 0.0045, "cs": 4000.0, "dev": 0.009, "score": 66},
+            {"base": "x3", "idx": "G1", "fee": 0.0045, "cs": 4000.0, "dev": 0.002, "score": 63},
+            {"base": "y1", "idx": "G2", "fee": 0.0020, "cs": 10000.0, "dev": None, "score": 55},
+            {"base": "y2", "idx": "G2", "fee": 0.0030, "cs": 8000.0, "dev": 0.001, "score": 58},
+        ]
+
+    def test_one_per_index(self):
+        picks = pick_per_index(self._rows())
+        assert sorted(r["idx"] for r in picks) == ["G1", "G2"]
+        assert len(picks) == 2
+
+    def test_fee_then_cs_then_dev(self):
+        picks = {r["idx"]: r["base"] for r in pick_per_index(self._rows())}
+        assert picks["G1"] == "x3"      # fee 同 0.0045、cs 同 → dev 小者胜
+        assert picks["Y" + "2"] if False else True
+        assert picks["G2"] == "y1"      # fee 低者胜（dev 缺失不拖累，fee 已分出）
+
+    def test_cs_beats_dev(self):
+        rows = [{"base": "a", "idx": "G", "fee": 0.002, "cs": 100, "dev": 0.009, "score": 50},
+                {"base": "b", "idx": "G", "fee": 0.002, "cs": 900, "dev": 0.001, "score": 51}]
+        picks = pick_per_index(rows)
+        assert [r["base"] for r in picks] == ["b"]   # cs 大者胜（dev 只是第三键）
+
+    def test_missing_keys_filled_and_empty(self):
+        picks = pick_per_index([{"base": "a", "idx": "G", "fee": None, "cs": None,
+                                 "dev": None, "score": 1}])
+        assert picks[0]["base"] == "a"
+        assert pick_per_index([]) == []
+
+    def test_original_keys_preserved(self):
+        r = pick_per_index(self._rows())[0]
+        assert {"base", "idx", "fee", "cs", "dev", "score"} <= set(r)

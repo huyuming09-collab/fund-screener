@@ -246,3 +246,46 @@ def interleave(idx_rows: pd.DataFrame, active_res: pd.DataFrame,
     merged["rank"] = range(1, len(merged) + 1)
     stats["in_list"] = int(merged["is_index"].sum())
     return merged, stats
+
+
+# ---------------------------------------------------------------- 单列榜（v5.12 · docs/17 §9）
+def track_dev(rows):
+    """同指数组跟踪偏离代理：{base: |ret_3y − 组内中位|}，组内基金数 <3 的组不产出。
+
+    rows: [(base, idx_id, ret_3y|None), ...] **基金级**。
+    无指数点位序列（中债/中证不免费），用同组中位收益近似指数收益——仅作
+    "同指数多只并列时"的第三顺位择优（用户 2026-10-21 拍板），不对外称跟踪误差。
+    """
+    import statistics
+    from collections import defaultdict
+    grp = defaultdict(list)
+    for base, idx_id, ret in rows:
+        if ret is not None and pd.notna(ret):
+            grp[idx_id].append((base, float(ret)))
+    out = {}
+    for idx_id, pairs in grp.items():
+        if len(pairs) < 3:
+            continue
+        med = statistics.median(v for _, v in pairs)
+        for base, v in pairs:
+            out[base] = abs(v - med)
+    return out
+
+
+def pick_per_index(rows):
+    """单列榜同指数归一（用户 2026-10-21 拍板）：每指数组按
+    费率↑ → 公司非货规模↑ → 跟踪偏离↓（小者优先）取第 1 只；缺值排末（na_position=last）。
+
+    rows: [{idx, fee, cs, dev, ...}]（须含上述三键；其余键原样保留）。
+    返回保留原键的被选行，顺序 = 第一排序键稳定序（调用方再按卡分排序）。
+    """
+    if not rows:
+        return []
+    df = pd.DataFrame(rows)
+    for k in ("idx", "fee", "cs", "dev"):
+        if k not in df.columns:
+            df[k] = float("nan")
+    df = df.sort_values(["fee", "cs", "dev"], ascending=[True, False, True],
+                        na_position="last", kind="mergesort")
+    keep = df.groupby("idx", sort=False).head(1)
+    return keep.to_dict("records")

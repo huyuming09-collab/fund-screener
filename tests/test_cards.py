@@ -514,3 +514,35 @@ class TestIndexFamPayload:
         card = cards.build_fund(_row(), _rec(), _nav(), 100)
         assert card["fund_info"]["idx_fam"] is None
         assert card["fund_info"]["idx_dur"] is None
+
+
+class TestIndexListPayload:
+    """v5.12 单列债指（docs/17 §9）：index_peers / idx_group / idx_group_n 入卡片契约。"""
+
+    PEERS = [{"code": "003547", "name": "鹏华中证同业存单AAA指数7天持有", "score": 68.2,
+              "fee_total": 0.0045, "company_scale": 6382.0, "ret_3y": 0.021}]
+
+    def test_index_peers_passthrough(self):
+        card = cards.build_fund(_row(is_index=True, index_peers=self.PEERS),
+                                _rec(), _nav(), 100)
+        assert card["index_peers"] == self.PEERS
+
+    def test_active_card_peers_empty(self):
+        assert cards.build_fund(_row(), _rec(), _nav(), 100)["index_peers"] == []
+
+    def test_idx_group_fields(self):
+        card = cards.build_fund(
+            _row(is_index=True, idx_group="short_bond", idx_group_n=7),
+            _rec(), _nav(), 100)
+        assert card["idx_group"] == "short_bond"
+        assert card["idx_group_n"] == 7
+        card2 = cards.build_fund(_row(), _rec(), _nav(), 100)
+        assert card2["idx_group"] is None and card2["idx_group_n"] is None
+
+    def test_nan_column_safety(self):
+        row = _row()
+        row["index_peers"] = np.nan
+        row["idx_group"] = np.nan
+        f = cards.build_fund(row, _rec(), _nav(), 100)
+        assert f["index_peers"] == []
+        assert f["idx_group"] is None

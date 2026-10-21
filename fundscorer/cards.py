@@ -101,6 +101,18 @@ def _opt_dict(row, key):
     return v if isinstance(v, dict) else None
 
 
+def _opt_list(row, key):
+    """行内可选列表列（index_peers）：缺列/NaN → []（list 才透传）。"""
+    v = row.get(key, None) if hasattr(row, "get") else None
+    return v if isinstance(v, list) else []
+
+
+def _opt_str(row, key):
+    """行内可选字符串列（idx_group）：缺列/NaN → None。"""
+    v = row.get(key, None) if hasattr(row, "get") else None
+    return v if isinstance(v, str) else None
+
+
 def _style_label(ret, vol, med_ret, med_vol):
     """风格标签（池内相对，仅展示不计分，docs/12 §8）：按本池候选中位切四象限。
 
@@ -143,8 +155,13 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         "purchase_status": rec.get("purchase_status"),
         "suspended": D.sgzt_suspended(rec.get("purchase_status")),
         # 指数评分依据：业绩位置插值的上下邻锚点（主动基金为 None）——卡片可核对
-        # "业绩落在谁和谁之间、分数取这两个分数之间"
+        # "业绩落在谁和谁之间、分数取这两个分数之间"（merged 模式专用；v5.12 单列恒 None）
         "score_basis": _opt_dict(row, "score_basis"),
+        # v5.12 单列债指：同指数其他优秀基金（卡分 top3；空 → 前端隐藏该块）
+        "index_peers": _opt_list(row, "index_peers"),
+        # 单列榜分组（来源池）与组内总只数：详情"第 x 名 / n"按组（跨组分数不可比）
+        "idx_group": _opt_str(row, "idx_group"),
+        "idx_group_n": _i(row.get("idx_group_n")),
         "metrics": {
             "ret_1y": _rec_metric(rec, "ret_1y"),
             "ret_3y": _rec_metric(rec, "ret_3y"),
@@ -263,8 +280,11 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
                                   (f.get("metrics") or {}).get("vol_5y"),
                                   sb.get("ret_5y"), sb.get("vol_5y"))
     # v5.5 经理占席（全榜跨池统计，提示集中度；仅展示不扣分，docs/12 §9）
+    # v5.12：债指单列行不计入占席——指数基金不看经理，计入会虚增其兼管主动基金的占席数
     seats: dict = {}
     for f in funds:
+        if f.get("is_index"):
+            continue
         nm = (f.get("manager") or {}).get("name")
         if nm:
             seats[nm] = seats.get(nm, 0) + 1
