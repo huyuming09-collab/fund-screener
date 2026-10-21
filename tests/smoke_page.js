@@ -77,6 +77,7 @@ chk('详情四行费率（买入/管理/托管/销售服务）',
   db.includes('买入费率') && db.includes('管理费率') && db.includes('托管费率') && db.includes('销售服务费率'));
 chk('详情基金合并规模', db.includes('基金合并规模'));
 chk('详情无申购+托管费旧口径', !db.includes('申购+托管费'));
+chk('v5.16 共管系数展示封顶（贡献折系数前原值 + 共管×标注）', html.includes('共管×') && html.includes('coefOf'));
 const den0 = (D.pools && D.pools[shortFunds[0].category] && D.pools[shortFunds[0].category].n) || D.n;
 chk('详情头部名次（分母=所属池 n）',
   document.getElementById('d-rank').textContent.includes('第 '+shortFunds[0].rank+' 名 / '+den0));

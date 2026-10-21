@@ -361,6 +361,11 @@ const DIM_LABELS = {
 const STYLE_CLS = {'进取型':'aggr','稳健型':'steady','防守型':'defen','震荡型':'wave'};
 const num = (v, nd) => v == null ? '—' : Number(v).toFixed(nd == null ? 2 : nd);
 /* 维度 → 原始值（有真实来源的才映射；否则回落 sub 分） */
+/* v5.16 展示封顶（用户拍板「子项分最多显示100 + 共管×系数标注，计分不动」）：
+   共管系数只留在计分（payload 原样），展示层把贡献折回系数前原值、附「共管×系数」。 */
+const MGR3KEYS = ['mgr_tenure', 'mgr_career', 'mgr_products_ann'];
+const coefOf = f => (f && f.manager && Number(f.manager.team_coef) > 1) ? Number(f.manager.team_coef) : 1;
+
 const RAW_OF = {
   mdd_5y: f => pct(f.metrics.mdd_5y, 2), mdd_3y: f => pct(f.metrics.mdd_3y, 2), mdd_1y: f => pct(f.metrics.mdd_1y, 2),
   vol_5y: f => pct(f.metrics.vol_5y, 2),
@@ -468,9 +473,13 @@ function openCmp(){
         const cells = fs.map(function(f){
           const sc = (f.sub_scores || {})[k], det = (f.score_detail || {})[k];
           if(sc == null) return '<span style="color:var(--sub)">—</span><span class="raw">数据不足·不计分</span>';
-          const bar = w > 0 ? '<div class="bar"><i style="width:' + Math.min(100, (det || 0) / w * 100).toFixed(0) + '%"></i></div>' : '';
-          return (det == null ? '—' : det.toFixed(2)) + ' / ' + w.toFixed(2) + bar
-            + '<span class="raw">' + (RAW_OF[k] ? RAW_OF[k](f) : '分 ' + sc) + '</span>';
+          /* v5.16 展示封顶（用户拍板）：共管系数（v5.7）作用在计分里，展示按系数前原值
+             显示并标「共管×系数」——任何数字不超权重/100，计分契约不变（payload 原样） */
+          const cd = (MGR3KEYS.indexOf(k) >= 0 && coefOf(f) > 1) ? coefOf(f) : 1;
+          const det2 = det == null ? det : det / cd;
+          const bar = w > 0 ? '<div class="bar"><i style="width:' + Math.min(100, (det2 || 0) / w * 100).toFixed(0) + '%"></i></div>' : '';
+          return (det2 == null ? '—' : det2.toFixed(2)) + ' / ' + w.toFixed(2) + bar
+            + '<span class="raw">' + (RAW_OF[k] ? RAW_OF[k](f) + (cd > 1 ? ' 共管×' + cd : '') : '分 ' + Math.min(100, sc)) + '</span>';
         });
         H += row((DIM_LABELS[k] || k) + '<span class="w" style="color:var(--sub);font-size:10px"> ' + w.toFixed(2) + '</span>',
                  cells, bestOf(fs.map(f => (f.score_detail || {})[k])));
@@ -548,8 +557,9 @@ function cmpTSV(fs, W, totW){
         L.push([DIM_LABELS[k] || k + '(' + Number(W[k]).toFixed(2) + ')'].concat(fs.map(function(f){
           const det = (f.score_detail || {})[k], sc = (f.sub_scores || {})[k];
           if(sc == null) return '—';
-          return (det == null ? '—' : det.toFixed(2)) + '/' + Number(W[k]).toFixed(2)
-            + ' ' + (RAW_OF[k] ? RAW_OF[k](f) : '分' + sc);
+          const cd = (MGR3KEYS.indexOf(k) >= 0 && coefOf(f) > 1) ? coefOf(f) : 1;   /* v5.16 展示封顶同对比表 */
+          return (det == null ? '—' : (det / cd).toFixed(2)) + '/' + Number(W[k]).toFixed(2)
+            + ' ' + (RAW_OF[k] ? RAW_OF[k](f) + (cd > 1 ? ' 共管×' + cd : '') : '分' + Math.min(100, sc));
         })).join('\t'));
       });
     });
@@ -802,7 +812,7 @@ function bodyHTML(f){
   <div class="sec"><h3>评分明细<span class="hint">${f.is_index ? '指数评估卡 · 同尺贡献分+经理块基线' : 'v5.2 · 分项贡献分'}</span></h3>
     ${scoreRows.map(([k,v])=>`
       <div class="bar-row"><div class="bl">${LABELS[k]||k}</div>
-        <div class="bar-bg"><div class="bar" style="width:${(v/w*100).toFixed(1)}%"></div></div>
+        <div class="bar-bg"><div class="bar" style="width:${Math.min(100, v/w*100).toFixed(1)}%"></div></div>
         <div class="bv">${v.toFixed(1)}</div></div>`).join('')}
     ${f.redlines.length
       ? `<div style="margin-top:6px;font-size:12px">红线：${f.redlines.map(r=>`<span class="redline-tag">${r}</span>`).join('')}</div>`
