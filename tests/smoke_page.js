@@ -224,7 +224,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('指数卡片显示"指数"徽标', segIx.includes('rk idx') && segIx.includes('>指数<'));
     // v5.12 单列债指（docs/17 §9）：卡脚 = 单列榜口径（旧"穿插评估"文案已随结构拍板废弃）
     chk('指数卡片不显示经理从业、改显示单列评估口径',
-        segIx.includes('债指单列榜') && segIx.includes('评估卡真分')
+        segIx.includes('债指单列榜') && segIx.includes('经理块基线')
         && !segIx.includes('经理从业'));
     const ac = actAll.find(f=>f.category===ix.category);
     if (ac) {
@@ -242,7 +242,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     // v5.12：评分明细 = 指数评估卡分项贡献（merged 回退路径的插值锚点渲染休眠）
     chk('指数详情"评分明细"展示评估卡分项贡献而非插值锚点',
         dbI.includes('<h3>评分明细') && !dbI.includes('<h3>评分依据')
-        && dbI.includes('指数评估卡 · 族内相对贡献分') && dbI.includes('总费率')
+        && dbI.includes('指数评估卡 · 同尺贡献分+经理块基线') && dbI.includes('总费率')
         && !dbI.includes('下邻锚点') && !dbI.includes('线性插值得分'));
     if (ac) {
       openDetail(ac.code);

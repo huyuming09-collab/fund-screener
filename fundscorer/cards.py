@@ -162,6 +162,9 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         # 单列榜分组（来源池）与组内总只数：详情"第 x 名 / n"按组（跨组分数不可比）
         "idx_group": _opt_str(row, "idx_group"),
         "idx_group_n": _i(row.get("idx_group_n")),
+        # v5.15 债指经理块基线核对项：同画像主动候选分数中位（主动基金为 None）——
+        # 卡分 = 画像分 + 基线，读者可核对"同画像的主动基金大约打多少分"
+        "idx_lookalike_med": _rec_metric(rec, "idx_lookalike_med"),
         "metrics": {
             "ret_1y": _rec_metric(rec, "ret_1y"),
             "ret_3y": _rec_metric(rec, "ret_3y"),

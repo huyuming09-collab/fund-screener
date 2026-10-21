@@ -671,6 +671,55 @@ class TestIndexCardSameScaleV514:
         assert r["score"] is not None
 
 
+# ============================================================ v5.15 经理块基线（docs/17 §11）
+class TestIdxMgrBaselineV515:
+    """v5.15（用户 2026-10-21 拍板「业绩差不多卡片分数也要差不多」）：指数卡总分 +
+    经理块基线（同画像主动候选分数带中位对齐；池内中位、夹 0~30、整池常量平移
+    → 排序与分差不变）；basis 无分数 → 不加，行为回 v5.14。"""
+
+    @staticmethod
+    def _basis(with_score=True):
+        out = []
+        for i in range(20):
+            b = {"code": f"a{i:03d}", "name": f"主动短债{i}债券A", "pool": "short_bond",
+                 "benchmark": "", "scale_yi": 20.0, "fee_total": 0.003,
+                 "ret_3y": round(0.010 + i * 0.001, 6), "ret_1y": 0.02,
+                 "mdd_3y": 0.002, "vol_5y": 0.003}
+            if with_score:
+                b["score"] = round(60 + i * 1.5, 2)      # 60~88.5：候选带经理块 → 同画像高出指数卡
+            out.append(b)
+        return out
+
+    def test_baseline_constant_shift_keeps_order_and_gap(self):
+        base = _card_records(1, "存单")[0]
+        recs = [{**base, "code": "lo", "ret_3y": 0.011}, {**base, "code": "hi", "ret_3y": 0.028}]
+        with_b = {r["code"]: r for r in score_index_pool(copy.deepcopy(recs),
+                                                         basis=self._basis(True))}
+        nob = {r["code"]: r for r in score_index_pool(copy.deepcopy(recs),
+                                                      basis=self._basis(False))}
+        d_lo = with_b["lo"]["score"] - nob["lo"]["score"]
+        d_hi = with_b["hi"]["score"] - nob["hi"]["score"]
+        assert 0 < d_lo <= 30
+        assert d_lo == pytest.approx(d_hi, abs=0.01)               # 整池常量平移
+        assert with_b["hi"]["score"] - with_b["lo"]["score"] == pytest.approx(
+            nob["hi"]["score"] - nob["lo"]["score"], abs=0.01)     # 组内分差保留
+
+    def test_baseline_detail_contract(self):
+        base = _card_records(1, "存单")[0]
+        r = score_index_pool([{**base, "code": "x1", "ret_3y": 0.015}],
+                             basis=self._basis(True))[0]
+        assert "idx_mgr_base" in r["score_detail"]
+        assert r["sub_scores"]["idx_mgr_base"] == 100.0
+        assert sum(r["score_detail"].values()) == pytest.approx(r["raw_score"], abs=0.05)
+        assert r["score"] == pytest.approx(r["raw_score"] * 100 / r["earned_weight"],
+                                           abs=0.03)
+
+    def test_no_score_in_basis_skips_baseline(self):
+        base = _card_records(1, "存单")[0]
+        out = score_index_pool([{**base, "code": "x1"}], basis=self._basis(False))[0]
+        assert "idx_mgr_base" not in out["score_detail"]
+
+
 # ============================================================ v5.12 单列榜（docs/17 §9）
 class TestTrackDevV512:
     """同指数组跟踪偏离代理：|ret_3y − 组中位|，组<3 只不产出。"""

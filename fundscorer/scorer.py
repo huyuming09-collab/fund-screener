@@ -505,6 +505,40 @@ def score_index_pool(fund_metrics: list[dict], score_only: set[str] | None = Non
                 f.setdefault("flags", []).append(
                     f"指数卡数据不足折算：载分 {earned:g}/{total_w:g}（缺 "
                     + "、".join(k for k in weights if sub.get(k) is None) + "）")
+        # v5.15 经理块基线（用户 2026-10-21 拍板「业绩差不多卡片分数也要差不多」）：
+        # 主动候选普遍过了经理闸、带着经理块（实测同画像系统性高出 ~12 分）→ 指数卡总分
+        # 与「同画像主动候选分数带」对齐：每只指数基金取业绩画像（ret_3y/ret_1y/mdd_3y/
+        # vol_5y/fee_total 的 z 距离）最近 k=10 只主动候选的分数中位 m_i，基线 =
+        # 本组 (m_i − score) 的中位，夹在 0~30 防退化池失真，整池加成（排序不变、
+        # 组内分差保留）。basis 缺分数（退化/测试旧径）→ 不加，行为回 v5.14。
+        scored = [f for f in funds if f.get("score") is not None]
+        b_scored = [b for b in b_rows if b.get("score") is not None]
+        if scored and len(b_scored) >= 10:
+            keys5 = ["ret_3y", "ret_1y", "mdd_3y", "vol_5y", "fee_total"]
+            bdf = pd.DataFrame([[_val(k, b, b_scale) for k in keys5] for b in b_scored],
+                               columns=keys5, dtype="float64")
+            sd = bdf.std(ddof=0)
+            sd = sd.where(sd > 1e-12, 1.0)   # 常量列（含浮点噪声 std）不参与距离
+            gaps = []
+            for f in scored:
+                v = pd.Series([_val(k, f) for k in keys5], index=keys5, dtype="float64")
+                if bool(v.isna().any()):
+                    continue
+                dist = (((bdf - v) / sd) ** 2).sum(axis=1)
+                near = sorted(range(len(dist)), key=lambda i: dist.iloc[i])[:10]
+                m_i = float(pd.Series([b_scored[i]["score"] for i in near]).median())
+                f["idx_lookalike_med"] = round(m_i, 2)   # 可核对：同画像主动候选分数中位
+                gaps.append(m_i - float(f["score"]))
+            if gaps:
+                base = float(min(30.0, max(0.0, pd.Series(gaps).median())))
+                if base >= 0.5:
+                    for f in scored:
+                        pts_b = round(base * float(f["earned_weight"]) / 100.0, 3)
+                        f["raw_score"] = round(float(f["raw_score"]) + pts_b, 2)
+                        f["score"] = round(float(f["score"]) + base, 2)
+                        f["score_capped"] = f["score"]
+                        f["score_detail"]["idx_mgr_base"] = pts_b
+                        f["sub_scores"]["idx_mgr_base"] = 100.0
         results.extend(funds)
     _assign_stars(results, quota_n)
     return results
