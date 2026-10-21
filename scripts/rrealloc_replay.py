@@ -82,9 +82,13 @@ def _distribute(w: dict, ic_keys: list[str], freed: float,
 
 def build_scenario(w_a: dict, ic_keys: list[str], zero_keys: list[str],
                    intra: tuple[str, str] | None, mode: str,
-                   train_ic: dict) -> dict:
+                   train_ic: dict, shrink: dict | None = None) -> dict:
     w = dict(w_a)
-    freed = sum(w.get(k, 0.0) for k in zero_keys)
+    freed = 0.0
+    for k, tgt in (shrink or {}).items():        # 部分缩减（如 D9 products 11→4）
+        freed += w.get(k, 0.0) - tgt
+        w[k] = tgt
+    freed += sum(w.get(k, 0.0) for k in zero_keys)
     for k in zero_keys:
         w[k] = 0.0
     if intra:                               # B2 块内转移
@@ -185,6 +189,9 @@ def main() -> None:
             ("TRPW 全部 (B1-B)",    ["mgr_tenure", "rank_stab", "repair_5y", "winrate_m_5y"], None, "B"),
             ("B2 tenure→career",    ["mgr_tenure"], ("mgr_tenure", "mgr_career"), "A"),
             ("B2 repair→vol",       ["repair_5y"],   ("repair_5y", "vol_5y"),      "A"),
+            # —— D9/D10 拍板件（shrink=部分缩减，释放量按 旧值−目标值 计）——
+            ("D9 products→4 (B1-A)", [], None, "A", {"mgr_products_ann": 4.0}),
+            ("D9+D10A 全清 (B1-A)", ["winrate_m_5y"], None, "A", {"mgr_products_ann": 4.0}),
         ],
         "long_bond": [
             ("S0 基线",            [],        None, "A"),
@@ -196,6 +203,10 @@ def main() -> None:
             ("TRW 三因子 (B1-A)",   ["mgr_tenure", "rank_stab", "winrate_m_5y"], None, "A"),
             ("TRW 三因子 (B1-B)",   ["mgr_tenure", "rank_stab", "winrate_m_5y"], None, "B"),
             ("B2 tenure→career",    ["mgr_tenure"], ("mgr_tenure", "mgr_career"), "A"),
+            # —— D9/D10 拍板件 ——
+            ("D9 products→4 (B1-A)", [], None, "A", {"mgr_products_ann": 4.0}),
+            ("D10B winrate→2 (B1-A)", [], None, "A", {"winrate_m_5y": 2.0}),
+            ("D9+D10A 全清 (B1-A)", ["winrate_m_5y"], None, "A", {"mgr_products_ann": 4.0}),
         ],
     }
 
@@ -203,8 +214,11 @@ def main() -> None:
     for pool in DEBT_POOLS:
         ic_keys = ic_keys_of(pool)
         w_a = base_w(pool)
-        for label, zero_keys, intra, mode in SCEN[pool]:
-            w = build_scenario(w_a, ic_keys, zero_keys, intra, mode, train_ic[pool])
+        for row in SCEN[pool]:
+            label, zero_keys, intra, mode = row[:4]
+            shrink = row[4] if len(row) > 4 else None
+            w = build_scenario(w_a, ic_keys, zero_keys, intra, mode,
+                               train_ic[pool], shrink)
             node_res = []
             for T in sorted({t for (p, t) in scored if p == pool}):
                 funds = scored[(pool, T)]
@@ -257,7 +271,7 @@ def main() -> None:
                 "max_w": round(max_w, 2),
                 "cap_hit": bool(max_w > CAP + 1e-6),
             })
-            if label != "S0 基线" and ("TRP" in label or "TRW" in label or "D16a" in label):
+            if label != "S0 基线" and any(t in label for t in ("TRP", "TRW", "D16a", "D9", "D10")):
                 for k in sorted(w, key=lambda x: -(w[x] - w_a.get(x, 0.0))):
                     if abs(w[k] - w_a.get(k, 0.0)) > 1e-6:
                         alloc.append({"pool": pool, "scenario": label, "factor": k,
