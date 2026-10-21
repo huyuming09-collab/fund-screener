@@ -147,7 +147,11 @@ def fetch_f10(code: str) -> dict:
     """
     cached = _load_cache(f"f10_v3_{code}", 24 * 7)
     if cached is not None:
-        return cached.to_dict() if isinstance(cached, pd.Series) else cached
+        info = cached.to_dict() if isinstance(cached, pd.Series) else cached
+        # 读端修正（2026-10-21 回归接管 bug）：缓存条目里的 managers[].start 也可能
+        # 是 jl_intro 简介里的"首次上任日"——现任经理离任后回归接管时（如某债基经理
+        # 2018 首任、2025-12 回归），本轮任期会被虚增成全基金年龄，S3 经理闸误过。
+        return _reconcile_mgr_starts(info)
     html = _http(f"https://fundf10.eastmoney.com/jbgk_{code}.html", encoding="utf-8")
 
     def grab(pat, default=""):
@@ -179,11 +183,50 @@ def fetch_f10(code: str) -> dict:
         # 一位现任经理（姓名/链接/上任日期）。共管基金此前只记第一位（如某混合 A 记甲
         # 漏乙，docs/12 §9）；每位经理配自己的上任日期，新任<1年不会背上任战绩。
         info["managers"] = _parse_jjl_intro(jjjl)
+        # 2026-10-21 修复：任职记录表（每位经理一行，含"至今"行的起始日+经理 id）
+        # 是**本轮任期**的权威源；jl_intro 简介里的日期在经理离任后回归接管时仍是
+        # 首次上任日（简介不更新）→ 任期虚增、S3 闸误过。按表逐 id 覆盖。
+        stints = _parse_current_stints(jjjl)
+        info["current_stints"] = stints
+        for mg in info["managers"]:
+            if str(mg.get("id") or "") in stints:
+                mg["start"] = stints[str(mg["id"])]
     except Exception:
         info["manager_start"] = ""
         info["managers"] = []
+        info["current_stints"] = {}
     # 缓存键 v2→v3：新 schema（managers 列表）；旧 v2 缓存无此键，升版强制按新口径重抓
     _save_cache(f"f10_v3_{code}", info)
+    return info
+
+
+def _parse_current_stints(jjjl_html: str) -> dict[str, str]:
+    """任职记录表 → 现任区间 {经理id: 本轮起始日}（end == "至今" 的每行一位现任经理）。"""
+    out: dict[str, str] = {}
+    for m in re.finditer(
+            r"<td>([\d-]{10})</td><td>至今</td>\s*<td><a href='[^']*?/manager/(\d+)\.html'",
+            jjjl_html):
+        out[m.group(2)] = m.group(1)
+    return out
+
+
+def _reconcile_mgr_starts(info: dict) -> dict:
+    """用权威本轮起始修正 managers[].start（读端兜底，缓存条目同样受益）。
+
+    优先用 current_stints（新写入的缓存自带）；旧条目回退 manager_id ↔ manager_start
+    （jbgk 页"基金经理人" = 主经理，jjjl 首行"至今"起始 = 其本轮上任日）。
+    """
+    mgrs = info.get("managers") or []
+    if not mgrs:
+        return info
+    stints = info.get("current_stints")
+    if not stints:
+        mid, mstart = str(info.get("manager_id") or ""), info.get("manager_start") or ""
+        stints = {mid: mstart} if (mid and mstart) else {}
+    for mg in mgrs:
+        s = stints.get(str(mg.get("id") or ""))
+        if s and (not mg.get("start") or mg["start"] < s):
+            mg["start"] = s
     return info
 
 

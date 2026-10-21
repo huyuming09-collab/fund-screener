@@ -112,3 +112,42 @@ class TestPurchaseStatus:
         out = D.fetch_purchase_status(["000001", "000002"], refresh=True, sleep_s=0)
         assert out == {"000001": "暂停申购", "000002": "开放申购"}
         assert saved == {"sgzt_v1_000001": "暂停申购"}
+
+
+# ---- 2026-10-21 回归接管任期虚增修复（用户发现某长债 top1 经理实际任期<2年却过了 S3 闸） ----
+# 任职记录表（每位经理一行，"至今"行 = 本轮任期权威源；实抓样本裁剪自 006212）：
+JJJL_REJOIN = '''
+<div class="boxitem w790"><h4 class="t"><label class="left">现任基金经理简介</label></h4>
+<div class="jl_intro"><a href="//fund.eastmoney.com/manager/30437326.html"><img src="a.jpg"/></a><div class="text">
+<p><strong>姓名：</strong><a style='color:#333;' href="//fund.eastmoney.com/manager/30437326.html">吴萍萍</a></p>
+<p><strong>上任日期：</strong>2018-08-24</p></div></div></div>
+<table class="w790"><tbody>
+<tr><td>2025-12-17</td><td>至今</td><td><a href='http://fund.eastmoney.com/manager/30437326.html'>吴萍萍</a> </td><td>308天</td></tr>
+<tr><td>2025-03-05</td><td>2025-12-16</td><td><a href='http://fund.eastmoney.com/manager/30500700.html'>刘长俊</a> </td><td>1年又72天</td></tr>
+</tbody></table>'''
+
+
+class TestMgrRejoinTenureFix:
+    """回归接管（离任后又回来）时 jl_intro 简介日期仍是首次上任日，任职表"至今"行
+    才是本轮任期权威口径（2026-10-21 修复：简介日期令任期虚增成全基金年龄，
+    S3 现经理任本基金≥3年 闸误过、卡片任期虚高）。"""
+
+    def test_current_stints_parse(self):
+        assert D._parse_current_stints(JJJL_REJOIN) == {"30437326": "2025-12-17"}
+
+    def test_reconcile_overrides_intro_date(self):
+        info = {"manager_id": "30437326", "manager_start": "2025-12-17",
+                "managers": [{"name": "吴萍萍", "id": "30437326", "start": "2018-08-24"}]}
+        assert D._reconcile_mgr_starts(info)["managers"][0]["start"] == "2025-12-17"
+
+    def test_reconcile_prefers_stints_and_keeps_later(self):
+        info = {"managers": [{"name": "甲", "id": "1", "start": "2020-01-01"},
+                             {"name": "乙", "id": "2", "start": "2025-06-01"}],
+                "current_stints": {"1": "2024-05-01", "2": "2024-01-01"}}
+        out = D._reconcile_mgr_starts(info)
+        assert out["managers"][0]["start"] == "2024-05-01"   # 早于权威 → 覆盖为本轮
+        assert out["managers"][1]["start"] == "2025-06-01"   # 权威更早 → 保守不动（更短任期）
+
+    def test_reconcile_noop_without_managers(self):
+        info = {"manager_id": "1", "manager_start": "2024-01-01"}
+        assert D._reconcile_mgr_starts(info) == info
