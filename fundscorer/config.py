@@ -34,7 +34,10 @@
 # v5.15（2026-10-21 用户拍板「业绩差不多卡片分数也要差不多」）：债指卡总分加
 #   **经理块基线**（score_index_pool 内自动校准：同画像主动候选分数带中位 − 指数画像分，
 #   取池内中位、夹 0~30；主动候选经经理闸带经理块 ~+12 分，指数无经理可评 → 基线对齐）。
-MODEL_VERSION = "v5.15"
+# v5.16（2026-10-21 用户复核 v5.13：「4→3 平移只在短债和长债生效」）：**固收+ 权重回滚**
+#   ——mgr_products_ann 3→4、calmar_5y 26→25（v5.13 误把三池权重表各存一份的 products
+#   都降了 1，一释放成三分；债池两处平移维持）。合计仍 100 分制。
+MODEL_VERSION = "v5.16"
 
 # 池规则版本（v5.9 起记账，docs/15-评分体系版本变动管理.md 为账本）：
 #   MODEL_VERSION  = 产物/管线版本——任何评分或筛选规则变动都递增（含展示口径无关的重排）；
@@ -45,7 +48,7 @@ MODEL_VERSION = "v5.15"
 POOL_VERSIONS = {
     "short_bond": "v5.13",   # 2026-10-21 yearly/career 规则 + 权重平移（docs/15 §3）
     "long_bond": "v5.13",    # 同上
-    "fixed_plus": "v5.13",   # fp 亦涉：career 档→分位 + products 4→3/calmar 25→26
+    "fixed_plus": "v5.16",   # 2026-10-19 v6 上线；v5.13 career 档→分位（保留）；v5.16 权重回滚（products 4/calmar 25）
     "index": "v5.15",        # 2026-10-21 经理块基线对齐（v5.14 同尺 + 去截断，docs/17 §10/§11）
 }
 
@@ -157,7 +160,7 @@ FIXED_PLUS_WEIGHTS = {
     # 风险 31（v5.8 微降稳健）
     "mdd_1y": 9, "mdd_3y": 7, "mdd_5y": 5, "vol_5y": 10, "repair_5y": 0,
     # 风险调整收益 25：calmar=ret_5y/mdd_5y，池内分位（v6 起为比率族唯一代表）
-    "calmar_5y": 26, "sharpe_5y": 0,
+    "calmar_5y": 25, "sharpe_5y": 0,
     # 胜率与运营 23+任期4（胜率 17 + 费率 6；v5.8 任期 3→4）
     "winrate_m_5y": 9, "q_win_20q": 8, "fee": 6, "mgr_tenure": 4,
     # 机构占比 2（20%~90% 满分、>90% 渐变 100→20，v5.6）
@@ -165,7 +168,7 @@ FIXED_PLUS_WEIGHTS = {
     # 结构块（v5.8：从业 3→4；ret_5y 0→2 收益直接占比）
     "ret_1y": 0, "age": 0, "lvi_3y": 0, "lvi_5y": 0, "ret_5y": 2, "excess_5y": 0,
     "ret_3y": 0, "yearly_5y": 0, "q_excess_20q": 0,
-    "rank_stab": 0, "mgr_career": 4, "mgr_products_ann": 3, "ms_rating": 1,
+    "rank_stab": 0, "mgr_career": 4, "mgr_products_ann": 4, "ms_rating": 1,
     "fund_scale": 4, "company_scale": 0,
 }
 

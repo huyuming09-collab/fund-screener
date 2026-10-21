@@ -135,10 +135,10 @@ class TestWeightsSum:
         # 收益↑稳健↓（风险 35→31：回撤 9/7/5、波动 10）、ret_5y 0→2（反向证据已标注）、
         # 经理块 10→12（任期 4、从业 4）
         w = C.FIXED_PLUS_WEIGHTS
-        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (3, 4, 4)  # v5.13 products 4→3
+        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (4, 4, 4)  # v5.16 回滚（v5.13 误降 3）
         assert (w["mdd_1y"], w["mdd_3y"], w["mdd_5y"], w["vol_5y"]) == (9, 7, 5, 10)
         assert w["mgr_tenure"] == 4 and w["ret_5y"] == 2
-        assert w["calmar_5y"] == 26 and w["sharpe_5y"] == 0       # v5.13 25→26（products 释放的 1 分）
+        assert w["calmar_5y"] == 25 and w["sharpe_5y"] == 0       # v5.16 回滚（v5.13 误升 26）
         assert sum(w.values()) == 100
 
     def test_team_coef_contract(self):
@@ -276,11 +276,11 @@ class TestRiskRatios:
         for k in ("calmar_5y", "sharpe_5y"):
             assert C.PERCENTILE_METRICS[k] == "higher"
         # v6（docs/12，11 截面双段验证）：比率族同族择优——夏普与卡玛 ρ=0.902 冗余，
-        # 并入卡玛（卡玛为唯一代表）；v5.13（docs/15 §3）：mgr_products_ann 4→3 释放的
-        # 1 分平移给卡玛 → 族总权重 25→26，夏普仍 0
-        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] == 26
+        # 并入卡玛（卡玛为唯一代表）；v5.16（docs/15 §3）：calmar 回 25（v5.13 曾误升 26，
+        # 用户复核「4→3 平移只在短债和长债生效」），夏普仍 0
+        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] == 25
         assert C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 0
-        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] + C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 26
+        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] + C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 25
 
 
 class TestMultiManager:
