@@ -6,7 +6,7 @@
 <title>基金筛选 · 周榜 TOP20</title>
 <style>
 :root{
-  --bg:#f5f6f8; --card:#fff; --ink:#1f2329; --sub:#8a9099; --line:#eceef1;
+  --bg:#f5f6f8; --card:#fff; --ink:#1f2329; --sub:#6b7280; --line:#eceef1;
   --up:#e64545;      /* 涨/收益红 */
   --down:#12a05c;    /* 跌/回撤绿 */
   --accent:#ff6a00;  /* 主色（支付宝橙风） */
@@ -44,12 +44,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#ff8a3d,#ff6a00);
        color:#fff;padding:14px 16px 10px;}
 header h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.5px;}
-header .meta{font-size:11px;opacity:.92;margin-top:4px;}
+header .meta{font-size:11px;opacity:1;font-weight:500;margin-top:4px;text-shadow:0 1px 2px rgba(90,35,0,.30);}
 header .meta b.asof{font-size:12.5px;letter-spacing:.2px;text-shadow:0 0 8px rgba(255,209,102,.35);}
 .tabs{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px;}
-.tab{flex:0 0 auto;padding:5px 14px;border-radius:14px;font-size:13px;background:rgba(255,255,255,.22);
-     color:#fff;white-space:nowrap;border:none;}
-.tab.active{background:#fff;color:var(--accent);font-weight:600;}
+/* 页签（2026-10-22 对比度重做：非激活 半透白底+深棕字 5.5:1；激活 纯白底+深橙字 4.6:1） */
+.tab{flex:0 0 auto;padding:5px 14px;border-radius:14px;font-size:13px;background:rgba(255,255,255,.55);
+     color:#7c3a12;white-space:nowrap;border:none;}
+.tab.active{background:#fff;color:#d14310;font-weight:700;box-shadow:0 2px 6px rgba(140,50,0,.25);}
 .tab.disabled{opacity:.45;}
 .tab .soon{font-size:10px;margin-left:3px;}
 
@@ -58,6 +59,7 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .fundcard{background:var(--card);border-radius:var(--radius);padding:13px 14px 11px;margin-bottom:11px;
           box-shadow:0 1px 4px rgba(20,24,40,.05);cursor:pointer;transition:transform .08s;}
 .fundcard:active{transform:scale(.985);}
+.fundcard:hover{box-shadow:0 4px 14px rgba(20,24,40,.10);}
 .fc-head{display:flex;align-items:center;gap:9px;}
 .rank{flex:0 0 auto;width:26px;height:26px;border-radius:8px;background:#fff2ea;color:var(--accent);
       font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;}
@@ -66,7 +68,7 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .fc-name{font-size:15.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
          white-space:nowrap;}
 .fc-code{font-size:11.5px;color:var(--sub);margin-top:2px;display:flex;gap:6px;align-items:center;}
-.fc-code .score{color:var(--accent);font-weight:600;}
+.fc-code .score{color:#d14310;font-weight:600;}
 .fc-code .dot{color:#d8dbe0;}
 .fc-metrics{display:grid;grid-template-columns:repeat(4,1fr);margin-top:11px;
             background:#fafbfc;border-radius:10px;padding:8px 2px;}
@@ -84,7 +86,7 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .rk.new{color:#ff8a3d;background:#fff4ec;border-radius:5px;padding:0 5px;
         font-size:10.5px;margin-left:5px;}
 /* 指数基金徽标：与主动基金区分（评估口径不同——看跟踪标的/业绩/费率，不看经理） */
-.rk.idx{color:#3b6fd4;background:#eef3fd;border-radius:5px;padding:0 5px;
+.rk.idx{color:#2456b8;background:#e6eefc;border-radius:5px;padding:0 5px;
         font-size:10.5px;margin-left:5px;font-weight:600;}
 /* v5.5 风格标签（池内相对：vs 候选中位切四象限）与经理占席（全榜统计）——均仅展示不计分 */
 .rk.style{border-radius:8px;padding:1px 6px;font-size:10.5px;margin-left:5px;font-weight:600;}
@@ -97,7 +99,13 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .rk.style.wave{background:#f3ecfd;color:#7237c0;}      /* 震荡型：收益低波动高 */
 .seats{color:#a15c00;background:#fff7e0;border-radius:8px;padding:1px 6px;
        font-size:10.5px;font-weight:600;}
-.idx-foot{color:#3b6fd4;}
+/* 债指分组头（2026-10-22 重做：原浅底白字对比度 1.07 不可读 → 蓝底深字 9.2:1） */
+.idx-group{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;row-gap:4px;
+           padding:9px 13px;margin:16px 0 8px;border-radius:12px;background:#eef3fd;border-left:4px solid #3b6fd4;
+           color:#1d3f7a;font-size:13.5px;font-weight:700;}
+.idx-group .sub{font-weight:400;font-size:11px;color:#4a6fae;}
+.idx-foot{flex:1 1 100%;order:9;font-size:10.5px;line-height:1.5;color:#5273b8;}
+.fundcard.is-index{box-shadow:inset 3px 0 0 #3b6fd4,0 1px 4px rgba(20,24,40,.05);}
 .empty-tip{color:var(--sub);text-align:center;font-size:13px;padding:30px 0;}
 
 /* ---------- 详情页 ---------- */
@@ -194,10 +202,10 @@ table.yr tr:last-child td{border-bottom:none;}
 .mgr-cards .mc{flex:1;background:#fafbfc;border-radius:10px;padding:7px 8px;text-align:center;}
 .mgr-cards .mc .v{font-size:15px;font-weight:650;color:var(--accent);}
 .mgr-cards .mc .l{font-size:10.5px;color:var(--sub);margin-top:2px;}
-.disclaimer{font-size:11px;color:#a8adb5;line-height:1.7;padding:6px 16px 26px;}
+.disclaimer{font-size:11px;color:#69707e;line-height:1.7;padding:6px 16px 26px;}
 /* 列表页常显免责底栏（小程序停做改网页后按公开页面口径挂载）
    底部留白 ≥ 对比浮条高度（~57px）：手机上勾选对比后 cmp-bar 浮在 #phone 底部，曾把页脚免责声明整条盖住（2026-10-22 修复） */
-.page-disc{flex:0 0 auto;font-size:10.5px;color:#a8adb5;line-height:1.6;text-align:center;
+.page-disc{flex:0 0 auto;font-size:10.5px;color:#69707e;line-height:1.6;text-align:center;
            padding:8px 14px calc(72px + env(safe-area-inset-bottom));background:var(--bg);
            border-top:1px solid var(--line);}
 /* 公众号引流位（列表页底部，免责声明上方） */
@@ -615,7 +623,7 @@ function renderList(){
         .map(g=>`${catLabel(g)} ${gcount(g)}`).join(' · ')}；评分与本池主动榜同尺，跨池不可比）` : '');
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
   const cardHTML = f => `
-    <div class="fundcard" data-code="${f.code}" onclick='openDetail(${JSON.stringify(f.code)})'>
+    <div class="fundcard${f.is_index?' is-index':''}" data-code="${f.code}" onclick='openDetail(${JSON.stringify(f.code)})'>
       <div class="fc-head">
         <div class="rank ${f.rank<=3?'top'+f.rank:''}">${f.rank}</div>
         <div style="flex:1;min-width:0">
@@ -631,7 +639,7 @@ function renderList(){
       <div class="fc-foot">
         <span>合并规模 ${yi(f.fund_info.scale_yi)}</span><span>·</span>
         ${f.is_index
-          ? '<span class="idx-foot">债指单列榜·同指数只展示1只 · 评分=业绩画像分+池内经理块基线（与同画像主动≈同分）</span>'
+          ? '<span class="idx-foot">债指单列榜 · 评分=业绩画像分+池内经理块基线（与同画像主动≈同分）</span>'
           : '<span>经理从业 '+(f.manager.career_years==null?'—':f.manager.career_years+'年')+'</span>'}
         ${(f.manager&&f.manager.seats>=2)?`<span class="seats" title="该经理当期上榜占席数（集中度提示，不扣分）">占席×${f.manager.seats}</span>`:''}
         <span>·</span>
@@ -642,10 +650,9 @@ function renderList(){
     const GRP_HEAD = ['short_bond','long_bond'].map(g => {
       const gs = funds.filter(f => f.idx_group === g);
       if (!gs.length) return '';
-      return `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;`
-        + `padding:9px 13px;margin:14px 0 8px;border-radius:12px;background:rgba(255,255,255,.16);`
-        + `color:#fff;font-size:13px;font-weight:600">${catLabel(g)}债指 · ${gs.length} 只`
-        + `<span style="font-weight:400;font-size:11px;opacity:.75">评分与本池主动榜同尺（仅作水平参照，不一起排名；业绩同位次≈同分）· 跨池不可比</span></div>`
+      return `<div class="idx-group">`
+        + `<b>${catLabel(g)}债指 · ${gs.length} 只</b>`
+        + `<span class="sub">同指数只展示1只 · 评分与本池主动榜同尺（仅作水平参照，不一起排名）· 跨池不可比</span></div>`
         + gs.map(cardHTML).join('');
     }).join('');
     $('list').innerHTML = GRP_HEAD;
