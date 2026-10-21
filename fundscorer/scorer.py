@@ -19,6 +19,7 @@ import pandas as pd
 
 from . import config as C
 from . import data, metrics
+from . import indexfund as IF
 
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "data" / "snapshots"
 
@@ -362,6 +363,114 @@ def score_pool(fund_metrics: list[dict], score_only: set[str] | None = None,
             except Exception as e:      # 单只失败不影响整池（全量场景容错）
                 f["score"] = f["score_capped"] = None
                 f.setdefault("flags", []).append(f"打分异常: {type(e).__name__}")
+        results.extend(funds)
+    _assign_stars(results, quota_n)
+    return results
+
+
+def score_index_pool(fund_metrics: list[dict], score_only: set[str] | None = None,
+                     quota_n: int | dict[str, int] | None = None,
+                     company_scale: dict[str, float] | None = None) -> list[dict]:
+    """债指评估卡 v5.11（2026-10-21 用户拍板 D-I2，docs/17 §4.2）。
+
+    与主动卡的根本差异（指数编制方案决定、无经理可评——决议①）：
+      - 权重 C.INDEX["card_weights"]（100 分制）：业绩 50（ret_3y 30 + ret_1y 20）、
+        风险 25（mdd_3y 15 + vol_5y 10）、费率 15、规模与运维 10（scale 5 + 公司非货规模 5）；
+      - 分位基准 = **同族相对**（族 ≥ INDEX.fam_min_n 只用族内，否则回退本池全池）——
+        跨族收益差 2.7×、波动差 7.5× 系编制方案所致，跨族分位会系统性错判（docs/17 §2.2）；
+        fee_total / company_scale 为池内**绝对**分位（全市场可比，低费率/大公司直接占优）；
+      - 缺失因子不计、按载分等比折算到 100——raw_score/earned_weight/score/score_detail
+        口径与主动卡逐字段一致（docs/15 §0 契约）。
+    分位基准 = 全池（score_only 子集分数与全量逐位一致，同 score_pool 语义）。
+    company_scale: 可选 {code: 非货规模亿元}；None 或缺 code → 该因子不计（earned 折算）。
+    """
+    from .screen import base_name          # 局部导入：screen 不反向依赖 scorer，避免潜在循环
+
+    weights = dict(C.INDEX["card_weights"])
+    total_w = float(sum(weights.values()))
+    # (值越大分越高?, 族内相对基准?) —— 族相对仅作用于编制方案绑定的因子（收益/回撤/波动/规模）
+    specs: dict[str, tuple[bool, bool]] = {
+        "ret_3y": (True, True), "ret_1y": (True, True),
+        "mdd_3y": (False, True), "vol_5y": (False, True),
+        "scale": (True, True),
+        "fee_total": (False, False), "company_scale": (True, False),
+    }
+
+    def _val(key: str, f: dict) -> float | None:
+        if key == "scale":
+            v = scale_sum.get(base_name(str(f.get("name") or "")))
+            return None if v is None else float(v)
+        if key == "company_scale":
+            if company_scale is None:
+                return None
+            v = company_scale.get(f.get("code"))
+            return None if v is None else float(v)
+        v = f.get(key)
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return None
+        return float(v)
+
+    pools: dict[str, list[dict]] = {}
+    for m_ in fund_metrics:
+        pools.setdefault(m_["pool"], []).append(m_)
+    results: list[dict] = []
+    for pool, funds in pools.items():
+        if len(funds) < 5:
+            for f in funds:
+                f.setdefault("flags", []).append(
+                    f"小样本池（n={len(funds)}），分位分仅供参考；正式评分需全市场同类池")
+        fams = [IF.index_family(str(f.get("benchmark") or ""),
+                                str(f.get("name") or ""))[0] for f in funds]
+        fam_n = pd.Series(fams).value_counts()
+        use_fam = pd.Series([int(fam_n.get(x, 0)) >= int(C.INDEX["fam_min_n"])
+                             for x in fams])
+        # 规模因子：份额级 scale_yi 按基础名求和 → 基金级合并规模（同 merge_shares 口径）
+        scale_sum = {}
+        for f in funds:
+            b_ = base_name(str(f.get("name") or ""))
+            scale_sum[b_] = scale_sum.get(b_, 0.0) + float(f.get("scale_yi") or 0)
+
+        pcts: dict[str, list[float | None]] = {}
+        for key, (asc, fam_rel) in specs.items():
+            vals = pd.Series([_val(key, f) for f in funds], dtype="float64")
+            r_all = vals.rank(pct=True, ascending=asc)
+            if fam_rel:
+                r_grp = (pd.DataFrame({"v": vals, "f": fams})
+                         .groupby("f")["v"].rank(pct=True, ascending=asc))
+                r = r_grp.where(use_fam, r_all)
+            else:
+                r = r_all
+            pcts[key] = [None if pd.isna(x) else float(x) for x in r]
+
+        for i, f in enumerate(funds):
+            if score_only is not None and f["code"] not in score_only:
+                f["_unscored"] = True
+                continue
+            detail: dict[str, float] = {}
+            sub: dict[str, float | None] = {}
+            total, earned = 0.0, 0.0
+            for key, w in weights.items():
+                p = pcts[key][i]
+                if p is None:
+                    sub[key] = None
+                    continue
+                sc = p * 100.0
+                sub[key] = round(sc, 1)
+                pts = w * sc / 100.0
+                detail[key] = round(pts, 3)
+                total += pts
+                earned += w
+            f["raw_score"] = round(total, 2)
+            f["earned_weight"] = round(earned, 2)
+            f["score"] = round(total * 100 / earned, 2) if earned else None
+            f["score_capped"] = f["score"]
+            f["redlines"] = []
+            f["score_detail"] = detail
+            f["sub_scores"] = sub
+            if earned and earned < total_w:
+                f.setdefault("flags", []).append(
+                    f"指数卡数据不足折算：载分 {earned:g}/{total_w:g}（缺 "
+                    + "、".join(k for k in weights if sub.get(k) is None) + "）")
         results.extend(funds)
     _assign_stars(results, quota_n)
     return results

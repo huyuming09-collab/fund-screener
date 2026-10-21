@@ -8,17 +8,20 @@
   · 同一跟踪指数最多 2 只，优先低费率 + 公司非货规模大；
   · 新成立基金按当时跟踪基准 + 净值现算归池，不沿用历史数据。
 """
+import copy
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from fundscorer import batch, config as C
-from fundscorer.indexfund import index_id, interleave
+from fundscorer.indexfund import index_family, index_id, interleave
 from fundscorer.screen import base_name, screen_candidates
 from fundscorer.scorer import (
     EXCLUDED_POOL,
     classify,
     index_pool,
+    score_index_pool,
 )
 
 
@@ -435,3 +438,189 @@ class TestScoreBasis:
         assert cards._opt_dict(pd.Series({"score_basis": np.nan}), "score_basis") is None
         d = {"metric": "ret_3y", "ret": 0.03, "score": 80.0, "lo": None, "hi": None}
         assert cards._opt_dict(pd.Series({"score_basis": d}), "score_basis") == d
+
+
+# ================================================================ v5.11 债指规则 v2（docs/17）
+class TestIndexFamilyV511:
+    """D-I1：编制方案代理分类（benchmark 优先，名称兜底）；筛选/评分/展示共用。"""
+
+    @pytest.mark.parametrize("bm,name,fam,dur", [
+        ("中证同业存单AAA指数收益率*95%+银行活期存款利率*5%", "", "同业存单", "未标期限"),
+        ("中债-1-3年国开行债券指数收益率*95%+银行活期存款利率*5%", "", "国开债", "1-3年"),
+        ("中债-3-5年农发债券指数收益率", "", "农发债", "3-5年"),
+        ("中证5年恒定久期国开债券指数", "", "国开债", "5年恒定久期"),
+        ("中债-0-1年进出口行债券指数", "", "进出口行债", "0-1年"),
+        ("中证短融债券指数收益率", "", "信用债", "未标期限"),
+        ("中债-信用债(1-3年)指数收益率", "", "信用债", "1-3年"),
+        ("中证国债指数收益率", "", "国债", "未标期限"),
+        ("中证地方政府债指数收益率", "", "地方债", "未标期限"),
+        ("中证二级资本债指数收益率", "", "二级资本债", "未标期限"),
+        ("", "测试全债指数A", "综合债", "未标期限"),
+    ])
+    def test_family_and_duration(self, bm, name, fam, dur):
+        assert index_family(bm, name) == (fam, dur)
+
+    def test_fallback_when_unparsable(self):
+        assert index_family("", "") == ("其他/未识别", "未标期限")
+
+
+class TestIndexScreenV511:
+    """D-I1 筛选：债指 P1/P2 = 3 年族四项 + 同族相对分位（active 路径标签/口径不变）。"""
+
+    def test_index_funnel_labels(self):
+        records, yearly, spikes = index_records(n=40)
+        _, f = screen_candidates(records, spikes, yearly,
+                                 C.SCREENS["short_bond"], index_fund=True)
+        assert any(k.startswith("P1 综合分位≥45%（3年族·同族相对") for k in f)
+        assert any(k.startswith("P2 年度分位中位≥55%（同族基准·≥3完整年）") for k in f)
+
+    def test_active_funnel_labels_unchanged(self):
+        records, yearly, spikes = index_records(n=40)
+        _, f = screen_candidates(records, spikes, yearly, C.SCREENS["short_bond"])
+        assert "P1 综合分位≥45%" in f
+        assert "P2 年度分位中位≥55%" in f
+        assert not any("同族" in k for k in f)
+
+    def test_fam_below_min_n_falls_back_to_branch(self, monkeypatch):
+        # 族<30 → 回退分支池基准，流程不中断、候选可产出（回退语义由 rank 路径保证）
+        monkeypatch.setitem(C.INDEX, "fam_min_n", 100)
+        records, yearly, spikes = index_records(n=40)
+        cand, f = screen_candidates(records, spikes, yearly,
+                                    C.SCREENS["short_bond"], index_fund=True)
+        assert f["合并基金数"] == 40
+        assert len(cand) >= 1
+
+
+class TestInterleaveH1Prime:
+    """D-I3/D-I5：H1′ 条件锚点——A 区间内不变 / B 越下界全候选锚 / C 越上界榜内最高分+ε。"""
+
+    @staticmethod
+    def _base():
+        return active_res([(0.02, 75.0), (0.03, 80.0)]), \
+            active_res([(0.01, 60.0), (0.02, 75.0), (0.03, 80.0), (0.20, 55.0)])
+
+    def test_branch_a_in_range_unchanged(self):
+        act, full = self._base()
+        idx, meta = idx_rows([("ix1", "指数基金甲A", 0.025)])
+        r0, _ = interleave(idx.copy(), act.copy(), meta, top_n=10)
+        r1, s1 = interleave(idx.copy(), act.copy(), meta, top_n=10, all_anchors=full)
+        b0 = r0[r0["is_index"]].iloc[0]["score_basis"]
+        b1 = r1[r1["is_index"]].iloc[0]["score_basis"]
+        assert b0["score"] == b1["score"] == pytest.approx(77.5)
+        assert b1["branch"] == "A"
+        assert s1["branches"]["A"] == 1
+
+    def test_branch_b_below_range_uses_all_anchors(self):
+        act, full = self._base()
+        idx, meta = idx_rows([("ix1", "指数基金乙A", 0.015)])
+        res, st = interleave(idx, act, meta, top_n=10, all_anchors=full)
+        row = res[res["is_index"]].iloc[0]
+        # 0.015 在全候选锚 (0.01, 60)~(0.02, 75) 之间 → 60 + 0.5×15 = 67.5（非平钳）
+        assert row["score"] == pytest.approx(67.5)
+        b = row["score_basis"]
+        assert b["branch"] == "B"
+        assert b["lo"]["ret"] == pytest.approx(0.01)
+        assert b["hi"]["ret"] == pytest.approx(0.02)
+        assert st["branches"]["B"] == 1
+
+    def test_branch_b_below_all_candidates_clamps_to_min(self):
+        act, full = self._base()
+        idx, meta = idx_rows([("ix1", "指数基金丙A", 0.005)])
+        res, _ = interleave(idx, act, meta, top_n=10, all_anchors=full)
+        row = res[res["is_index"]].iloc[0]
+        # 仍低于全部候选业绩 → 全候选**最低分**（锚点集含 55 分的低分高业绩者）−ε
+        assert row["score"] == pytest.approx(55.0 - 1e-6)
+        assert row["score_basis"]["branch"] == "B"
+        assert row["score_basis"]["lo"] is None
+
+    def test_branch_b_without_anchors_falls_back_to_clamp(self):
+        # 未传 all_anchors → 旧"榜内最低分−ε"平钳（兼容旧口径，老测试全保）
+        act, _ = self._base()
+        idx, meta = idx_rows([("ix1", "指数基金丁A", 0.015)])
+        res, _ = interleave(idx, act, meta, top_n=10)
+        row = res[res["is_index"]].iloc[0]
+        assert row["score"] == pytest.approx(75.0 - 1e-6)
+        assert row["score_basis"]["branch"] == "B"
+
+    def test_legacy_scheme_ignores_all_anchors(self, monkeypatch):
+        monkeypatch.setitem(C.INDEX, "interp_scheme", "legacy")
+        act, full = self._base()
+        idx, meta = idx_rows([("ix1", "指数基金戊A", 0.015)])
+        res, _ = interleave(idx, act, meta, top_n=10, all_anchors=full)
+        assert res[res["is_index"]].iloc[0]["score"] == pytest.approx(75.0 - 1e-6)
+
+    def test_branch_c_above_all_stays_rank_one(self):
+        # 决议④：越上界恒为榜内最高分+ε（全候选锚含更高业绩者也不改变，排第 1）
+        act, full = self._base()
+        idx, meta = idx_rows([("ix1", "指数基金己A", 0.09)])
+        res, st = interleave(idx, act, meta, top_n=10, all_anchors=full)
+        row = res[res["is_index"]].iloc[0]
+        assert row["score"] == pytest.approx(80.0 + 1e-6)
+        assert row["score_basis"]["branch"] == "C"
+        assert bool(res.iloc[0]["is_index"])
+        assert st["branches"]["C"] == 1
+
+
+def _card_records(n=30, fam="存单", ret_base=0.010):
+    """指数评估卡测试数据：同池、风险/费率/规模全等，仅 ret_3y 沿族内递增。"""
+    out = []
+    for i in range(n):
+        bm = ("中证同业存单AAA指数收益率" if fam == "存单"
+              else "中债-1-3年国开行债券指数收益率")
+        out.append({
+            "code": f"{'s' if fam == '存单' else 'g'}{i:03d}",
+            "name": f"测试{fam}指数{i}债券指数A",
+            "pool": "short_bond", "benchmark": bm, "manager": "指数化投资部",
+            "scale_yi": 5.0, "fee_total": 0.002,
+            "ret_3y": round(ret_base + i * 0.0001, 6), "ret_1y": 0.02,
+            "mdd_3y": 0.001, "vol_5y": 0.002,
+        })
+    return out
+
+
+class TestScoreIndexPoolV511:
+    """D-I2：指数评估卡（族内相对 100 分制；缺因子载分折算；无经理因子）。"""
+
+    def test_card_weights_sum_100(self):
+        assert sum(C.INDEX["card_weights"].values()) == 100
+
+    def test_family_relative_beats_cross_pool_absolute(self, monkeypatch):
+        recs = _card_records(30, "存单", 0.010) + _card_records(30, "国开", 0.030)
+        cs = {r["code"]: 500.0 for r in recs}
+        out = {r["code"]: r for r in score_index_pool(copy.deepcopy(recs), company_scale=cs)}
+        # 同族相对：存单族内头部（s029）> 国开族中游（g014）——跨族绝对分位则结论相反
+        assert out["s029"]["score"] > out["g014"]["score"] + 5
+        # 族门槛抬高 → 两族回退全池基准 → 低收益族底部掉到高收益族中游之下
+        monkeypatch.setitem(C.INDEX, "fam_min_n", 100)
+        out2 = {r["code"]: r for r in score_index_pool(copy.deepcopy(recs), company_scale=cs)}
+        assert out2["g014"]["score"] > out2["s029"]["score"] + 5
+
+    def test_missing_company_scale_renormalizes(self):
+        out = score_index_pool(copy.deepcopy(_card_records(10, "存单")),
+                               company_scale=None)
+        for r in out:
+            assert r["earned_weight"] == 95.0            # company_scale 5 分不计
+            assert r["score"] is not None and 0 < r["score"] <= 100
+            assert any("折算" in fl for fl in r.get("flags", []))
+
+    def test_score_only_matches_full_run(self):
+        recs = _card_records(12, "国开")
+        cs = {r["code"]: 300.0 for r in recs}
+        full = {r["code"]: r["score"] for r in
+                score_index_pool(copy.deepcopy(recs), company_scale=cs)}
+        sub = score_index_pool(copy.deepcopy(recs), score_only={"g003"}, company_scale=cs)
+        scored = [r for r in sub if not r.get("_unscored")]
+        assert [r["code"] for r in scored] == ["g003"]
+        assert scored[0]["score"] == full["g003"]        # 分位基准=全池，逐位一致
+
+    def test_card_contract_fields(self):
+        out = score_index_pool(copy.deepcopy(_card_records(8, "存单")),
+                               quota_n=3, company_scale={})
+        r0 = out[0]
+        for k in ("raw_score", "earned_weight", "score", "score_capped",
+                  "score_detail", "sub_scores"):
+            assert k in r0
+        assert sum(r0["score_detail"].values()) == pytest.approx(r0["raw_score"], abs=0.05)
+        assert r0["score"] == pytest.approx(r0["raw_score"] * 100 / r0["earned_weight"],
+                                            abs=0.02)   # 双四舍五入（raw 2 位 + score 2 位）
+        assert r0["score_capped"] == r0["score"]

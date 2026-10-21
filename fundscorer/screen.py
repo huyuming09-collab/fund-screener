@@ -50,6 +50,7 @@ import numpy as np
 import pandas as pd
 
 from . import config as C
+from . import indexfund as IF
 from . import metrics
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -321,18 +322,66 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
     # ---- 阶段二 性能条件 P1~P2（D13 方案 a，2026-10-21 拍板：两者基准均为本分支合并池） ----
     # 旧口径 P2 用 yearly 字典全量（含另一分支/指数），会"借垫底抬分位/被压制降分位"；
     # 方案 a 把 P2 的基准限制到本分支基础名，与 P1 口径自洽（实验：当期 TOP20 零冲击，docs/14 §9.3）
-    P = composite_percentiles(pool)
+    # ---- v5.11 D-I1（2026-10-21 拍板，docs/17 §4.1）：债指分支 P1/P2 = 3 年族 + 同族相对分位 ----
+    # 跨族收益差 2.7×/波动差 7.5×（编制方案所致）→ 跨族分位无意义；年轻族（存单中位 3.7 年、
+    # 信用 1.3 年）被"伪5年全期年化混排 + P2≥4完整年"整体灭绝（docs/17 §2.4/§2.5 实测）。
+    if index_fund:
+        base_bm: dict[str, str] = {}
+        for r in records:
+            b = base_name(r["name"])
+            bm = (r.get("benchmark") or "").strip()
+            if bm and not base_bm.get(b):
+                base_bm[b] = bm
+        pool["_fam"] = [IF.index_family(base_bm.get(b, ""), b)[0] for b in pool["base"]]
+        fam_n = pool["_fam"].value_counts()
+        use_fam = pool["_fam"].map(fam_n) >= int(C.INDEX["fam_min_n"])
+
+        def _fprank(col: str, ascending: bool) -> pd.Series:
+            r_all = pool[col].rank(pct=True, ascending=ascending)
+            r_fam = pool.groupby("_fam", sort=False)[col].rank(pct=True, ascending=ascending)
+            return r_fam.where(use_fam, r_all)
+
+        P = pd.DataFrame({
+            "ret_3y": _fprank("ret_3y", True),
+            "mdd_3y": _fprank("mdd_3y", False),
+            "ret_1y": _fprank("ret_1y", True),
+            "vol_1y": _fprank("vol_1y", False),
+        })
+        P["mean4"] = P.mean(axis=1)
+        P["mpct"] = P["mean4"].rank(pct=True)
+        p1_label = (f"P1 综合分位≥{cfg['comp_pct_min'] * 100:g}%"
+                    f"（3年族·同族相对，族≥{int(C.INDEX['fam_min_n'])}只）")
+    else:
+        P = composite_percentiles(pool)
+        p1_label = f"P1 综合分位≥{cfg['comp_pct_min'] * 100:g}%"
     keep &= P["mpct"] >= cfg["comp_pct_min"]
-    funnel[f"P1 综合分位≥{cfg['comp_pct_min'] * 100:g}%"] = int(keep.sum())
+    funnel[p1_label] = int(keep.sum())
     yearly_branch = {b: yearly[b] for b in pool["base"] if b in yearly}
     Y = pd.DataFrame(yearly_branch).T
-    med = pd.Series(
-        {i: yearly_median_pct(Y, b, yearly, cfg["yearly_pool_min"],
-                              cfg["yearly_min_years"])
-         for i, b in zip(pool.index, pool["base"])},
-        dtype="float64")
+    if index_fund:
+        # P2″：同族基准（族≥fam_min_n 用族内、否则本分支）+ ≥3 完整年（对齐决议②近3年口径）
+        min_y = 3
+        yfam: dict[str, pd.DataFrame] = {}
+        for f_, g_ in pool.groupby("_fam"):
+            if int(fam_n.get(f_, 0)) >= int(C.INDEX["fam_min_n"]):
+                yfam[f_] = Y.loc[Y.index.isin(set(g_["base"]))]
+        fam_of = dict(zip(pool["base"], pool["_fam"]))
+        med = pd.Series(
+            {i: yearly_median_pct(yfam.get(fam_of[b], Y), b, yearly,
+                                  cfg["yearly_pool_min"], min_y)
+             for i, b in zip(pool.index, pool["base"])},
+            dtype="float64")
+        p2_label = (f"P2 年度分位中位≥{cfg['yearly_median_min'] * 100:g}%"
+                    f"（同族基准·≥{min_y}完整年）")
+    else:
+        med = pd.Series(
+            {i: yearly_median_pct(Y, b, yearly, cfg["yearly_pool_min"],
+                                  cfg["yearly_min_years"])
+             for i, b in zip(pool.index, pool["base"])},
+            dtype="float64")
+        p2_label = f"P2 年度分位中位≥{cfg['yearly_median_min'] * 100:g}%"
     keep &= med >= cfg["yearly_median_min"]
-    funnel[f"P2 年度分位中位≥{cfg['yearly_median_min'] * 100:g}%"] = int(keep.sum())
+    funnel[p2_label] = int(keep.sum())
 
     out = pool[keep].copy()
     out["comp_pct"] = P.loc[keep, "mpct"]

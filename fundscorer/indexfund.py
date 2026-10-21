@@ -12,6 +12,13 @@
   3. 同一跟踪指数最多 2 只入榜，优先费率低 + 公司非货规模大；
   4. 业绩高于全部主动榜 → 排第 1；低于全部 → 排末位（主动榜已满则落榜）。
      平局一律主动基金优先（指数分数外推仅偏移 1e-6，显示上不可见）。
+
+v5.11 H1′ 条件锚点（2026-10-21 用户拍板 D-I3/D-I5，docs/17 §4.3；LOO 证据 docs/17 §3）：
+   A 落在主动 TOP-N 业绩区间内 → 上述双锚线性（不变，实证区间内精度最优）；
+   B 越下界 → 以**全体已评分主动候选**为锚双锚线性（消灭"榜内最低分−ε"平钳；
+     需 interleave 传入 all_anchors；未传或 interp_scheme="legacy" 时回退旧平钳）；
+   C 越上界 → 榜内最高分 + ε（决议④原样，与方案开关无关）。
+   score_basis 增 branch 字段（A/B/C）供审计。
 """
 from __future__ import annotations
 
@@ -40,6 +47,45 @@ def index_id(benchmark: str, name: str) -> str:
         if len(bm) >= 4:
             return bm
     return re.sub(r"[A-Z]\d*\s*$", "", (name or "").strip()).strip()
+
+
+def index_family(benchmark: str, name: str) -> tuple[str, str]:
+    """(信用属性族, 久期分段) —— 指数编制方案的文本代理（docs/17 §1.1，v5.11 D-I1）。
+
+    从业绩比较基准（优先）/基金名解析发行人与品种：族用于筛选与评分的**同族相对基准**
+    （跨族收益差 2.7×、波动差 7.5×，跨族分位无意义——docs/17 §2.2）；久期段供展示。
+    解析失败回退 "其他/未识别" 与 "未标期限"（回退族按小族走分支池基准）。
+    """
+    s = (benchmark or "") + "|" + (name or "")
+    if "存单" in s:
+        fam = "同业存单"
+    elif "二级资本" in s:
+        fam = "二级资本债"
+    elif any(k in s for k in ("公司债", "科创", "短融", "信用债", "中票", "永续")):
+        fam = "信用债"
+    elif "国债" in s and "国开" not in s:
+        fam = "国债"
+    elif "地方" in s:
+        fam = "地方债"
+    elif "国开" in s:
+        fam = "国开债"
+    elif "农发" in s:
+        fam = "农发债"
+    elif "进出口" in s:
+        fam = "进出口行债"
+    elif any(k in s for k in ("政策性金融", "政金")):
+        fam = "政金债(泛)"
+    elif any(k in s for k in ("全债", "总财富", "综合债")):
+        fam = "综合债"
+    else:
+        fam = "其他/未识别"
+    m = re.search(r"(\d+)\s*[-–~至]\s*(\d+)\s*年", s)
+    if m:
+        dur = f"{m.group(1)}-{m.group(2)}年"
+    else:
+        m2 = re.search(r"(\d+)\s*年\s*恒定久期", s)
+        dur = f"{m2.group(1)}年恒定久期" if m2 else "未标期限"
+    return fam, dur
 
 
 def _interp(ret: float, pts: list[tuple[float, float]]) -> float | None:
@@ -75,11 +121,13 @@ def _interp(ret: float, pts: list[tuple[float, float]]) -> float | None:
     return pts[-1][1]
 
 
-def _basis(ret: float, pts: list, metric: str, score: float | None) -> dict:
+def _basis(ret: float, pts: list, metric: str, score: float | None,
+           branch: str | None = None) -> dict:
     """插值依据（卡片展示，让用户可核对"业绩在谁和谁之间、分数取这两个分数之间"）。
 
     pts 升序，元素 (ret, score, rank, name)；lo = 业绩 ≤ret 的最近一只，
-    hi = 业绩 >ret 的最近一只；任一为 None 表示已越过该侧全部主动基金。
+    hi = 业绩 >ret 的最近一只；任一为 None 表示已越过该侧全部锚点。
+    branch：v5.11 H1′ 区间标记（A 区间内 / B 越下界·全候选锚 / C 越上界），审计用。
     """
     lo = next((p for p in reversed(pts) if p[0] <= ret), None)
     hi = next((p for p in pts if p[0] > ret), None)
@@ -88,20 +136,28 @@ def _basis(ret: float, pts: list, metric: str, score: float | None) -> dict:
         return None if p is None else {"ret": p[0], "score": p[1],
                                        "rank": p[2], "name": p[3]}
 
-    return {"metric": metric, "ret": ret, "score": score,
-            "lo": anchor(lo), "hi": anchor(hi)}
+    out = {"metric": metric, "ret": ret, "score": score,
+           "lo": anchor(lo), "hi": anchor(hi)}
+    if branch is not None:
+        out["branch"] = branch
+    return out
 
 
 def interleave(idx_rows: pd.DataFrame, active_res: pd.DataFrame,
-               meta: dict, top_n: int | None = None) -> tuple[pd.DataFrame, dict]:
+               meta: dict, top_n: int | None = None,
+               *, all_anchors: pd.DataFrame | None = None) -> tuple[pd.DataFrame, dict]:
     """指数候选穿插进主动榜，返回 (合并榜单, 统计)。
 
     idx_rows    指数候选排名表（rank_candidates 产物，分数待覆盖）
     active_res  主动 TOP-N（rank_candidates 产物，已按分数排序截断）
     meta        {code: {fee_total, benchmark, company_scale}} 指数候选的份额级元数据
     top_n       合并后榜单上限
+    all_anchors 该池**全部已评分主动候选**排名表（rank_candidates top_n=None 产物）——
+                v5.11 H1′ 分支 B 越下界时的全候选锚点来源；None 或
+                INDEX.interp_scheme="legacy" → 回退旧"榜内最低分−ε"平钳
     """
-    stats = {"candidates": 0, "capped": 0, "in_list": 0, "ids": 0}
+    stats = {"candidates": 0, "capped": 0, "in_list": 0, "ids": 0,
+             "branches": {"A": 0, "B": 0, "C": 0}}
     if idx_rows is None or len(idx_rows) == 0:
         return active_res, stats
     idx = idx_rows.copy()
@@ -137,19 +193,45 @@ def interleave(idx_rows: pd.DataFrame, active_res: pd.DataFrame,
                     int(rk) if pd.notna(rk) else None, str(r.get("name") or "")))
     pts.sort(key=lambda x: x[0])
 
+    # ---- v5.11 H1′ 分支 B 锚点集：全体已评分主动候选（conditional 且显式传入才生效） ----
+    pts_all = None
+    if (C.INDEX.get("interp_scheme", "conditional") == "conditional"
+            and all_anchors is not None and len(all_anchors)):
+        pa = []
+        for _, r in all_anchors.iterrows():
+            if not pd.notna(r.get(m)) or not pd.notna(r.get("score")):
+                continue
+            rk = r.get("rank")
+            pa.append((float(r[m]), float(r["score"]),
+                       int(rk) if pd.notna(rk) else None, str(r.get("name") or "")))
+        pa.sort(key=lambda x: x[0])
+        pts_all = pa or None
+
     scores, bases = [], []
+    branches = {"A": 0, "B": 0, "C": 0}
     for _, r in idx.iterrows():
         if not pd.notna(r.get(m)):
             scores.append(None)
             bases.append(None)
             continue
-        s = _interp(float(r[m]), pts)
+        ret = float(r[m])
+        use, branch = pts, "A"
+        if pts and ret < pts[0][0]:
+            branch = "B"                    # 越下界（决议④下沿）
+            if pts_all is not None:
+                use = pts_all               # 全候选锚：真实定位，仍低于全部才退化 min−ε
+        elif pts and ret > pts[-1][0]:
+            branch = "C"                    # 越上界：恒榜内最高分+ε（决议④，与方案开关无关）
+        s = _interp(ret, use)
         scores.append(s)
-        bases.append(_basis(float(r[m]), pts, m, s) if s is not None else None)
+        bases.append(_basis(ret, use, m, s, branch=branch) if s is not None else None)
+        if s is not None:
+            branches[branch] += 1
     idx["score"] = scores
     idx["score_basis"] = bases
     idx = idx[idx["score"].notna()].copy()
     stats["in_list"] = len(idx)
+    stats["branches"] = branches
 
     # ---- 合并重排：分数降序（平局按 code 保序），截断 top_n，重编 rank ----
     idx = idx.drop(columns=["_idxid", "_fee", "_cs"], errors="ignore")

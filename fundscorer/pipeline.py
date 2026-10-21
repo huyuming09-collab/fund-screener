@@ -27,7 +27,7 @@ import pandas as pd
 from . import batch, cards, config as C, data as D
 from . import indexfund as IF
 from . import screen as S
-from .scorer import score_pool
+from .scorer import score_pool, score_index_pool
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -195,7 +195,8 @@ def _is_index(r: dict) -> bool:
 
 
 def _index_meta(idx_recs: list[dict]) -> dict:
-    """指数候选穿插所需份额级元数据：费率、跟踪基准、公司非货规模（同指数去重排序键）。"""
+    """指数候选穿插所需份额级元数据：费率、跟踪基准、公司非货规模、名称（同指数去重排序键 +
+    v5.11 族分类/久期段展示字段的输入）。"""
     cs = batch._load_company_scale()
     out: dict[str, dict] = {}
     for r in idx_recs:
@@ -205,7 +206,8 @@ def _index_meta(idx_recs: list[dict]) -> dict:
             scale = float(cs.loc[code])
         out[code] = {"fee_total": r.get("fee_total"),
                      "benchmark": r.get("benchmark") or "",
-                     "company_scale": scale}
+                     "company_scale": scale,
+                     "name": r.get("name") or ""}
     return out
 
 
@@ -266,15 +268,23 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log,
     if idx_cand is not None and len(idx_cand):
         idx_codes = {c for codes in idx_cand["codes"] for c in codes}
         idx_quota = sum(1 for r in idx_recs if not r.get("insufficient_history"))
-        idx_scored = score_pool(idx_recs, score_only=idx_codes, quota_n=idx_quota)
+        # 费率/跟踪基准/公司非货规模/名称：同指数≤2 去重排序键 + 族分类输入（v5.11）
+        idx_meta = _index_meta(idx_recs)
+        # v5.11 D-I2：指数评估卡（族内相对、无经理因子）替代主动卡打分；
+        # 公司非货规模注入其"池内绝对分位"因子（缺 → 载分折算）
+        idx_scored = score_index_pool(
+            idx_recs, score_only=idx_codes, quota_n=idx_quota,
+            company_scale={c: m["company_scale"] for c, m in idx_meta.items()
+                           if m.get("company_scale") is not None})
         idx_snap = {r["code"]: r for r in idx_scored if "score" in r
                     and not r.get("_unscored")}
-        # 费率/跟踪基准/公司非货规模：供"同指数≤2只"去重排序，并把公司规模
-        # 送进卡片（用户口径：同指数优先费率低+公司规模大——需可核对）
-        idx_meta = _index_meta(idx_recs)
+        # 同指数≤2 去重键与公司规模入快照（"需可核对"），并带 v5.11 族/久期段展示字段
         for _c, _m in idx_meta.items():
+            _row = idx_snap.setdefault(_c, {})
             if _m.get("company_scale") is not None:
-                idx_snap.setdefault(_c, {})["company_scale"] = _m["company_scale"]
+                _row["company_scale"] = _m["company_scale"]
+            _fam, _dur = IF.index_family(_m.get("benchmark", ""), _m.get("name", ""))
+            _row["idx_fam"], _row["idx_dur"] = _fam, _dur
         snapshot.update(idx_snap)              # 详情页取指标用（build_fund 按 code 查快照）
         idx_rows = S.rank_candidates(idx_cand, idx_snap, cfg, top_n=None)
 
@@ -286,13 +296,18 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log,
     # ---- 5a. 指数基金穿插排名（业绩对齐主动榜、分数插值、同指数≤2只） ----
     idx_stats = {}
     if idx_rows is not None:
-        res, idx_stats = IF.interleave(idx_rows, res, idx_meta, top_n=top_n)
+        # v5.11 H1′：全体已评分主动候选 = 分支 B（业绩越下界）的锚点池（docs/17 §4.3）
+        full_anchors = S.rank_candidates(candidates, snapshot, cfg, top_n=None)
+        res, idx_stats = IF.interleave(idx_rows, res, idx_meta, top_n=top_n,
+                                       all_anchors=full_anchors)
         if idx_stats["candidates"]:
             in_list = res[res["is_index"]] if "is_index" in res.columns \
                 else res.iloc[0:0]
+            br = idx_stats.get("branches") or {}
             log(f"[5a][{tag}] 指数穿插：候选 {idx_stats['candidates']}"
-                f"（跟踪指数 {idx_stats['ids']} 个，同指数去重挤出 {idx_stats['capped']}"
-                f"）→ 入榜 {len(in_list)} 只；入榜者："
+                f"（跟踪指数 {idx_stats['ids']} 个，同指数去重挤出 {idx_stats['capped']}，"
+                f"分支 A/B/C {br.get('A', 0)}/{br.get('B', 0)}/{br.get('C', 0)}）"
+                f"→ 入榜 {len(in_list)} 只；入榜者："
                 + ("、".join(f"{int(r['rank'])}.{r['name']}"
                              for _, r in in_list.iterrows()) or "无"))
     # 逐池自备该列：下游按 pd.concat 合并各池，缺列行会补 NaN（bool(np.nan)=True → 污染）

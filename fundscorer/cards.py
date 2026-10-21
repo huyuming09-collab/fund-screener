@@ -206,6 +206,10 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
             "benchmark": rec.get("benchmark", ""),
             # 指数基金同指数去重的优先键之一（非货规模，亿元）；主动基金无 → null
             "company_scale": _r(rec.get("company_scale"), 2),
+            # v5.11 指数族×久期分段（编制方案代理，docs/17 §1.1/§4.4）；
+            # 主动基金无 → null；前端渲染随债指复开接入
+            "idx_fam": rec.get("idx_fam"),
+            "idx_dur": rec.get("idx_dur"),
         },
         "screening": {
             "comp_pct": _r(row["comp_pct"], 4),             # 综合分位（P1 入选依据）

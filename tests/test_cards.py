@@ -498,3 +498,19 @@ class TestPurchaseStatusCard:
             f = p["funds"][0]
             assert f["purchase_status"] == st
             assert f["suspended"] is False
+
+
+class TestIndexFamPayload:
+    """v5.11（docs/17 §4.4）：指数族×久期段入 fund_info；主动基金为 null。"""
+
+    def test_index_card_carries_fam_and_dur(self):
+        card = cards.build_fund(_row(),
+                                _rec(idx_fam="同业存单", idx_dur="未标期限"),
+                                _nav(), 100)
+        assert card["fund_info"]["idx_fam"] == "同业存单"
+        assert card["fund_info"]["idx_dur"] == "未标期限"
+
+    def test_active_card_fam_is_null(self):
+        card = cards.build_fund(_row(), _rec(), _nav(), 100)
+        assert card["fund_info"]["idx_fam"] is None
+        assert card["fund_info"]["idx_dur"] is None
