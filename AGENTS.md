@@ -23,7 +23,7 @@
 改任何代码前先取基线，改完必须复现：
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 现基线：267 passed
+.venv/bin/python -m pytest tests/ -q     # 现基线：271 passed
 node tests/smoke_page.js                  # 现基线：SMOKE PASS
 ```
 

@@ -135,10 +135,10 @@ class TestWeightsSum:
         # 收益↑稳健↓（风险 35→31：回撤 9/7/5、波动 10）、ret_5y 0→2（反向证据已标注）、
         # 经理块 10→12（任期 4、从业 4）
         w = C.FIXED_PLUS_WEIGHTS
-        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (4, 4, 4)
+        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (3, 4, 4)  # v5.13 products 4→3
         assert (w["mdd_1y"], w["mdd_3y"], w["mdd_5y"], w["vol_5y"]) == (9, 7, 5, 10)
         assert w["mgr_tenure"] == 4 and w["ret_5y"] == 2
-        assert w["calmar_5y"] == 25 and w["sharpe_5y"] == 0
+        assert w["calmar_5y"] == 26 and w["sharpe_5y"] == 0       # v5.13 25→26（products 释放的 1 分）
         assert sum(w.values()) == 100
 
     def test_team_coef_contract(self):
@@ -182,9 +182,9 @@ class TestManagerQualified:
         assert _manager_qualified({"_stab_ranks": []}, []) is False
 
 
-class TestManagerTiersV58:
-    """v5.8 固收+经理资深分档：任期 ≥10 年满 100（5~10 年 85）、从业 ≥12 年满 100
-    （8~12 年 90）；债池/默认维持旧档（5/8 年即满 100），对外零冲击。"""
+class TestManagerCareerPctV513:
+    """v5.13（2026-10-21 用户拍板）：经理从业年限固定档 → 池内分位（连续，消除 7.9→8.0
+    年跳档悬崖）；任期分档不动（fp 10/5 年资深档、债池 5/3/1 年旧档）。"""
 
     @staticmethod
     def _f(ty, cy):
@@ -192,21 +192,64 @@ class TestManagerTiersV58:
                 "mgr_career_years": cy, "fee_total": 0.006, "ms_rating": 5.0,
                 "inst_ratio": 0.5, "scale_yi": 30.0}
 
-    def test_fixed_plus_veteran_tiers(self):
+    def test_career_becomes_pool_percentile(self):
         old, mid = self._f(11.4, 16.7), self._f(6.4, 6.0)
         peers = [old, mid]
         out_old = _quality_scores(old, peers, "fixed_plus")
         assert out_old["mgr_tenure"] == 100 and out_old["mgr_career"] == 100
         out_mid = _quality_scores(mid, peers, "fixed_plus")
-        assert out_mid["mgr_tenure"] == 85 and out_mid["mgr_career"] == 70
+        assert out_mid["mgr_tenure"] == 85 and out_mid["mgr_career"] == 50   # 两人池低位=50 分位
         nine = self._f(9.0, 8.5)
         out9 = _quality_scores(nine, peers + [nine], "fixed_plus")
-        assert out9["mgr_tenure"] == 85 and out9["mgr_career"] == 90
+        assert out9["mgr_tenure"] == 85 and out9["mgr_career"] == pytest.approx(200 / 3)
 
-    def test_debt_pools_keep_old_tiers(self):
+    def test_no_peer_falls_back_full(self):
         mid = self._f(6.4, 6.0)
-        out = _quality_scores(mid, [mid])          # 默认路径 = 债池旧档
-        assert out["mgr_tenure"] == 100 and out["mgr_career"] == 70
+        out = _quality_scores(mid, [mid])          # 无对比样本 → 满分（衔接旧档"够档即 100"）
+        assert out["mgr_tenure"] == 100 and out["mgr_career"] == 100
+
+    def test_career_none_stays_none(self):
+        f = self._f(6.4, None)
+        assert _quality_scores(f, [f], "long_bond")["mgr_career"] is None
+
+
+class TestYearlyScoreV513:
+    """v5.13（2026-10-21 用户拍板）：yearly_5y = 逐年池内排名分位取均值（0~100 连续），
+    替代 v5.2 三档制（跑赢中位 2 / 落后 1.2 / 为负 0）——旧档差 0.1pp 与差 3pp 同罚，
+    且与详情条「逐年中位分位」方向偶发打架（docs/15 §3）。"""
+
+    @staticmethod
+    def _mk(code, rets):
+        return {"code": code, "yearly": rets}
+
+    def test_mean_of_yearly_rank_percentiles(self):
+        from fundscorer.scorer import _yearly_score
+        a = self._mk("a", {"2024": 0.08, "2025": 0.03})
+        b = self._mk("b", {"2024": 0.05, "2025": 0.01})
+        c = self._mk("c", {"2024": 0.02, "2025": -0.01})
+        peers = [a, b, c]
+        assert _yearly_score(a, peers, "long_bond") == pytest.approx(100.0)
+        assert _yearly_score(b, peers, "long_bond") == pytest.approx(200 / 3, rel=1e-6)
+        assert _yearly_score(c, peers, "long_bond") == pytest.approx(100 / 3, rel=1e-6)
+        # 为负年份不再直接归零：按当池位次取分位（c 2025 仍是最差 → 同 33.33）
+        assert c["yearly"]["2025"] < 0 and _yearly_score(c, peers, "long_bond") is not None
+
+    def test_missing_year_skipped_not_penalized(self):
+        from fundscorer.scorer import _yearly_score
+        a = self._mk("a", {"2024": 0.08, "2025": 0.03, "2026": 0.02})
+        b = self._mk("b", {"2024": 0.05, "2025": 0.01})     # 缺 2026：b 只计可得年份
+        c = self._mk("c", {"2024": 0.02, "2025": -0.01, "2026": 0.01})
+        for f in (a, b, c):
+            score = _yearly_score(f, [a, b, c], "long_bond")
+            assert score is not None and 0 <= score <= 100
+        # 同年可比样本：a 每年第 1 → 恒 100；缺年不拉高也不折算惩罚
+        assert _yearly_score(a, [a, b, c], "long_bond") == pytest.approx(100.0)
+
+    def test_thin_pool_returns_none(self):
+        from fundscorer.scorer import _yearly_score
+        solo = self._mk("x", {"2024": 0.05})                # 同年可比样本不足 2 → 不计年
+        assert _yearly_score(solo, [solo], "short_bond") is None
+        assert _yearly_score({"code": "z", "yearly": {}}, [solo], "long_bond") is None
 
 
 class TestRiskRatios:
@@ -233,10 +276,11 @@ class TestRiskRatios:
         for k in ("calmar_5y", "sharpe_5y"):
             assert C.PERCENTILE_METRICS[k] == "higher"
         # v6（docs/12，11 截面双段验证）：比率族同族择优——夏普与卡玛 ρ=0.902 冗余，
-        # 并入卡玛（卡玛为唯一代表）；族总权重不变（15+10 → 25+0），只换族内代表
-        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] == 25
+        # 并入卡玛（卡玛为唯一代表）；v5.13（docs/15 §3）：mgr_products_ann 4→3 释放的
+        # 1 分平移给卡玛 → 族总权重 25→26，夏普仍 0
+        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] == 26
         assert C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 0
-        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] + C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 25
+        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] + C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 26
 
 
 class TestMultiManager:

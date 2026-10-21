@@ -652,19 +652,26 @@ def _manager_qualified(f: dict, peers: list[dict]) -> bool:
 
 
 def _yearly_score(f: dict, peers: list[dict], pool: str) -> float | None:
-    """近5年逐年：为正且前50%=2；为正但落后中位=1.2；为负=0；按可得年份折算。"""
+    """近5年逐年：每年在池内的排名分位，取可得年份均值（0~100，越高越好）。
+
+    v5.13（2026-10-21 用户拍板）：替代旧三档制（跑赢中位 2 / 为正落后 1.2 / 为负 0 按年折算）——
+    旧档把差 0.1pp 与差 3pp 同等判罚，且与详情条「逐年中位分位」方向偶发打架（docs/15 §3）。
+    现与详情条同为连续分位口径：为负年份自然落到底部；缺年不折算惩罚（年份少 → 该基金分位
+    波动大，由 P1/P2 的 ≥4 完整年闸兜底）。方向 higher_better 在 PERCENTILE_METRICS 声明。"""
     years = f["yearly"]
     if not years:
         return None
-    got, n = 0.0, 0
+    me = f.get("code")
+    pcts = []
     for y, ret in years.items():
-        n += 1
-        if ret <= 0:
+        if ret is None:
             continue
-        peer_rets = [p["yearly"].get(y) for p in peers if p["yearly"].get(y) is not None]
-        median = np.median(peer_rets) if peer_rets else 0.0
-        got += 2.0 if ret >= median else 1.2
-    return (got / (2 * n)) * 100 if n else None
+        vals = [p["yearly"].get(y) for p in peers
+                if p["yearly"].get(y) is not None and p.get("code") != me]
+        if len(vals) < 2:          # 同年可比样本不足 → 该年不计（与旧版 median=0 兜底不同）
+            continue
+        pcts.append(float(pd.Series(vals + [ret], dtype=float).rank(pct=True).iloc[-1]) * 100)
+    return float(np.mean(pcts)) if pcts else None
 
 
 def _quality_scores(f: dict, peers: list[dict], pool: str | None = None) -> dict:
@@ -685,14 +692,19 @@ def _quality_scores(f: dict, peers: list[dict], pool: str | None = None) -> dict
         tiers = (q["tenure_tiers_fp"] if pool == "fixed_plus"
                  else [(5, 100), (3, 70), (1, 30), (0, 0)])
         out["mgr_tenure"] = next(v for lim, v in tiers if ty >= lim)
-    # 从业年限（v5.8：固收+ 资深分档——12 年才满 100，8~12 年 90；债池旧档不动）
+    # 从业年限：v5.13（用户 2026-10-21）固定档（债池 8/5/3 年、fp 12/8 年）→ 池内分位（连续）。
+    # 旧档 7.9 年→8.0 年一夜跳 30 分的悬崖取消；career_tiers_fp 配置保留休眠（回退路径）。
     c = f.get("mgr_career_years")
     if c is None:
         out["mgr_career"] = None
     else:
-        tiers = (q["career_tiers_fp"] if pool == "fixed_plus"
-                 else [(8, 100), (5, 70), (3, 40), (0, 0)])
-        out["mgr_career"] = next(v for lim, v in tiers if c >= lim)
+        vals = [p.get("mgr_career_years") for p in peers
+                if p.get("mgr_career_years") is not None and p.get("code") != f.get("code")]
+        if not vals:
+            out["mgr_career"] = 100.0      # 无对比样本（退化池）：与旧档"够档即满分"口径衔接
+        else:
+            out["mgr_career"] = float(
+                pd.Series(vals + [c], dtype=float).rank(pct=True).iloc[-1]) * 100
     # 费率（同池分位，越低越好；A/C 份额差异由 fee_total 含销售服务费缓解，V6 分份额类别）
     fees = pd.Series({p["code"]: p.get("fee_total") for p in peers}, dtype=float)
     if f.get("fee_total") is None:

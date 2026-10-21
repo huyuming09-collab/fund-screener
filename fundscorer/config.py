@@ -23,7 +23,12 @@
 # v5.12（2026-10-21 用户拍板「单列上线」，docs/17 §9）：INDEX 开启 + display="separate"——
 #   债指独立成榜（评估卡真分排序、每组10只）；同指数只显示 1 只（fee低→公司非货大→跟踪偏离小）；
 #   详情页新增「同指数其他优秀基金」×3（按评估卡分）。H1′ 并入路径保留休眠（docs/17 §8 甲案）。
-MODEL_VERSION = "v5.12"
+# v5.13（2026-10-21 用户拍板，docs/15 §3）：三池评分两处规则 + 一处权重——
+#   ① 年度收益分位（yearly_5y）三档粗分 → 逐年池内排名分位的均值（连续，与详情条同口径）；
+#   ② 经理从业年限（mgr_career）固定档（债池 8/5/3 年、fp 12/8 年）→ 池内分位（连续）；
+#   ③ 经理全产品年化（mgr_products_ann）权重 4→3（口径维持，降影响；+1 平移给主业绩因子：
+#   债池 yearly_5y +1、固收+ calmar_5y 25→26，三卡仍 100 分制）。债指评估卡未动（仍 v5.12）。
+MODEL_VERSION = "v5.13"
 
 # 池规则版本（v5.9 起记账，docs/15-评分体系版本变动管理.md 为账本）：
 #   MODEL_VERSION  = 产物/管线版本——任何评分或筛选规则变动都递增（含展示口径无关的重排）；
@@ -32,10 +37,10 @@ MODEL_VERSION = "v5.12"
 # 变更流程（docs/15 §2）：拍板 → 证据留档 docs → 改 config → 四门验证（pytest/SMOKE/管线/
 #   位移对照）→ 同提交更新 docs/15 版本表 + STATUS §6。
 POOL_VERSIONS = {
-    "short_bond": "v5.12",   # 2026-10-21 债指单列榜上线（docs/17 §9）；主动筛选评分规则未动、位移仅债指新增行
-    "long_bond": "v5.12",    # 同上
-    "fixed_plus": "v5.10",   # 债指规则不涉 fp（无指数分流）；上次变动 = v5.10 D13 共享筛选零位移
-    "index": "v5.12",        # 债指单列榜：同指数取1（fee低→公司大→跟踪偏离小）+ 评估卡真分排序
+    "short_bond": "v5.13",   # 2026-10-21 yearly/career 规则 + 权重平移（docs/15 §3）
+    "long_bond": "v5.13",    # 同上
+    "fixed_plus": "v5.13",   # fp 亦涉：career 档→分位 + products 4→3/calmar 25→26
+    "index": "v5.12",        # 债指评估卡因子/权重未动，沿用单列榜版本
 }
 
 # ---------------------------------------------------------------- 窗口
@@ -92,11 +97,11 @@ PURE_BOND_WEIGHTS = {
     # v5.9：repair_5y 4→0（D17 短债归零，修复天数验证段 IC≈0；改门槛式为备选未采纳）
     "mdd_5y": 5, "mdd_3y": 3, "mdd_1y": 2, "repair_5y": 0, "vol_5y": 1,
     # IC 池 79（v5.10：72 等比放大 ×79/72，吸收 products 释放 7 分 + winrate 0.59）
-    "fee": 11.63, "ret_3y": 11.29, "ret_5y": 11.04, "ret_1y": 10.04, "yearly_5y": 9.77,
+    "fee": 11.63, "ret_3y": 11.29, "ret_5y": 11.04, "ret_1y": 10.04, "yearly_5y": 10.77,
     "q_excess_20q": 9.26, "lvi_5y": 8.11, "lvi_3y": 7.86, "winrate_m_5y": 0, "age": 0,
     # 固定块：稳定性 0（v5.9 rank_stab 归零，D16b）+ 经理 9（任期0+从业5+全产品年化4，
     #   v5.10 D9 拍板 11→4）+ 晨星 1
-    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 4,
+    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 3,
     "ms_rating": 1, "inst_ratio": 0, "fund_scale": 0, "company_scale": 0,
 }
 
@@ -109,10 +114,10 @@ PURE_BOND_WEIGHTS = {
 PURE_BOND_WEIGHTS_LONG = {
     "mdd_5y": 5, "mdd_3y": 3, "mdd_1y": 2, "repair_5y": 4, "vol_5y": 1,
     # IC 池 75（v5.10：68 等比放大 ×75/68，吸收 products 7 分 + winrate 4.74）
-    "ret_1y": 13.18, "ret_3y": 11.65, "lvi_3y": 10.93, "yearly_5y": 9.64,
+    "ret_1y": 13.18, "ret_3y": 11.65, "lvi_3y": 10.93, "yearly_5y": 10.64,
     "q_excess_20q": 9.14, "ret_5y": 8.56, "lvi_5y": 7.26, "winrate_m_5y": 0,
     "fee": 4.64, "age": 0,
-    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 4,
+    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 3,
     "ms_rating": 1, "inst_ratio": 0, "fund_scale": 0, "company_scale": 0,
 }
 
@@ -143,7 +148,7 @@ FIXED_PLUS_WEIGHTS = {
     # 风险 31（v5.8 微降稳健）
     "mdd_1y": 9, "mdd_3y": 7, "mdd_5y": 5, "vol_5y": 10, "repair_5y": 0,
     # 风险调整收益 25：calmar=ret_5y/mdd_5y，池内分位（v6 起为比率族唯一代表）
-    "calmar_5y": 25, "sharpe_5y": 0,
+    "calmar_5y": 26, "sharpe_5y": 0,
     # 胜率与运营 23+任期4（胜率 17 + 费率 6；v5.8 任期 3→4）
     "winrate_m_5y": 9, "q_win_20q": 8, "fee": 6, "mgr_tenure": 4,
     # 机构占比 2（20%~90% 满分、>90% 渐变 100→20，v5.6）
@@ -151,7 +156,7 @@ FIXED_PLUS_WEIGHTS = {
     # 结构块（v5.8：从业 3→4；ret_5y 0→2 收益直接占比）
     "ret_1y": 0, "age": 0, "lvi_3y": 0, "lvi_5y": 0, "ret_5y": 2, "excess_5y": 0,
     "ret_3y": 0, "yearly_5y": 0, "q_excess_20q": 0,
-    "rank_stab": 0, "mgr_career": 4, "mgr_products_ann": 4, "ms_rating": 1,
+    "rank_stab": 0, "mgr_career": 4, "mgr_products_ann": 3, "ms_rating": 1,
     "fund_scale": 4, "company_scale": 0,
 }
 
