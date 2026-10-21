@@ -634,7 +634,7 @@ function renderList(){
       return `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;`
         + `padding:9px 13px;margin:14px 0 8px;border-radius:12px;background:rgba(255,255,255,.16);`
         + `color:#fff;font-size:13px;font-weight:600">${catLabel(g)}债指 · ${gs.length} 只`
-        + `<span style="font-weight:400;font-size:11px;opacity:.75">评分与本池主动榜同尺（业绩同位次≈同分）· 跨池不可比</span></div>`
+        + `<span style="font-weight:400;font-size:11px;opacity:.75">评分与本池主动榜同尺（仅作水平参照，不一起排名；业绩同位次≈同分）· 跨池不可比</span></div>`
         + gs.map(cardHTML).join('');
     }).join('');
     $('list').innerHTML = GRP_HEAD;
