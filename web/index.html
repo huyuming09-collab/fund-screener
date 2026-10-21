@@ -484,7 +484,13 @@ function openCmp(){
   H += grp('关键指标（不计分）');
   [['近5年年化', f => pct(f.metrics.ret_5y, 2)], ['近3年年化', f => pct(f.metrics.ret_3y, 2)],
    ['近1年年化', f => pct(f.metrics.ret_1y, 2)], ['近5年最大回撤', f => pct(f.metrics.mdd_5y, 2)],
-   ['近5年波动', f => pct(f.metrics.vol_5y, 2)], ['夏普(近5年)', f => num(f.metrics.sharpe_5y, 2)],
+   ['近5年波动', f => pct(f.metrics.vol_5y, 2)],
+   /* 固收+：卡玛(5年)替代夏普（用户 2026-10-21；对比表同池同类别，标签取首只定） */
+   [fs[0] && fs[0].category === 'fixed_plus' ? '卡玛(5年)' : '夏普(近5年)',
+    f => f.category === 'fixed_plus'
+      ? (f.metrics.mdd_5y && f.metrics.ret_5y != null
+         ? num(f.metrics.ret_5y / f.metrics.mdd_5y, 2) : '—')
+      : num(f.metrics.sharpe_5y, 2)],
    ['月度胜率(近5年)', f => pct(f.metrics.winrate_m_5y, 1)],
    ['修复天数', f => f.metrics.repair_days == null ? '—' : f.metrics.repair_days + '天'],
    ['综合费率', f => pct(f.fund_info.fee_total, 2)], ['合并规模', f => yi(f.fund_info.scale_yi)],
@@ -709,8 +715,11 @@ function bodyHTML(f){
       <div class="gcell"><div class="l">近五年最大回撤</div><div class="v">${pct(m.mdd_5y)}</div></div>
       <div class="gcell"><div class="l">近一年最大回撤</div><div class="v">${pct(m.mdd_1y)}</div></div>
       <div class="gcell"><div class="l">近五年年化波动</div><div class="v">${pct(m.vol_5y)}</div></div>
+      ${f.category === 'fixed_plus' ? `
+      <div class="gcell"><div class="l">卡玛比（5年）</div><div class="v">${(m.mdd_5y && m.ret_5y != null) ? (m.ret_5y / m.mdd_5y).toFixed(2) : '—'}
+        <small>年化 ÷ 最大回撤</small></div></div>` : `
       <div class="gcell"><div class="l">夏普比率（近5年）</div><div class="v">${m.sharpe_5y==null?'—':m.sharpe_5y.toFixed(2)}
-        <small>近1年 ${m.sharpe_1y==null?'—':m.sharpe_1y.toFixed(2)}</small></div></div>
+        <small>近1年 ${m.sharpe_1y==null?'—':m.sharpe_1y.toFixed(2)}</small></div></div>`}
       <div class="gcell"><div class="l">下跌修复（LVI·5年）</div><div class="v">${m.lvi_5y==null?'—':m.lvi_5y.toFixed(2)}</div></div>
       <div class="gcell"><div class="l">最大回撤修复</div>
         <div class="v">${m.repair_days==null?'—':(m.repair_recovered?m.repair_days+'天':'未修复')}
@@ -1034,7 +1043,11 @@ function drawExport(canvas, pool, sizeKey, rows){
     seg('近五年最大回撤 ', pct(m.mdd_5y), '#12a150');
     seg('·', '', '#ddd');
     x += 12;
-    seg('夏普比率 ', m.sharpe_5y == null ? '—' : (+m.sharpe_5y).toFixed(2), '#44403a');
+    /* 固收+ 导出图同步卡玛（用户 2026-10-21）；其他池保持夏普 */
+    const isFpSeg = f.category === 'fixed_plus';
+    seg(isFpSeg ? '卡玛比 ' : '夏普比率 ',
+        isFpSeg ? ((m.mdd_5y && m.ret_5y != null) ? (m.ret_5y / m.mdd_5y).toFixed(2) : '—')
+                : (m.sharpe_5y == null ? '—' : (+m.sharpe_5y).toFixed(2)), '#44403a');
     const dt = _deltaTxt(f, hasPrev);
     // 指数基金在导出图上标注（名称未必含"指数/ETF"，否则无法与主动基金分辨）
     const tag = f.is_index ? (dt ? '指数·' + dt : '指数') : dt;
