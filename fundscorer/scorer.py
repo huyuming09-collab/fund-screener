@@ -370,25 +370,30 @@ def score_pool(fund_metrics: list[dict], score_only: set[str] | None = None,
 
 def score_index_pool(fund_metrics: list[dict], score_only: set[str] | None = None,
                      quota_n: int | dict[str, int] | None = None,
-                     company_scale: dict[str, float] | None = None) -> list[dict]:
+                     company_scale: dict[str, float] | None = None,
+                     basis: list[dict] | None = None) -> list[dict]:
     """债指评估卡 v5.11（2026-10-21 用户拍板 D-I2，docs/17 §4.2）。
 
     与主动卡的根本差异（指数编制方案决定、无经理可评——决议①）：
       - 权重 C.INDEX["card_weights"]（100 分制）：业绩 50（ret_3y 30 + ret_1y 20）、
         风险 25（mdd_3y 15 + vol_5y 10）、费率 15、规模与运维 10（scale 5 + 公司非货规模 5）；
-      - 分位基准 = **同族相对**（族 ≥ INDEX.fam_min_n 只用族内，否则回退本池全池）——
-        跨族收益差 2.7×、波动差 7.5× 系编制方案所致，跨族分位会系统性错判（docs/17 §2.2）；
-        fee_total / company_scale 为池内**绝对**分位（全市场可比，低费率/大公司直接占优）；
       - 缺失因子不计、按载分等比折算到 100——raw_score/earned_weight/score/score_detail
         口径与主动卡逐字段一致（docs/15 §0 契约）。
-    分位基准 = 全池（score_only 子集分数与全量逐位一致，同 score_pool 语义）。
     company_scale: 可选 {code: 非货规模亿元}；None 或缺 code → 该因子不计（earned 折算）。
+
+    分位基准（v5.14，用户 2026-10-21 拍板「分数参考主动榜单，业绩差不多的分数也差不多」）：
+      - **basis = 本来源池主动候选指标行** → 七个因子的分位基准全部改为与主动候选同尺
+        （同窗口同因子）：指数基金的收益/回撤/波动/费率/规模落在主动候选分布的什么位置
+        就得什么分位分 → 指数分与主动分一把尺子、可对话；
+      - 族内相对（INDEX.fam_min_n，v5.11）退居筛选闸 P1″/P2″（screen.py 不动），
+        评分不再按族分——跨族混排的公平性由"与主动同尺"承担（主动榜本来也混风格）；
+      - basis=None（退化/测试）→ 回退 v5.11 族内相对旧径，行为逐位不变。
     """
     from .screen import base_name          # 局部导入：screen 不反向依赖 scorer，避免潜在循环
 
     weights = dict(C.INDEX["card_weights"])
     total_w = float(sum(weights.values()))
-    # (值越大分越高?, 族内相对基准?) —— 族相对仅作用于编制方案绑定的因子（收益/回撤/波动/规模）
+    # (值越大分越高?, 族内相对基准?) —— 旧径（basis=None）的族相对开关；basis 在时整体忽略
     specs: dict[str, tuple[bool, bool]] = {
         "ret_3y": (True, True), "ret_1y": (True, True),
         "mdd_3y": (False, True), "vol_5y": (False, True),
@@ -396,14 +401,14 @@ def score_index_pool(fund_metrics: list[dict], score_only: set[str] | None = Non
         "fee_total": (False, False), "company_scale": (True, False),
     }
 
-    def _val(key: str, f: dict) -> float | None:
+    def _val(key: str, f: dict, scale_map: dict | None = None) -> float | None:
         if key == "scale":
-            v = scale_sum.get(base_name(str(f.get("name") or "")))
+            v = (scale_map or scale_sum).get(base_name(str(f.get("name") or "")))
             return None if v is None else float(v)
         if key == "company_scale":
-            if company_scale is None:
-                return None
-            v = company_scale.get(f.get("code"))
+            if company_scale and f.get("code") in company_scale:      # 指数行：字典注入
+                return float(company_scale[f["code"]])
+            v = f.get("company_scale")                                 # 主动基准行：字段直读
             return None if v is None else float(v)
         v = f.get(key)
         if v is None or (isinstance(v, float) and np.isnan(v)):
@@ -430,8 +435,37 @@ def score_index_pool(fund_metrics: list[dict], score_only: set[str] | None = Non
             b_ = base_name(str(f.get("name") or ""))
             scale_sum[b_] = scale_sum.get(b_, 0.0) + float(f.get("scale_yi") or 0)
 
+        # v5.14 基准行（本来源池主动候选）：同尺分位
+        b_rows = [b for b in (basis or []) if not b.get("_unscored")]
+        b_scale: dict = {}
+        for b_ in b_rows:
+            k_ = base_name(str(b_.get("name") or ""))
+            b_scale[k_] = b_scale.get(k_, 0.0) + float(b_.get("scale_yi") or 0)
+
+        def _pct_vs_basis(key: str, asc: bool) -> list[float | None]:
+            """指数基金的值在基准序列中的平均并列分位（0~1）；无基准值 → None。"""
+            bvals = [_val(key, b, b_scale) for b in b_rows]
+            bvals = [x for x in bvals if x is not None and not np.isnan(x)]
+            if not bvals:
+                return [None] * len(funds)
+            bs = pd.Series(bvals, dtype="float64")
+            out: list[float | None] = []
+            for f in funds:
+                v = _val(key, f)
+                if v is None or np.isnan(v):
+                    out.append(None)
+                    continue
+                p = (float((bs < v).sum()) + 0.5 * float((bs == v).sum())) / len(bs)
+                out.append(p if asc else 1.0 - p)
+            return out
+
         pcts: dict[str, list[float | None]] = {}
         for key, (asc, fam_rel) in specs.items():
+            if b_rows:
+                pcts[key] = _pct_vs_basis(key, asc)     # v5.14 主径：与主动候选同尺
+                if all(x is None for x in pcts[key]):   # 基准无该因子 → 不计分（载分折算）
+                    pcts[key] = [None] * len(funds)
+                continue
             vals = pd.Series([_val(key, f) for f in funds], dtype="float64")
             r_all = vals.rank(pct=True, ascending=asc)
             if fam_rel:

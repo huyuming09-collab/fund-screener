@@ -45,6 +45,7 @@ header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#ff8a3
        color:#fff;padding:14px 16px 10px;}
 header h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.5px;}
 header .meta{font-size:11px;opacity:.92;margin-top:4px;}
+header .meta b.asof{font-size:12.5px;letter-spacing:.2px;text-shadow:0 0 8px rgba(255,209,102,.35);}
 .tabs{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px;}
 .tab{flex:0 0 auto;padding:5px 14px;border-radius:14px;font-size:13px;background:rgba(255,255,255,.22);
      color:#fff;white-space:nowrap;border:none;}
@@ -597,10 +598,10 @@ function renderList(){
   /* v5.12 债指单列（docs/17 §9）：按来源池分组展示——组间分数不可横向比较 */
   const grouped = cat === 'index';
   const gcount = g => funds.filter(f => f.idx_group === g).length;
-  $('meta').innerHTML = `数据基准 ${D.asof} · `
+  $('meta').innerHTML = `数据基准 <b class="asof">${D.asof}</b> · `
     + `${catLabel(cat)}${grouped ? '榜' : '池'} 本期上榜 <b>${funds.length}</b> 只`
     + (grouped ? `（${['short_bond','long_bond'].filter(g=>gcount(g))
-        .map(g=>`${catLabel(g)} ${gcount(g)}`).join(' · ')}；组间分数不可比）` : '');
+        .map(g=>`${catLabel(g)} ${gcount(g)}`).join(' · ')}；评分与本池主动榜同尺，跨池不可比）` : '');
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
   const cardHTML = f => `
     <div class="fundcard" data-code="${f.code}" onclick='openDetail(${JSON.stringify(f.code)})'>
@@ -633,7 +634,7 @@ function renderList(){
       return `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;`
         + `padding:9px 13px;margin:14px 0 8px;border-radius:12px;background:rgba(255,255,255,.16);`
         + `color:#fff;font-size:13px;font-weight:600">${catLabel(g)}债指 · ${gs.length} 只`
-        + `<span style="font-weight:400;font-size:11px;opacity:.75">组内相对评分 · 与主动榜分数不可比</span></div>`
+        + `<span style="font-weight:400;font-size:11px;opacity:.75">评分与本池主动榜同尺（业绩同位次≈同分）· 跨池不可比</span></div>`
         + gs.map(cardHTML).join('');
     }).join('');
     $('list').innerHTML = GRP_HEAD;

@@ -627,6 +627,50 @@ class TestScoreIndexPoolV511:
         assert r0["score_capped"] == r0["score"]
 
 
+# ============================================================ v5.14 同尺重定标（docs/17 §9）
+class TestIndexCardSameScaleV514:
+    """v5.14（2026-10-21 用户拍板「分数参考主动榜单，业绩差不多的分数也差不多」）：
+    债指卡七因子分位基准 = 本来源池主动候选（basis 参数）；族内相对（fam_min_n）
+    退居筛选闸；basis=None 回退 v5.11 族内相对旧径（TestScoreIndexPoolV511 保留覆盖）。"""
+
+    @staticmethod
+    def _basis():
+        # 主动候选模拟：ret_3y 1.0%~1.9% 均匀、风险/费率/规模固定 → 指数落点分位可预期
+        return [{"code": f"a{i:03d}", "name": f"主动短债{i}债券A", "pool": "short_bond",
+                 "benchmark": "", "scale_yi": 20.0, "fee_total": 0.003,
+                 "ret_3y": round(0.010 + i * 0.001, 6), "ret_1y": 0.02,
+                 "mdd_3y": 0.002, "vol_5y": 0.003} for i in range(10)]
+
+    def test_percentile_taken_against_active_basis(self):
+        base = _card_records(1, "存单")[0]
+        a = {**base, "code": "iA", "ret_3y": 0.0145}   # 基准中位 → 50 分位
+        b = {**base, "code": "iB", "ret_3y": 0.019}    # 基准最高（并列顶） → 95 分位
+        out = {r["code"]: r for r in score_index_pool([a, b], basis=self._basis())}
+        assert out["iA"]["sub_scores"]["ret_3y"] == pytest.approx(50.0)
+        assert out["iB"]["sub_scores"]["ret_3y"] == pytest.approx(95.0)
+        # 风险/费率优于全部基准 → 满分（存单低波低回撤特性保留为优势）
+        assert out["iA"]["sub_scores"]["mdd_3y"] == pytest.approx(100.0)
+        assert out["iA"]["sub_scores"]["fee_total"] == pytest.approx(100.0)
+
+    def test_same_performance_same_score_band(self):
+        # 指数与主动中游业绩同位次 → 子分同带（≈50）；与主动头部同位次 → ≥90
+        base = _card_records(1, "存单")[0]
+        out = {r["code"]: r for r in score_index_pool(
+            [{**base, "code": "mid", "ret_3y": 0.0145}, {**base, "code": "top", "ret_3y": 0.019}],
+            basis=self._basis())}
+        assert 45 <= out["mid"]["sub_scores"]["ret_3y"] <= 55
+        assert out["top"]["sub_scores"]["ret_3y"] >= 90
+
+    def test_basis_missing_factor_falls_back_to_renorm(self):
+        # 基准行缺 company_scale → 该因子不计、载分折算（与旧缺因子语义一致）
+        base = _card_records(1, "存单")[0]
+        out = score_index_pool([{**base, "code": "x1"}], basis=self._basis())
+        r = out[0]
+        assert r["sub_scores"]["company_scale"] is None
+        assert r["earned_weight"] == 95.0
+        assert r["score"] is not None
+
+
 # ============================================================ v5.12 单列榜（docs/17 §9）
 class TestTrackDevV512:
     """同指数组跟踪偏离代理：|ret_3y − 组中位|，组<3 只不产出。"""

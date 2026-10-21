@@ -250,10 +250,11 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
                      "cs": m.get("company_scale"),
                      "dev": dev_map.get(b)})
     picks = IF.pick_per_index(rows)
-    # ---- ② 评估卡真分排序截展示条数（同分按 code 保序，与主榜一致） ----
+    # ---- ② 评估卡真分排序（v5.14：list_top_n=0/None → 全显示，用户拍板去截断） ----
     picks.sort(key=lambda r: (-(r.get("score") or float("-inf")),
                               str(r.get("code") or "")))
-    show = picks[: int(C.INDEX.get("list_top_n") or 10)]
+    _top_n = int(C.INDEX.get("list_top_n") or 0)
+    show = picks[:_top_n] if _top_n > 0 else picks
     # ---- ③ 同指数其他优秀基金 ×3（全部已打分指数基金 → 基金级取最好份额 → 同组卡分次高） ----
     best: dict[str, dict] = {}
     for code, rec in (idx_snap or {}).items():
@@ -360,10 +361,14 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log,
         # v5.12 单列模式：全部指数基金打分（详情页「同指数其他优秀基金」需候选外基金真分）；
         # merged 模式维持只评候选（分数仅供插值取指标）。
         _sep = C.INDEX.get("display") == "separate"
+        # v5.14（用户 2026-10-21 拍板）：basis=本池主动候选 → 债指分位与主动榜同尺，
+        # "业绩差不多的分数也差不多"；无 basis 回退 v5.11 族内相对（测试/退化路径）。
         idx_scored = score_index_pool(
             idx_recs, score_only=None if _sep else idx_codes, quota_n=idx_quota,
             company_scale={c: m["company_scale"] for c, m in idx_meta.items()
-                           if m.get("company_scale") is not None})
+                           if m.get("company_scale") is not None},
+            basis=[r for r in act_recs if r.get("score") is not None
+                   and not r.get("_unscored")])
         idx_snap = {r["code"]: r for r in idx_scored if "score" in r
                     and not r.get("_unscored")}
         # 同指数≤2 去重键与公司规模入快照（"需可核对"），并带 v5.11 族/久期段展示字段

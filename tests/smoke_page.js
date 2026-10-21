@@ -163,6 +163,7 @@ chk('canvas DPR 放大（448×150 ×2）', cv.width === 896 && cv.height === 300
 
 // 8. meta 不再展示"筛出 N 只取前 M 名"（2026-10-17 改版：网页与导出图均删除该条）；data.js 契约字段保留
 chk('meta 无"筛出…取前…名"', !document.getElementById('meta').innerHTML.includes('筛出'));
+chk('meta 数据基准加粗标注（排名页数据时间，v5.14）', document.getElementById('meta').innerHTML.includes('class="asof"'));
 chk('data.js 契约 n_screened/top_n 字段保留', D.n_screened != null && D.top_n != null);
 
 // 9. 分类 tab：处理器绑定 + 多池切换过滤（单池旧 data.js 只断言处理器与回退）
@@ -276,8 +277,9 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
   // v5.12 单列债指（docs/17 §9）：分组头 / 组内名次分母 / 同指数其他优秀基金 / 无对比按钮
   switchTab('index');
   const listIx = document.getElementById('list').innerHTML;
-  chk('债指 tab 分组头（来源池各自成榜，组间分数不可比）',
-      listIx.includes('债指 · ') && listIx.includes('组内相对评分 · 与主动榜分数不可比'));
+  // v5.14（2026-10-21）：债指分位与本池主动候选同尺（"业绩差不多分数也差不多"）+ 去截断全显示
+  chk('债指 tab 分组头（评分与本池主动榜同尺，跨池不可比）',
+      listIx.includes('债指 · ') && listIx.includes('评分与本池主动榜同尺'));
   const ixWithPeers = (D.funds||[]).find(f=>f.is_index && (f.index_peers||[]).length);
   if (ixWithPeers) {
     openDetail(ixWithPeers.code);
