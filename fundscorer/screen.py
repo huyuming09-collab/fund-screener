@@ -318,11 +318,14 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
         keep &= pool["ret_5y"] < cfg["ret_5y_max"]
         funnel[f"S8 近五年年化<{cfg['ret_5y_max'] * 100:g}%"] = int(keep.sum())
 
-    # ---- 阶段二 性能条件 P1~P2（百分位基准 = 本池合并全池） ----
+    # ---- 阶段二 性能条件 P1~P2（D13 方案 a，2026-10-21 拍板：两者基准均为本分支合并池） ----
+    # 旧口径 P2 用 yearly 字典全量（含另一分支/指数），会"借垫底抬分位/被压制降分位"；
+    # 方案 a 把 P2 的基准限制到本分支基础名，与 P1 口径自洽（实验：当期 TOP20 零冲击，docs/14 §9.3）
     P = composite_percentiles(pool)
     keep &= P["mpct"] >= cfg["comp_pct_min"]
     funnel[f"P1 综合分位≥{cfg['comp_pct_min'] * 100:g}%"] = int(keep.sum())
-    Y = pd.DataFrame(yearly).T
+    yearly_branch = {b: yearly[b] for b in pool["base"] if b in yearly}
+    Y = pd.DataFrame(yearly_branch).T
     med = pd.Series(
         {i: yearly_median_pct(Y, b, yearly, cfg["yearly_pool_min"],
                               cfg["yearly_min_years"])

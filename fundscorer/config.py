@@ -15,7 +15,9 @@
 
 # v5.5（2026-10-19）：固收+评分卡 v6 = B′ 同族择优（卡玛 25 / 夏普 0）+ 多经理共管规则，
 # 依据 docs/12 全链路验证（11 截面双段 IC / 冗余矩阵 / 方案对比 / 剂量曲线 / 逻辑回检）。
-MODEL_VERSION = "v5.9"
+# v5.10（2026-10-21 用户拍板 D9/D10/D13，docs/14 §9）：两债池 products 11→4、winrate 归零
+# （D10-A，IC 反向），释放权重口径 A 等比入 IC 池；D13 方案 a：P2 分位基础名限本分支。
+MODEL_VERSION = "v5.10"
 
 # 池规则版本（v5.9 起记账，docs/15-评分体系版本变动管理.md 为账本）：
 #   MODEL_VERSION  = 产物/管线版本——任何评分或筛选规则变动都递增（含展示口径无关的重排）；
@@ -24,9 +26,9 @@ MODEL_VERSION = "v5.9"
 # 变更流程（docs/15 §2）：拍板 → 证据留档 docs → 改 config → 四门验证（pytest/SMOKE/管线/
 #   位移对照）→ 同提交更新 docs/15 版本表 + STATUS §6。
 POOL_VERSIONS = {
-    "short_bond": "v5.9",   # 2026-10-21 D16-前置 B1+A / D16a / D16b / D17（docs/14 §6、§8）
-    "long_bond": "v5.9",    # 同上（repair_5y 保留 4 分为本池差异点）
-    "fixed_plus": "v5.8",   # 2026-10-20 R3 放宽 + 收益↑稳健↓ + 资深分档（docs/12 §16）
+    "short_bond": "v5.10",   # 2026-10-21 D9 products→4 / D10A winrate→0 / D13 P2 分支基准（docs/14 §9）
+    "long_bond": "v5.10",    # 同上（repair_5y 保留 4 分为本池差异点）
+    "fixed_plus": "v5.10",   # D13 改的是共享 screen_candidates（fp 无指数分流，实测零位移）
 }
 
 # ---------------------------------------------------------------- 窗口
@@ -59,30 +61,36 @@ INDEX = {
 #   短债 repair_5y 4→0（D17：验证段 IC≈0；长债保留 4 分 valid +0.044）；
 #   释放权重 11 分按口径 A 进 IC 池（61→72 等比放大），单因子上限 15 无触顶；
 #   重放验证段前20%胜率 0.622 → 0.655（scripts/rrealloc_replay.py）。
+# v5.10（2026-10-21 用户拍板 D9/D10，docs/14 §9.1/§9.2）：
+#   mgr_products_ann 11→4（D9：零前瞻证据 + 与 fp v5.6 口径统一）；
+#   winrate_m_5y 0.54→0（D10-A：IC 反向 short valid −0.258/t −5.8，重放持平）；
+#   释放 7.59 分按口径 A 等比入 IC 池（72→79，fee 最高 11.63<15 无触顶）。
 PURE_BOND_WEIGHTS = {
     # 风险块 11（固定；门槛式打分，只排除尾部不做排序——IC为负系债牛状态依赖）
     # v5.9：repair_5y 4→0（D17 短债归零，修复天数验证段 IC≈0；改门槛式为备选未采纳）
     "mdd_5y": 5, "mdd_3y": 3, "mdd_1y": 2, "repair_5y": 0, "vol_5y": 1,
-    # IC 池 72（v5.9：61 等比放大 ×72/61，吸收 tenure/rank_stab/repair 释放的 11 分）
-    "fee": 10.51, "ret_3y": 10.21, "ret_5y": 9.99, "ret_1y": 9.08, "yearly_5y": 8.84,
-    "q_excess_20q": 8.38, "lvi_5y": 7.34, "lvi_3y": 7.11, "winrate_m_5y": 0.54, "age": 0,
-    # 固定块：稳定性 0（v5.9 rank_stab 归零，D16b）+ 经理 16（任期0+从业5+全产品年化11）
-    #   + 晨星 1
-    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 11,
+    # IC 池 79（v5.10：72 等比放大 ×79/72，吸收 products 释放 7 分 + winrate 0.59）
+    "fee": 11.63, "ret_3y": 11.29, "ret_5y": 11.04, "ret_1y": 10.04, "yearly_5y": 9.77,
+    "q_excess_20q": 9.26, "lvi_5y": 8.11, "lvi_3y": 7.86, "winrate_m_5y": 0, "age": 0,
+    # 固定块：稳定性 0（v5.9 rank_stab 归零，D16b）+ 经理 9（任期0+从业5+全产品年化4，
+    #   v5.10 D9 拍板 11→4）+ 晨星 1
+    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 4,
     "ms_rating": 1, "inst_ratio": 0, "fund_scale": 0, "company_scale": 0,
 }
 
-# 中长期纯债池（同结构，IC 池内按该池训练段 IC 分配；winrate IC 为正故权重高于短债）
+# 中长期纯债池（同结构，IC 池内按该池训练段 IC 分配）
 # v5.9（同上拍板）：mgr_tenure 4→0、rank_stab 3→0（释放 7 分等比放大 IC 池 61→68）；
 # repair_5y 保留 4（D17：长债验证段 valid +0.044/t 3.0 边缘正，拍板保留）；
 # 重放验证段前20%胜率 0.622 → 0.633（TR 两因子 B1-A 场景）。
+# v5.10（2026-10-21 拍板 D9/D10）：products 11→4、winrate 4.74→0（D10-A，IC 反向
+#   long valid −0.036/t −3.4，重放 0.628→0.633 +0.5pp）；释放 11.74 分等比入 IC 池（68→75）。
 PURE_BOND_WEIGHTS_LONG = {
     "mdd_5y": 5, "mdd_3y": 3, "mdd_1y": 2, "repair_5y": 4, "vol_5y": 1,
-    # IC 池 68（v5.9：61 等比放大 ×68/61，吸收 tenure/rank_stab 释放的 7 分）
-    "ret_1y": 11.12, "ret_3y": 9.83, "lvi_3y": 9.22, "yearly_5y": 8.13,
-    "q_excess_20q": 7.71, "ret_5y": 7.22, "lvi_5y": 6.12, "winrate_m_5y": 4.74,
-    "fee": 3.91, "age": 0,
-    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 11,
+    # IC 池 75（v5.10：68 等比放大 ×75/68，吸收 products 7 分 + winrate 4.74）
+    "ret_1y": 13.18, "ret_3y": 11.65, "lvi_3y": 10.93, "yearly_5y": 9.64,
+    "q_excess_20q": 9.14, "ret_5y": 8.56, "lvi_5y": 7.26, "winrate_m_5y": 0,
+    "fee": 4.64, "age": 0,
+    "rank_stab": 0, "mgr_tenure": 0, "mgr_career": 5, "mgr_products_ann": 4,
     "ms_rating": 1, "inst_ratio": 0, "fund_scale": 0, "company_scale": 0,
 }
 
