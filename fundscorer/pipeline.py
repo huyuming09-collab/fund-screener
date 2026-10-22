@@ -264,10 +264,12 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     for _r in picks:
         _s = idx_snap.get(_r.get("code")) or {}
         _r.setdefault("idx_lookalike_med", _s.get("idx_lookalike_med"))
-        for _k in ("score_detail", "sub_scores", "raw_score", "earned_weight"):
+        for _k in ("score_detail", "sub_scores", "raw_score", "earned_weight",
+                   "idx_lookalike_nb", "idx_lookalike_min", "idx_lookalike_max"):
             if _r.get(_k) is None:
                 _r[_k] = _s.get(_k)
-    _anchor_med = anchor_index_scores(picks)
+    _anchor = anchor_index_scores(picks)
+    _amed, _alam = _anchor if _anchor else (float("nan"), float("nan"))
     # 锚定后的分标量写回打分快照（cards 的 raw_score/peers 分数取快照；明细已共对象写穿）
     for _r in picks:
         _s = idx_snap.get(_r.get("code"))
@@ -336,7 +338,7 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     log(f"[5a][{tag}] 债指单列榜：候选 {len(idx_rows)} → 同指数归一 {len(picks)}"
         f" → 展示 {len(df)}（选中键 fee低→公司规模大→跟踪偏离小；评估卡真分排序；"
         f"回撤闸沉底 {_gated} 只（中位×{_gx:g}）；同画像锚定中位 "
-        f"{_anchor_med:.2f}；偏离可算基金 {len(dev_map)} 只）")
+        f"{_amed:.2f}、自动折幅 λ={_alam:.3f}；偏离可算基金 {len(dev_map)} 只）")
     return df, len(picks)
 
 

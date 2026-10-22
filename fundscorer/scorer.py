@@ -505,12 +505,12 @@ def score_index_pool(fund_metrics: list[dict], score_only: set[str] | None = Non
                 f.setdefault("flags", []).append(
                     f"指数卡数据不足折算：载分 {earned:g}/{total_w:g}（缺 "
                     + "、".join(k for k in weights if sub.get(k) is None) + "）")
-        # v5.15→v5.18 经理块对齐（2026-10-21 拍板「业绩差不多卡片分数也要差不多」；
-        # 2026-10-22 复核「指数和对应主动池分数不太可比」→ 改**逐只锚定、零点=上榜组
-        # 卡分中位**）：此处只算并记录每只的同画像主动中位 m_i（业绩画像 z 距离最近 k=10
-        # 只主动候选的分数中位）；实际加锚在 pipeline._build_index_list（锚定分 = m_i +
-        #（卡分 − 上榜组卡分中位），榜单层才知道上榜组——若在全候选上取中位，上榜者人人
-        # +30 顶破 100）。basis 缺分数（退化/测试旧径）→ 不记录 m_i，锚定自动跳过。
+        # v5.15→v5.19 经理块对齐（2026-10-21 拍板「业绩差不多卡片分数也要差不多」；
+        # 2026-10-22 二次复核「分数还是不太可比」→ 方案一自动折幅）：此处只算并记录每只
+        # 的同画像主动带（业绩画像 z 距离最近 k=10 只主动候选的分数：中位 m_i / min / max /
+        # 全列表）；实际加锚在 pipeline._build_index_list（锚定分 = m_i +（卡分 − 上榜组
+        # 卡分中位）× λ，λ=组画像带宽÷组卡分极差自动打折，再钳入自身带 [min,max]——
+        # v5.18 λ=1 实测短组顶 92.9 仍破主动顶 88.3）。basis 缺分数 → 不记录带，锚定跳过。
         scored = [f for f in funds if f.get("score") is not None]
         b_scored = [b for b in b_rows if b.get("score") is not None]
         if scored and len(b_scored) >= 10:
@@ -526,37 +526,50 @@ def score_index_pool(fund_metrics: list[dict], score_only: set[str] | None = Non
                 dist = (((bdf - v) / sd) ** 2).sum(axis=1)
                 near = sorted(range(len(dist)), key=lambda i: dist.iloc[i])[:10]
                 m_i = float(pd.Series([b_scored[i]["score"] for i in near]).median())
+                nb = sorted(float(b_scored[i]["score"]) for i in near)
                 f["idx_lookalike_med"] = round(m_i, 2)   # 可核对：同画像主动候选分数中位
+                f["idx_lookalike_min"], f["idx_lookalike_max"] = round(nb[0], 2), round(nb[-1], 2)
+                f["idx_lookalike_nb"] = [round(x, 2) for x in nb]   # 组折幅 λ 的输入
         results.extend(funds)
     _assign_stars(results, quota_n)
     return results
 
 
-def anchor_index_scores(rows: list[dict]) -> float | None:
-    """v5.18 同画像逐只锚定（docs/17 §13，用户 2026-10-22 复核「指数和对应主动池
-    分数不太可比」）：锚定分 = 自己同画像主动中位 m_i（idx_lookalike_med，scorer 产出）
-    +（卡分 − 上榜组卡分中位）——零点=上榜组中位（中位者正好落在自己画像带），同画像
-    =同分段、个体不随权重表漂移；缺 m_i 的行不锚定（回 v5.14 旧径）。原地改
-    score/raw_score/score_detail[idx_mgr_base]（贡献可为负，最终分夹 [0,100]、
-    sum(detail)=raw_score、score=raw×100/载分 三契约保持），返回组卡分中位（供日志）。"""
-    raws = [float(r["score"]) for r in rows if r.get("score") is not None]
-    if not raws:
+def anchor_index_scores(rows: list[dict]) -> tuple[float, float] | None:
+    """v5.19 同画像逐只锚定 + 自动折幅（docs/17 §14，用户 2026-10-22 二次复核「分数
+    还是不太可比」→ 方案一拍板）：位次加分按 λ = 组画像带宽(近邻合并 IQR) ÷ 组卡分极差
+    自动打折（封顶 1），锚定分 = m_i +（卡分 − 上榜组卡分中位）× λ，再**硬钳入自身画像
+    带 [近邻 min, max]**——保证债指永不超过同画像主动的真实最高分（v5.18 λ=1 实测短组
+    顶 92.9 > 主动顶 88.3）。缺 m_i 的行不锚定（回 v5.14 旧径）；返回 (组卡分中位, λ)。"""
+    cards_ = [float(r["score"]) for r in rows if r.get("score") is not None]
+    if not cards_:
         return None
-    med = float(pd.Series(raws).median())
+    med = float(pd.Series(cards_).median())
+    nb_all = [float(x) for r in rows for x in (r.get("idx_lookalike_nb") or [])]
+    span = max(cards_) - min(cards_)
+    if nb_all and span > 1e-9:
+        a = np.asarray(nb_all, dtype="float64")
+        lam = float(min(1.0, (float(np.percentile(a, 75)) - float(np.percentile(a, 25))) / span))
+    else:
+        lam = 1.0 if not nb_all else 0.0
     for r in rows:
         m_i = r.get("idx_lookalike_med")
         if r.get("score") is None or m_i is None:
             continue
         e = float(r.get("earned_weight") or 100.0) / 100.0
-        d = float(min(float(m_i) - med, (100.0 - float(r["score"])) / e))
-        d = float(max(d, -float(r["score"]) / e))
+        s = float(m_i) + (float(r["score"]) - med) * lam
+        lo, hi = r.get("idx_lookalike_min"), r.get("idx_lookalike_max")
+        if lo is not None and hi is not None and float(hi) > float(lo):
+            s = float(min(max(s, float(lo)), float(hi)))
+        s = float(min(max(s, 0.0), 100.0))
+        d = s - float(r["score"])
         r["raw_score"] = round(float(r.get("raw_score", r["score"])) + d * e, 2)
-        r["score"] = round(float(r["score"]) + d, 2)
+        r["score"] = round(s, 2)
         r["score_capped"] = r["score"]
         sd = r.setdefault("score_detail", {})
         sd["idx_mgr_base"] = round(float(sd.get("idx_mgr_base") or 0.0) + d * e, 3)
         r.setdefault("sub_scores", {})["idx_mgr_base"] = 100.0
-    return med
+    return med, lam
 
 
 def _pool_yearly_ranks(funds: list[dict]) -> dict[str, list[float | None]]:

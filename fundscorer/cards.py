@@ -166,6 +166,9 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         # v5.15 债指经理块基线核对项：同画像主动候选分数中位（主动基金为 None）——
         # 卡分 = 画像分 + 基线，读者可核对"同画像的主动基金大约打多少分"
         "idx_lookalike_med": _rec_metric(rec, "idx_lookalike_med"),
+        # v5.19 画像带上下沿（同画像 k=10 主动近邻 min/max）：锚定钳位的核对项
+        "idx_lookalike_min": _rec_metric(rec, "idx_lookalike_min"),
+        "idx_lookalike_max": _rec_metric(rec, "idx_lookalike_max"),
         "metrics": {
             "ret_1y": _rec_metric(rec, "ret_1y"),
             "ret_3y": _rec_metric(rec, "ret_3y"),

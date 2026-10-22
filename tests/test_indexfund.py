@@ -687,10 +687,10 @@ class TestIndexCardSameScaleV514:
 
 
 # ============================================ v5.18 同画像逐只锚定（docs/17 §11/§13）
-class TestIdxAnchorV518:
-    """v5.18（用户 2026-10-22 复核「指数和对应主动池分数不太可比」）：经理块对齐从
-    v5.15 整池常数改**逐只锚定**——锚定分 = 自己同画像主动中位 m_i +（卡分 − 组卡分
-    中位）；同画像=同分段、个体不随权重表漂移；basis 无分数 → 不锚定，行为回 v5.14。"""
+class TestIdxAnchorV519:
+    """v5.19（用户 2026-10-22 二次复核「分数还是不太可比，尤其短债」→ 方案一拍板）：
+    锚定分 = m_i +（卡分 − 上榜组卡分中位）× λ，λ = 组画像带宽(近邻合并IQR) ÷ 组卡分
+    极差（封顶 1）自动折幅，再硬钳入自身画像带 [近邻 min,max]；basis 无分数 → 不锚定。"""
 
     @staticmethod
     def _basis(with_score=True):
@@ -708,42 +708,60 @@ class TestIdxAnchorV518:
         return out
 
     def test_scorer_records_lookalike_only(self):
-        # v5.18：scorer 只记录同画像中位 m_i（锚定在榜单层 anchor_index_scores）
+        # v5.19：scorer 只记录同画像带（m_i/min/max/近邻列表；锚定在榜单层）
         base = _card_records(1, "存单")[0]
         recs = [{**base, "code": "lo", "ret_3y": 0.011}, {**base, "code": "hi", "ret_3y": 0.028}]
         for c, r in ((c, r) for c, r in
                      ((x["code"], x) for x in score_index_pool(copy.deepcopy(recs),
                                                                basis=self._basis(True)))):
             assert r["idx_lookalike_med"] is not None
+            # v5.19：画像带三件套（锚定钳位与组折幅 λ 的输入）
+            assert r["idx_lookalike_min"] <= r["idx_lookalike_med"] <= r["idx_lookalike_max"]
+            assert len(r["idx_lookalike_nb"]) == 10
             assert "idx_mgr_base" not in r["score_detail"]
             assert r["score"] == r["raw_score"]
         nob = {r["code"]: r for r in score_index_pool(copy.deepcopy(recs),
                                                       basis=self._basis(False))}
         assert "idx_lookalike_med" not in nob["lo"]          # basis 缺分数 → 不产 m_i
 
-    def test_anchor_band_and_contracts(self):
-        # 锚定公式：锚定分 = m_i +（卡分 − 组中位）；负贡献合法；缺 m_i 不动；夹 [0,100]
+    def test_anchor_auto_lambda_and_band_clamp(self):
+        # 方案一：λ = 近邻合并 IQR ÷ 组卡分极差；s = m_i + (卡分−组中位)×λ；钳入自身带
+        nb = [76, 77, 78, 79, 80, 81, 82, 83, 84, 85]          # 单只 IQR=4.5，两行合并同
         rows = [
-            {"code": "a", "score": 67.30, "raw_score": 67.30, "earned_weight": 100.0,
-             "idx_lookalike_med": 78.13, "score_detail": {"ret_3y": 67.30}, "sub_scores": {}},
-            {"code": "b", "score": 46.95, "raw_score": 46.95, "earned_weight": 100.0,
-             "idx_lookalike_med": 46.11, "score_detail": {"ret_3y": 46.95}, "sub_scores": {}},
-            {"code": "c", "score": 55.08, "raw_score": 55.08, "earned_weight": 100.0,
-             "score_detail": {"ret_3y": 55.08}, "sub_scores": {}},      # 缺 m_i → 不动
+            {"code": "a", "score": 70.0, "raw_score": 70.0, "earned_weight": 100.0,
+             "idx_lookalike_med": 80.0, "idx_lookalike_min": 76.0, "idx_lookalike_max": 85.0,
+             "idx_lookalike_nb": nb, "score_detail": {"ret_3y": 70.0}, "sub_scores": {}},
+            {"code": "b", "score": 50.0, "raw_score": 50.0, "earned_weight": 100.0,
+             "idx_lookalike_med": 78.0, "idx_lookalike_min": 70.0, "idx_lookalike_max": 84.0,
+             "idx_lookalike_nb": nb, "score_detail": {"ret_3y": 50.0}, "sub_scores": {}},
         ]
-        med = anchor_index_scores(rows)
-        assert med == pytest.approx(55.08)                    # 组中位 = b/c 之间
-        a, b, c = rows
-        assert a["score"] == pytest.approx(78.13 + (67.30 - 55.08), abs=0.05)
-        assert b["score"] == pytest.approx(46.11 + (46.95 - 55.08), abs=0.05)   # 贡献为负
-        assert c["score"] == pytest.approx(55.08, abs=0.001)  # 缺 m_i 原样
-        for r in (a, b):
+        med, lam = anchor_index_scores(rows)
+        assert med == pytest.approx(60.0)                     # 组卡分中位
+        assert lam == pytest.approx(5.0 / 20.0)               # 合并 IQR（20 值插值）5.0 ÷ 极差 20
+        a, b = rows
+        assert a["score"] == pytest.approx(80.0 + 10.0 * lam, abs=0.05)
+        assert b["score"] == pytest.approx(78.0 - 10.0 * lam, abs=0.05)   # 贡献可为负
+        for r in (a, b):                                      # 三契约
             assert sum(r["score_detail"].values()) == pytest.approx(r["raw_score"], abs=0.05)
+            assert r["score"] == pytest.approx(r["raw_score"] * 100 / r["earned_weight"],
+                                               abs=0.03)
             assert r["sub_scores"]["idx_mgr_base"] == 100.0
-        hi = {"code": "h", "score": 99.0, "raw_score": 99.0, "earned_weight": 100.0,
-              "idx_lookalike_med": 98.0, "score_detail": {}, "sub_scores": {}}
-        anchor_index_scores([hi])
-        assert hi["score"] <= 100.0                           # 夹顶保契约
+
+    def test_anchor_clamps_into_own_band(self):
+        # 硬钳入自身画像带：越带值被压回带顶/带底（债指永不超过同画像主动的真实最高分）
+        rows = [
+            {"code": "hi", "score": 70.0, "raw_score": 70.0, "earned_weight": 100.0,
+             "idx_lookalike_med": 95.0, "idx_lookalike_min": 76.0, "idx_lookalike_max": 88.0,
+             "idx_lookalike_nb": [76] * 10, "score_detail": {"ret_3y": 70.0}, "sub_scores": {}},
+            {"code": "lo", "score": 70.0, "raw_score": 70.0, "earned_weight": 100.0,
+             "idx_lookalike_med": 40.0, "idx_lookalike_min": 44.0, "idx_lookalike_max": 60.0,
+             "idx_lookalike_nb": [44] * 10, "score_detail": {"ret_3y": 70.0}, "sub_scores": {}},
+        ]
+        anchor_index_scores(rows)                             # 合并 IQR=0 → λ=0 → s=m_i
+        assert rows[0]["score"] == pytest.approx(88.0)        # 95 → 钳回带顶
+        assert rows[1]["score"] == pytest.approx(44.0)        # 40 → 钳回带底
+        assert sum(rows[0]["score_detail"].values()) == pytest.approx(rows[0]["raw_score"],
+                                                                     abs=0.05)
 
     def test_no_score_in_basis_skips_baseline(self):
         base = _card_records(1, "存单")[0]
