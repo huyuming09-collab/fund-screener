@@ -223,8 +223,8 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     const segIx = document.getElementById('list').innerHTML
       .split('<div class="fundcard"').find(s=>s.includes(ix.code)) || '';
     chk('指数卡片显示"指数"徽标', segIx.includes('rk idx') && segIx.includes('>指数<'));
-    // v5.18：债指页签带「测试中」标识（用户 2026-10-22 拍板）
-    chk('债指页签带"测试中"标识', document.getElementById('tabs').innerHTML.includes('测试中'));
+    // 2026-10-22 当日拍板撤「测试中」徽标（转正口径）：页签为纯「债指」
+    chk('债指页签不带"测试中"标识（已转正）', !document.getElementById('tabs').innerHTML.includes('测试中'));
     // v5.12 单列债指（docs/17 §9）：卡脚 = 单列榜口径（旧"穿插评估"文案已随结构拍板废弃）
     // v5.18：卡脚口径句「经理块基线」→「同画像锚定」（逐只锚定，docs/17 §13）
     chk('指数卡片不显示经理从业、改显示单列评估口径',

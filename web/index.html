@@ -345,7 +345,7 @@ function renderTabs(active){
   $('tabs').innerHTML = D.categories.filter(c=>!(c&&c.hidden)).map(c =>
     `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
       ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast(\'该分类暂未开放\')"'}>
-      ${c.name}${c.id==='index'?'<span class="soon">测试中</span>':''}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
+      ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
   ).join('');
 }
 function switchTab(id){
