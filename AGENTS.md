@@ -51,6 +51,7 @@ node tests/smoke_page.js                  # 现基线：SMOKE PASS
 - 社媒配图**只导出榜单图**：`web/index.html?export=<pool>&size=xhs|wide`（`<pool>` = `short_bond` / `long_bond` / `fixed_plus`）
 - 全分类工作台：`?export=all`
 - **不要再新增封面 / 对照 / 直方图 / 表格类导出模式**——这类图不随周更维护，会与当期数据脱节；确有需要先问用户
+- **导出必须带 `&bare=1`**：裸 URL 会把顶部黑色操作条与提示行截进图（已多次踩坑）；出图后抽检顶部无暗条（y≈20 采样行，暗像素占比 <20%）
 - 页面当前只有 `EXPORT_SIZES.xhs` 与 `.wide` 两档，导出图为一次性快照，**不进周更管线**
 
 ## 6. 状态同步纪律
