@@ -275,7 +275,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('切回短债后固收+卡片消失',
         shortFunds.every(f=>h4.includes(f.code)) && fpFunds.every(f=>!h4.includes(f.code)));
   }
-  // v5.12 单列债指（docs/17 §9）：分组头 / 组内名次分母 / 同指数其他优秀基金 / 无对比按钮
+  // v5.12 单列债指（docs/17 §9）：分组头 / 组内名次分母 / 同指数其他优秀基金；v5.17 起开放对比按钮
   switchTab('index');
   const listIx = document.getElementById('list').innerHTML;
   // v5.14（2026-10-21）：债指分位与本池主动候选同尺（"业绩差不多分数也差不多"）+ 去截断全显示
@@ -292,8 +292,9 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('债指详情名次分母 = 组内只数',
         document.getElementById('d-rank').textContent
           .includes('第 '+ixWithPeers.rank+' 名 / '+ixWithPeers.idx_group_n));
-    chk('指数卡隐藏对比按钮',
-        !(listIx.split('<div class="fundcard"').find(s=>s.includes(ixWithPeers.code)) || '')
+    // 2026-10-22 用户拍板：债指开放"加入对比"（同池=债指池内可比；v5.17 场外化同轮）
+    chk('指数卡显示"加入对比"按钮',
+        (listIx.split('<div class="fundcard"').find(s=>s.includes(ixWithPeers.code)) || '')
           .includes('class="pick"'));
   }
   switchTab('short_bond');

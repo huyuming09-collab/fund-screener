@@ -596,12 +596,20 @@ class TestScoreIndexPoolV511:
         out2 = {r["code"]: r for r in score_index_pool(copy.deepcopy(recs), company_scale=cs)}
         assert out2["g014"]["score"] > out2["s029"]["score"] + 5
 
-    def test_missing_company_scale_renormalizes(self):
+    def test_missing_company_scale_renormalizes(self, monkeypatch):
         out = score_index_pool(copy.deepcopy(_card_records(10, "存单")),
                                company_scale=None)
         for r in out:
-            assert r["earned_weight"] == 95.0            # company_scale 5 分不计
+            assert r["earned_weight"] == 100.0           # v5.17 权重归零：缺值不折算
             assert r["score"] is not None and 0 < r["score"] <= 100
+            assert not any("折算" in fl for fl in r.get("flags", []))
+        # 折算机制回归护栏：临时 cs→5 且 scale→0（总量仍 100）→ 缺值即折 95、挂折算旗标
+        monkeypatch.setitem(C.INDEX["card_weights"], "company_scale", 5)
+        monkeypatch.setitem(C.INDEX["card_weights"], "scale", 0)
+        out2 = score_index_pool(copy.deepcopy(_card_records(10, "存单")),
+                                company_scale=None)
+        for r in out2:
+            assert r["earned_weight"] == 95.0
             assert any("折算" in fl for fl in r.get("flags", []))
 
     def test_score_only_matches_full_run(self):
@@ -661,14 +669,20 @@ class TestIndexCardSameScaleV514:
         assert 45 <= out["mid"]["sub_scores"]["ret_3y"] <= 55
         assert out["top"]["sub_scores"]["ret_3y"] >= 90
 
-    def test_basis_missing_factor_falls_back_to_renorm(self):
-        # 基准行缺 company_scale → 该因子不计、载分折算（与旧缺因子语义一致）
+    def test_basis_missing_factor_falls_back_to_renorm(self, monkeypatch):
+        # 基准行缺 company_scale → 该因子不计（v5.17 权重归零，缺值零影响）
         base = _card_records(1, "存单")[0]
         out = score_index_pool([{**base, "code": "x1"}], basis=self._basis())
         r = out[0]
         assert r["sub_scores"]["company_scale"] is None
-        assert r["earned_weight"] == 95.0
+        assert r["earned_weight"] == 100.0
         assert r["score"] is not None
+        # 折算机制回归护栏：临时 cs→5 且 scale→0（总量仍 100）→ 载分折 95、总分折满百
+        monkeypatch.setitem(C.INDEX["card_weights"], "company_scale", 5)
+        monkeypatch.setitem(C.INDEX["card_weights"], "scale", 0)
+        r2 = score_index_pool([{**base, "code": "x1"}], basis=self._basis())[0]
+        assert r2["earned_weight"] == 95.0
+        assert r2["score"] == pytest.approx(r2["raw_score"] * 100 / 95.0, abs=0.05)
 
 
 # ============================================================ v5.15 经理块基线（docs/17 §11）
@@ -686,7 +700,9 @@ class TestIdxMgrBaselineV515:
                  "ret_3y": round(0.010 + i * 0.001, 6), "ret_1y": 0.02,
                  "mdd_3y": 0.002, "vol_5y": 0.003}
             if with_score:
-                b["score"] = round(60 + i * 1.5, 2)      # 60~88.5：候选带经理块 → 同画像高出指数卡
+                # 66~96.4：候选带经理块 → 同画像高出指数卡；v5.17 起 band 整体垫到 B1
+                # 卡分（存单画像 ~64/86）之上，保证基线触发（0<中位缺口≤30 夹值带内）
+                b["score"] = round(66 + i * 1.6, 2)
             out.append(b)
         return out
 

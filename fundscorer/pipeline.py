@@ -194,6 +194,13 @@ def _is_index(r: dict) -> bool:
     return str(r.get("type_text") or "").startswith("指数型")
 
 
+def _is_offsite(r: dict) -> bool:
+    """场外可买（用户 2026-10-22 拍板：榜单只筛支付宝可买的场外份额）。
+    场内 ETF = 名称含 "ETF" 且非 "ETF联接" → 剔除；LOF 与 ETF联接为场外、保留。"""
+    nm = str(r.get("name") or "")
+    return not ("ETF" in nm and "ETF联接" not in nm)
+
+
 def _index_meta(idx_recs: list[dict]) -> dict:
     """指数候选穿插所需份额级元数据：费率、跟踪基准、公司非货规模、名称（同指数去重排序键 +
     v5.11 族分类/久期段展示字段的输入）。"""
@@ -253,6 +260,23 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     # ---- ② 评估卡真分排序（v5.14：list_top_n=0/None → 全显示，用户拍板去截断） ----
     picks.sort(key=lambda r: (-(r.get("score") or float("-inf")),
                               str(r.get("code") or "")))
+    # ---- ②′ 回撤护栏闸（v5.17，用户 2026-10-22 拍板）：组内 mdd_3y > 中位×risk_gate_x
+    #      → 组内沉底（分数不动、名次后置）。缺 mdd_3y 或组<3 只 → 不闸。
+    _gx = float(C.INDEX.get("risk_gate_x") or 0)
+    _gated = 0
+    if _gx > 0:
+        _mdds = sorted(r["mdd_3y"] for r in picks if r.get("mdd_3y") is not None)
+        if len(_mdds) >= 3:
+            _med = (_mdds[len(_mdds) // 2] if len(_mdds) % 2
+                    else (_mdds[len(_mdds) // 2 - 1] + _mdds[len(_mdds) // 2]) / 2)
+            _thr = _med * _gx
+            _keep = [r for r in picks
+                     if r.get("mdd_3y") is None or r["mdd_3y"] <= _thr]
+            _demoted = [r for r in picks
+                        if r.get("mdd_3y") is not None and r["mdd_3y"] > _thr]
+            if _demoted:
+                picks = _keep + _demoted
+                _gated = len(_demoted)
     _top_n = int(C.INDEX.get("list_top_n") or 0)
     show = picks[:_top_n] if _top_n > 0 else picks
     # ---- ③ 同指数其他优秀基金 ×3（全部已打分指数基金 → 基金级取最好份额 → 同组卡分次高） ----
@@ -293,7 +317,7 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
         df["idx_group_n"] = len(df)
     log(f"[5a][{tag}] 债指单列榜：候选 {len(idx_rows)} → 同指数归一 {len(picks)}"
         f" → 展示 {len(df)}（选中键 fee低→公司规模大→跟踪偏离小；评估卡真分排序；"
-        f"偏离可算基金 {len(dev_map)} 只）")
+        f"回撤闸沉底 {_gated} 只（中位×{_gx:g}）；偏离可算基金 {len(dev_map)} 只）")
     return df, len(picks)
 
 
@@ -314,9 +338,13 @@ def _screen_pool(pool: str, top_n: int, asof: str | None, log,
         log(f"[警告][{tag}] {n_missing} 个份额无净值文件（S5 数据不足不放行）")
     # 指数基金与主动债基分流（用户 2026-10-19 决议：指数不看经理业绩，只看跟踪标的/费率/规模）
     act_recs = [r for r in records if not _is_index(r)]
-    idx_recs = [r for r in records if _is_index(r)]
+    idx_all = [r for r in records if _is_index(r)]
+    idx_recs = [r for r in idx_all if _is_offsite(r)]   # v5.17 场外化：场内 ETF 出局
+    n_onsite = len(idx_all) - len(idx_recs)
     log(f"[2][{tag}] 读取池记录 {len(records)} 份额"
-        + (f"（主动 {len(act_recs)} / 指数 {len(idx_recs)}）" if idx_recs else ""))
+        + (f"（主动 {len(act_recs)} / 指数 {len(idx_recs)}"
+           + (f"，剔除场内 ETF {n_onsite} 只" if n_onsite else "") + "）"
+           if idx_recs else ""))
 
     # ---- 3. 两段筛选（先筛；指数侧跳过 S2/S3 经理闸） ----
     candidates, funnel = S.screen_candidates(act_recs, spikes, yearly, cfg)

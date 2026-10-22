@@ -422,7 +422,7 @@ function syncDetailPick(){
   b.textContent = on ? '移出对比' : '加入对比';
   b.classList.toggle('on', on);
   /* 债指不参与横向对比：组间/跨池分数不可比，且单列榜行已隐藏勾选按钮 */
-  b.style.display = ((D && D.pools && D.pools[CUR.category || D.category]) && !CUR.is_index) ? '' : 'none';
+  b.style.display = (D && D.pools && D.pools[CUR.category || D.category]) ? '' : 'none';
 }
 function clearCmp(){ CMP = []; renderPick(); }
 function renderPick(){
@@ -464,8 +464,11 @@ function openCmp(){
   H += row('综合分', fs.map(f => f.score == null ? '—' : f.score.toFixed(2)), bestOf(fs.map(f => f.score)));
   H += row('榜内排名', fs.map(f => '#' + f.rank), bestOf(fs.map(f => f.rank == null ? null : -f.rank)));
   H += row('风格', fs.map(f => f.style || '—'), -1);            /* v5.5 池内相对，仅展示 */
-  H += row('经理', fs.map(f => ((f.manager && f.manager.name) || '—')
-    + (f.manager && f.manager.seats >= 2 ? '（占席×' + f.manager.seats + '）' : '')), -1);
+  H += row(pid === 'index' ? '指数族·久期段' : '经理', pid === 'index'
+    ? fs.map(f => ((f.fund_info && f.fund_info.idx_fam) || '—')
+        + ((f.fund_info && f.fund_info.idx_dur) ? ' · ' + f.fund_info.idx_dur : ''))
+    : fs.map(f => ((f.manager && f.manager.name) || '—')
+        + (f.manager && f.manager.seats >= 2 ? '（占席×' + f.manager.seats + '）' : '')), -1);
   H += row('较上期', fs.map(rkTxt), -1);
   H += row('红线', fs.map(f => (f.redlines && f.redlines.length) ? '⚠ ' + f.redlines.length + ' 条' : '—'), -1);
   if(W) H += row('载分率', fs.map(f => f.earned_weight == null ? '—'
@@ -514,11 +517,14 @@ function openCmp(){
    ['月度胜率(近5年)', f => pct(f.metrics.winrate_m_5y, 1)],
    ['修复天数', f => f.metrics.repair_days == null ? '—' : f.metrics.repair_days + '天'],
    ['综合费率', f => pct(f.fund_info.fee_total, 2)], ['合并规模', f => yi(f.fund_info.scale_yi)],
-   ['经理从业', f => f.manager.career_years == null ? '—' : num(f.manager.career_years, 1) + '年'],
-   ['现任任期', f => f.manager.tenure_days == null ? '—' : num(f.manager.tenure_days / 365, 1) + '年'],
+  ].concat(pid === 'index'
+     ? [['久期段', f => (f.fund_info && f.fund_info.idx_dur) || '—']]
+     : [['经理从业', f => f.manager.career_years == null ? '—' : num(f.manager.career_years, 1) + '年'],
+        ['现任任期', f => f.manager.tenure_days == null ? '—' : num(f.manager.tenure_days / 365, 1) + '年']]
+  ).concat([
    ['晨星评级', f => f.fund_info.ms_rating == null ? '—' : f.fund_info.ms_rating + '★'],
    ['机构占比', f => pct(f.fund_info.inst_ratio, 1)]
-  ].forEach(function(r){ H += row(r[0], fs.map(r[1]), -1); });
+  ]).forEach(function(r){ H += row(r[0], fs.map(r[1]), -1); });
   const yrs = [];
   fs.forEach(f => Object.keys(f.yearly || {}).forEach(y => { if(yrs.indexOf(y) < 0) yrs.push(y); }));
   yrs.sort();
@@ -632,7 +638,7 @@ function renderList(){
           <div class="fc-code">${f.code}<span class="dot">·</span>${catLabel(f.category)}
             <span class="dot">·</span><span class="score">评分 ${f.score}</span>${rkHTML(f)}</div>
         </div>
-        ${f.is_index ? '' : '<button class="pick" title="加入对比" aria-label="加入对比">＋</button>'}
+        <button class="pick" title="加入对比" aria-label="加入对比">＋</button>
       </div>
       <div class="fc-metrics">
         ${METRIC_CELLS(f).map(([l,v,c])=>`<div class="m"><div class="v ${c}">${v}</div><div class="l">${l}</div></div>`).join('')}
@@ -963,7 +969,8 @@ function drawExport(canvas, pool, sizeKey, rows){
   const S = EXPORT_SIZES[sizeKey] || EXPORT_SIZES.xhs;
   const ps = (D && D.pools && D.pools[pool]) || {};
   const hasPrev = ps.has_prev != null ? !!ps.has_prev : !!(D && D.has_prev);
-  const funds = exportRows(pool, rows || S.rows);
+  /* 债指（v5.17）：全量分组绘制，不套尺寸默认行数（用户 2026-10-22 拍板"截断不合理"）；显式 &rows 仍生效 */
+  const funds = exportRows(pool, rows || (pool === 'index' ? null : S.rows));
   const label = catLabel(pool);
   const W = S.w, H = S.h, PAD = 48;
   canvas.width = W; canvas.height = H;
@@ -976,6 +983,117 @@ function drawExport(canvas, pool, sizeKey, rows){
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   };
   const right = (txt, x, y) => { ctx.textAlign = 'right'; ctx.fillText(txt, x, y); ctx.textAlign = 'left'; };
+
+  /* ---- 页脚（主路径与债指分组路径共用，v5.17 抽取） ---- */
+  function _paintFooter(){
+    const fy = H - FOOT;
+    const pTxt = '每周五 23:00 自动更新 · 完整榜单与逐期复盘随后放出';
+    ctx.font = '700 ' + (wide ? 21 : 23) + 'px sans-serif';
+    const pW = ctx.measureText(pTxt).width + 48, pH = wide ? 50 : 54;
+    const g2 = ctx.createLinearGradient(PAD, 0, PAD + pW, 0);
+    g2.addColorStop(0, '#ff8a3d'); g2.addColorStop(1, '#ff6a00');
+    ctx.fillStyle = g2; rr(PAD, fy + 8, pW, pH, pH / 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(pTxt, PAD + 24, fy + 8 + pH * 0.66);
+    ctx.fillStyle = '#ff6a00'; ctx.font = (wide ? 15 : 16) + 'px sans-serif';
+    ctx.fillText('数据基准 ' + ((D && D.asof) || '') + ' · 筛选口径见配套图卡', PAD, fy + 8 + pH + 28);
+    /* 账号标识：社媒合规口径下不写"公众号"字样，只留 @ 账号名（右对齐，同色同行） */
+    ctx.textAlign = 'right'; ctx.fillText('@' + WX_ACCOUNT, W - PAD, fy + 8 + pH + 28); ctx.textAlign = 'left';
+    ctx.fillStyle = '#b3aca2'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
+    const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
+    lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 8 + pH + 56 + i * 20));
+  }
+
+  /* ---- 债指分组绘制（v5.17，用户 2026-10-22 拍板：两组分段、组内名次连续、全量不截断） ---- */
+  function _drawIdxGrouped(){
+    const segs = ['short_bond', 'long_bond']
+      .map(g => ({title: catLabel(g) + '债指 · '
+                    + funds.filter(f => f.idx_group === g).length + ' 只',
+                  list: funds.filter(f => f.idx_group === g)
+                        .sort((a, b) => (a.rank || 0) - (b.rank || 0))}))
+      .filter(s => s.list.length);
+    const titleH = wide ? 34 : 44, bandGap = wide ? 8 : 10;
+    const avail = rowsBot - rowsTop;
+    const nTotal = funds.length;
+    const nMax = Math.max.apply(null, segs.map(s => s.list.length).concat([1]));
+    const rowH = wide
+      ? Math.floor((avail - (titleH + bandGap)) / nMax)
+      : Math.floor((avail - segs.length * (titleH + bandGap)) / Math.max(nTotal, 1));
+    function seg(s, x0, w, yTop){
+      /* 组头：页面同款浅蓝底 + 左蓝条 */
+      ctx.fillStyle = '#eef3fd'; rr(x0, yTop, w, titleH, 10); ctx.fill();
+      ctx.fillStyle = '#3b6fd4'; rr(x0, yTop, 5, titleH, 3); ctx.fill();
+      ctx.fillStyle = '#1d3f7a'; ctx.font = '700 ' + (wide ? 15 : 17) + 'px sans-serif';
+      ctx.fillText(s.title, x0 + 15, yTop + Math.round(titleH * 0.66));
+      const top = yTop + titleH + bandGap;
+      const n = s.list.length;
+      const h = Math.max(38, rowH - 6);
+      const fName = Math.min(wide ? 22 : 26, Math.round(h * 0.42));
+      const fData = Math.max(13, Math.min(wide ? 13 : 15, Math.round(h * 0.25)));
+      const fScore = Math.min(wide ? 24 : 30, Math.round(h * 0.52));
+      const cardH = Math.max(h + 8, n * rowH - 6);
+      const nameX = x0 + 16 + (wide ? 30 : 36) + 12;
+      const xScore = x0 + w - 16;
+      ctx.fillStyle = '#ffffff'; rr(x0, top, w, cardH, 16); ctx.fill();
+      s.list.forEach((f, i) => {
+        const ry = top + i * rowH;
+        const y = ry + Math.round((rowH - h) / 2);
+        if (i < n - 1) {
+          ctx.fillStyle = '#f3efe8'; ctx.fillRect(x0 + 40, ry + rowH - 1, w - 56, 1);
+        }
+        const rk = (f.rank || i + 1);
+        const bSize = Math.min(wide ? 30 : 36, h - 12), bx = x0 + 16;
+        const by = ry + Math.round((rowH - bSize) / 2);
+        ctx.fillStyle = rk === 1 ? '#ffe3e3' : rk === 2 ? '#fff0dd' : rk === 3 ? '#fdf6d8' : '#f4f1ec';
+        rr(bx, by, bSize, bSize, 9); ctx.fill();
+        ctx.fillStyle = rk === 1 ? '#d32f2f' : rk === 2 ? '#e07b00' : rk === 3 ? '#b08900' : '#8a8175';
+        ctx.font = '700 ' + Math.round(bSize * 0.52) + 'px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(String(rk), bx + bSize / 2, by + Math.round(bSize * 0.68)); ctx.textAlign = 'left';
+        const l1 = y + Math.round(h * 0.36);
+        const scoreW = 78, gapCode = 10;
+        ctx.font = (wide ? 12 : 14) + 'px sans-serif';
+        const cw = ctx.measureText(f.code || '').width;
+        ctx.font = '600 ' + fName + 'px sans-serif';
+        const nameAvail = xScore - scoreW - gapCode - cw - 20 - nameX;
+        ctx.fillStyle = '#26231e';
+        ctx.fillText(_fitText(ctx, f.name || '', nameAvail), nameX, l1);
+        if (f.code) {
+          const nw = ctx.measureText(_fitText(ctx, f.name || '', nameAvail)).width;
+          ctx.fillStyle = '#a8a094'; ctx.font = (wide ? 12 : 14) + 'px sans-serif';
+          ctx.fillText(f.code, nameX + nw + gapCode, l1);
+        }
+        const score = f.score == null ? '—' : (+f.score).toFixed(1);
+        ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + fScore + 'px sans-serif';
+        right(score, xScore, y + Math.round(h * 0.40));
+        /* 数据行：债指口径不画夏普（评估卡无夏普项）；宽图列窄用短标签 */
+        const l2 = y + Math.round(h * 0.86);
+        const m = (f.metrics || {});
+        const pct = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
+        let x = nameX;
+        const seg2 = (lb, val, color, fnt) => {
+          ctx.font = (fnt || fData) + 'px sans-serif';
+          ctx.fillStyle = '#a8a094'; ctx.fillText(lb, x, l2);
+          x += ctx.measureText(lb).width + 5;
+          ctx.fillStyle = color; ctx.fillText(val, x, l2);
+          x += ctx.measureText(val).width + 14;
+        };
+        seg2(wide ? '近1年 ' : '近一年收益 ', pct(m.ret_1y), '#e53935');
+        seg2('·', '', '#ddd'); x += wide ? 4 : 12;
+        seg2(wide ? '近5年 ' : '近五年年化 ', pct(m.ret_5y), '#e53935');
+        seg2('·', '', '#ddd'); x += wide ? 4 : 12;
+        seg2(wide ? '回撤 ' : '近五年最大回撤 ', pct(m.mdd_5y), '#17803d');
+      });
+      return top + cardH;
+    }
+    if (wide) {
+      const gap = 20, colW = Math.floor((W - PAD * 2 - gap) / 2);
+      segs.forEach((s, i) => seg(s, PAD + i * (colW + gap), colW, rowsTop));
+    } else {
+      let y = rowsTop;
+      segs.forEach(s => { y = seg(s, PAD, W - PAD * 2, y) + 10; });
+    }
+    _paintFooter();
+    return {width: W, height: H, rows: nTotal, rowH: rowH};
+  }
 
   // ---- 背景：暖米色 ----
   ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
@@ -1000,6 +1118,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   // ---- 榜单白卡：双层行体（主角行 + 数据行），标签内联故无列头 ----
   const FOOT = Math.round(H * (wide ? 0.21 : 0.14));
   const rowsBot = H - FOOT - 8;
+  if (pool === 'index') return _drawIdxGrouped();   /* v5.17 债指分组绘制（两组分段·全量不截断） */
   const rowH = funds.length ? Math.floor((rowsBot - rowsTop) / funds.length) : rowsBot - rowsTop;
   const h = Math.max(38, rowH - 6);
   const fName = Math.min(wide ? 22 : 26, Math.round(h * 0.42));   // 主角行：基金名
@@ -1079,22 +1198,7 @@ function drawExport(canvas, pool, sizeKey, rows){
     }
   });
 
-  // ---- 页脚：橙色 CTA 药丸（公众号）+ 仓库链接 + 免责声明 ----
-  const fy = H - FOOT;
-  const pTxt = '每周五 23:00 自动更新 · 完整榜单与逐期复盘随后放出';
-  ctx.font = '700 ' + (wide ? 21 : 23) + 'px sans-serif';
-  const pW = ctx.measureText(pTxt).width + 48, pH = wide ? 50 : 54;
-  const g2 = ctx.createLinearGradient(PAD, 0, PAD + pW, 0);
-  g2.addColorStop(0, '#ff8a3d'); g2.addColorStop(1, '#ff6a00');
-  ctx.fillStyle = g2; rr(PAD, fy + 8, pW, pH, pH / 2); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.fillText(pTxt, PAD + 24, fy + 8 + pH * 0.66);
-  ctx.fillStyle = '#ff6a00'; ctx.font = (wide ? 15 : 16) + 'px sans-serif';
-  ctx.fillText('数据基准 ' + ((D && D.asof) || '') + ' · 筛选口径见配套图卡', PAD, fy + 8 + pH + 28);
-  /* 账号标识：社媒合规口径下不写"公众号"字样，只留 @ 账号名（右对齐，同色同行） */
-  ctx.textAlign = 'right'; ctx.fillText('@' + WX_ACCOUNT, W - PAD, fy + 8 + pH + 28); ctx.textAlign = 'left';
-  ctx.fillStyle = '#b3aca2'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
-  const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
-  lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 8 + pH + 56 + i * 20));
+  _paintFooter();
   return {width: W, height: H, rows: funds.length, rowH: rowH};
 }
 function exportDownload(canvas, pool, sizeKey){
@@ -1150,7 +1254,9 @@ function initExport(){
     const info = drawExport(cv, pool, sizeKey, rows);
     title.textContent = nameOf(pool) + '基金周榜 · 社媒导出'
       + (pools.length > 1 ? '（共 ' + pools.length + ' 个分类，页签切换）' : '');
-    hint.textContent = EXPORT_SIZES[sizeKey].label + ' · ' + info.rows + ' 行 · 数据基准 '
+    hint.textContent = (pool === 'index'
+      ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '全量分组')   /* v5.17 债指不分 TOP 截断 */
+      : EXPORT_SIZES[sizeKey].label) + ' · ' + info.rows + ' 行 · 数据基准 '
       + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）'
       + (pools.length > 1 ? '；「下载全部」逐池出图，浏览器可能询问是否允许多文件下载' : '');
     wrap.querySelectorAll('button[data-size]').forEach(b =>
