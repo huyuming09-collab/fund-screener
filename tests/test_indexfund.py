@@ -20,6 +20,7 @@ from fundscorer.indexfund import (index_family, index_id, interleave,
 from fundscorer.screen import base_name, screen_candidates
 from fundscorer.scorer import (
     EXCLUDED_POOL,
+    anchor_index_scores,
     classify,
     index_pool,
     score_index_pool,
@@ -685,11 +686,11 @@ class TestIndexCardSameScaleV514:
         assert r2["score"] == pytest.approx(r2["raw_score"] * 100 / 95.0, abs=0.05)
 
 
-# ============================================================ v5.15 经理块基线（docs/17 §11）
-class TestIdxMgrBaselineV515:
-    """v5.15（用户 2026-10-21 拍板「业绩差不多卡片分数也要差不多」）：指数卡总分 +
-    经理块基线（同画像主动候选分数带中位对齐；池内中位、夹 0~30、整池常量平移
-    → 排序与分差不变）；basis 无分数 → 不加，行为回 v5.14。"""
+# ============================================ v5.18 同画像逐只锚定（docs/17 §11/§13）
+class TestIdxAnchorV518:
+    """v5.18（用户 2026-10-22 复核「指数和对应主动池分数不太可比」）：经理块对齐从
+    v5.15 整池常数改**逐只锚定**——锚定分 = 自己同画像主动中位 m_i +（卡分 − 组卡分
+    中位）；同画像=同分段、个体不随权重表漂移；basis 无分数 → 不锚定，行为回 v5.14。"""
 
     @staticmethod
     def _basis(with_score=True):
@@ -706,29 +707,43 @@ class TestIdxMgrBaselineV515:
             out.append(b)
         return out
 
-    def test_baseline_constant_shift_keeps_order_and_gap(self):
+    def test_scorer_records_lookalike_only(self):
+        # v5.18：scorer 只记录同画像中位 m_i（锚定在榜单层 anchor_index_scores）
         base = _card_records(1, "存单")[0]
         recs = [{**base, "code": "lo", "ret_3y": 0.011}, {**base, "code": "hi", "ret_3y": 0.028}]
-        with_b = {r["code"]: r for r in score_index_pool(copy.deepcopy(recs),
-                                                         basis=self._basis(True))}
+        for c, r in ((c, r) for c, r in
+                     ((x["code"], x) for x in score_index_pool(copy.deepcopy(recs),
+                                                               basis=self._basis(True)))):
+            assert r["idx_lookalike_med"] is not None
+            assert "idx_mgr_base" not in r["score_detail"]
+            assert r["score"] == r["raw_score"]
         nob = {r["code"]: r for r in score_index_pool(copy.deepcopy(recs),
                                                       basis=self._basis(False))}
-        d_lo = with_b["lo"]["score"] - nob["lo"]["score"]
-        d_hi = with_b["hi"]["score"] - nob["hi"]["score"]
-        assert 0 < d_lo <= 30
-        assert d_lo == pytest.approx(d_hi, abs=0.01)               # 整池常量平移
-        assert with_b["hi"]["score"] - with_b["lo"]["score"] == pytest.approx(
-            nob["hi"]["score"] - nob["lo"]["score"], abs=0.01)     # 组内分差保留
+        assert "idx_lookalike_med" not in nob["lo"]          # basis 缺分数 → 不产 m_i
 
-    def test_baseline_detail_contract(self):
-        base = _card_records(1, "存单")[0]
-        r = score_index_pool([{**base, "code": "x1", "ret_3y": 0.015}],
-                             basis=self._basis(True))[0]
-        assert "idx_mgr_base" in r["score_detail"]
-        assert r["sub_scores"]["idx_mgr_base"] == 100.0
-        assert sum(r["score_detail"].values()) == pytest.approx(r["raw_score"], abs=0.05)
-        assert r["score"] == pytest.approx(r["raw_score"] * 100 / r["earned_weight"],
-                                           abs=0.03)
+    def test_anchor_band_and_contracts(self):
+        # 锚定公式：锚定分 = m_i +（卡分 − 组中位）；负贡献合法；缺 m_i 不动；夹 [0,100]
+        rows = [
+            {"code": "a", "score": 67.30, "raw_score": 67.30, "earned_weight": 100.0,
+             "idx_lookalike_med": 78.13, "score_detail": {"ret_3y": 67.30}, "sub_scores": {}},
+            {"code": "b", "score": 46.95, "raw_score": 46.95, "earned_weight": 100.0,
+             "idx_lookalike_med": 46.11, "score_detail": {"ret_3y": 46.95}, "sub_scores": {}},
+            {"code": "c", "score": 55.08, "raw_score": 55.08, "earned_weight": 100.0,
+             "score_detail": {"ret_3y": 55.08}, "sub_scores": {}},      # 缺 m_i → 不动
+        ]
+        med = anchor_index_scores(rows)
+        assert med == pytest.approx(55.08)                    # 组中位 = b/c 之间
+        a, b, c = rows
+        assert a["score"] == pytest.approx(78.13 + (67.30 - 55.08), abs=0.05)
+        assert b["score"] == pytest.approx(46.11 + (46.95 - 55.08), abs=0.05)   # 贡献为负
+        assert c["score"] == pytest.approx(55.08, abs=0.001)  # 缺 m_i 原样
+        for r in (a, b):
+            assert sum(r["score_detail"].values()) == pytest.approx(r["raw_score"], abs=0.05)
+            assert r["sub_scores"]["idx_mgr_base"] == 100.0
+        hi = {"code": "h", "score": 99.0, "raw_score": 99.0, "earned_weight": 100.0,
+              "idx_lookalike_med": 98.0, "score_detail": {}, "sub_scores": {}}
+        anchor_index_scores([hi])
+        assert hi["score"] <= 100.0                           # 夹顶保契约
 
     def test_no_score_in_basis_skips_baseline(self):
         base = _card_records(1, "存单")[0]

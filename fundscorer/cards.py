@@ -239,6 +239,7 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
             "scale_sum": _r(row["scale_sum"], 2),
         },
         "score_detail": {k: _r(v, 3) for k, v in (rec.get("score_detail") or {}).items()},
+
         "sub_scores": {k: _r(v, 1) for k, v in (rec.get("sub_scores") or {}).items()},
         # 池内对比复算用：Σ score_detail = raw_score；score = raw_score × 100 / earned_weight
         "raw_score": _r(rec.get("raw_score"), 2),
@@ -299,8 +300,12 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
     pools = {}
     for pid, st in (pool_stats or {}).items():
         pools[pid] = dict(st)
-        pools[pid]["weights"] = C.POOL_WEIGHTS.get(pid)
-        pools[pid]["weight_groups"] = C.WEIGHT_GROUPS.get(pid)
+        # v5.18：债指评估卡权重/分组入 payload（对比表与复制 TSV 的分项得分）；
+        # idx_mgr_base 权重 0 = 非配置因子，仅作锚定贡献展示
+        pools[pid]["weights"] = (dict(C.INDEX["card_weights"], idx_mgr_base=0.0)
+                                 if pid == "index" else C.POOL_WEIGHTS.get(pid))
+        pools[pid]["weight_groups"] = (C.INDEX["weight_groups"]
+                                       if pid == "index" else C.WEIGHT_GROUPS.get(pid))
         pools[pid]["pool_version"] = C.POOL_VERSIONS.get(pid)   # 池规则版本（docs/15）
     return {
         "model_version": C.MODEL_VERSION,

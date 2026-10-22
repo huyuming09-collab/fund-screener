@@ -223,9 +223,12 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     const segIx = document.getElementById('list').innerHTML
       .split('<div class="fundcard"').find(s=>s.includes(ix.code)) || '';
     chk('指数卡片显示"指数"徽标', segIx.includes('rk idx') && segIx.includes('>指数<'));
+    // v5.18：债指页签带「测试中」标识（用户 2026-10-22 拍板）
+    chk('债指页签带"测试中"标识', document.getElementById('tabs').innerHTML.includes('测试中'));
     // v5.12 单列债指（docs/17 §9）：卡脚 = 单列榜口径（旧"穿插评估"文案已随结构拍板废弃）
+    // v5.18：卡脚口径句「经理块基线」→「同画像锚定」（逐只锚定，docs/17 §13）
     chk('指数卡片不显示经理从业、改显示单列评估口径',
-        segIx.includes('债指单列榜') && segIx.includes('经理块基线')
+        segIx.includes('债指单列榜') && segIx.includes('同画像锚定')
         && !segIx.includes('经理从业'));
     const ac = actAll.find(f=>f.category===ix.category);
     if (ac) {
@@ -241,9 +244,10 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
         && dbI.includes('指数族 / 久期段') && dbI.includes('公司非货规模'));
     // 断言用 <h3> 锚定：裸串会匹配到 HTML 注释（<!-- 评分明细… -->）
     // v5.12：评分明细 = 指数评估卡分项贡献（merged 回退路径的插值锚点渲染休眠）
+    // v5.18：明细提示行「经理块基线」→「同画像锚定」（逐只锚定，docs/17 §13）
     chk('指数详情"评分明细"展示评估卡分项贡献而非插值锚点',
         dbI.includes('<h3>评分明细') && !dbI.includes('<h3>评分依据')
-        && dbI.includes('指数评估卡 · 同尺贡献分+经理块基线') && dbI.includes('总费率')
+        && dbI.includes('指数评估卡 · 同尺贡献分+同画像锚定') && dbI.includes('总费率')
         && !dbI.includes('下邻锚点') && !dbI.includes('线性插值得分'));
     if (ac) {
       openDetail(ac.code);
@@ -296,6 +300,20 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('指数卡显示"加入对比"按钮',
         (listIx.split('<div class="fundcard"').find(s=>s.includes(ixWithPeers.code)) || '')
           .includes('class="pick"'));
+    // v5.18：债指对比含分项得分（评估卡权重/分组入 payload）+ 经理行换指数口径
+    if (idxAll.length >= 2) {
+      const keepCmp = CMP.slice(); CMP = []; renderPick();
+      pickTgl(idxAll[0].code); pickTgl(idxAll[1].code);
+      openCmp();
+      const cbi = document.getElementById('cmp-body').innerHTML;
+      chk('债指对比表含分项得分（收益/风险/费率/规模/锚定）',
+          cbi.includes('评分明细') && cbi.includes('近3年年化') && cbi.includes('近3年最大回撤')
+          && cbi.includes('综合费率') && cbi.includes('同画像锚定'));
+      chk('债指对比经理行换指数族·久期段（无经理从业）',
+          cbi.includes('指数族·久期段') && !cbi.includes('>经理从业<'));
+      if (typeof closeCmp === 'function') closeCmp();
+      CMP = keepCmp; renderPick();
+    }
   }
   switchTab('short_bond');
   chk('未知分类切换被忽略', (switchTab('nonexistent_cat'), ACTIVE==='short_bond'));

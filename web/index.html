@@ -345,7 +345,7 @@ function renderTabs(active){
   $('tabs').innerHTML = D.categories.filter(c=>!(c&&c.hidden)).map(c =>
     `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
       ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast(\'该分类暂未开放\')"'}>
-      ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
+      ${c.name}${c.id==='index'?'<span class="soon">测试中</span>':''}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
   ).join('');
 }
 function switchTab(id){
@@ -365,7 +365,8 @@ const DIM_LABELS = {
   q_excess_20q:'超额胜率(20季)', q_win_20q:'20季胜率', lvi_5y:'LVI(5年)', lvi_3y:'LVI(3年)',
   winrate_m_5y:'月度胜率(5年)', rank_stab:'排名稳定性', mgr_tenure:'现任任期', mgr_career:'经理从业年限',
   mgr_products_ann:'经理全产品年化', age:'基金年龄', ms_rating:'晨星评级', inst_ratio:'机构持有占比',
-  fund_scale:'合并规模', company_scale:'公司非货规模', calmar_5y:'卡玛比(5年)', sharpe_5y:'夏普(5年)'
+  fund_scale:'合并规模', company_scale:'公司非货规模', calmar_5y:'卡玛比(5年)', sharpe_5y:'夏普(5年)',
+  fee_total:'综合费率', scale:'合并规模', idx_mgr_base:'同画像锚定'
 };
 /* v5.5 风格标签 → 徽标配色类（标签由服务端按池内候选中位计算，此处仅展示） */
 const STYLE_CLS = {'进取型':'aggr','稳健型':'steady','防守型':'defen','震荡型':'wave'};
@@ -382,6 +383,7 @@ const RAW_OF = {
   repair_5y: f => f.metrics.repair_days == null ? '—' : f.metrics.repair_days + '天',
   ret_1y: f => pct(f.metrics.ret_1y, 2), ret_3y: f => pct(f.metrics.ret_3y, 2), ret_5y: f => pct(f.metrics.ret_5y, 2),
   fee: f => pct(f.fund_info.fee_total, 2),
+  fee_total: f => pct(f.fund_info.fee_total, 2), scale: f => yi(f.fund_info.scale_yi),
   lvi_5y: f => num(f.metrics.lvi_5y, 2), lvi_3y: f => num(f.metrics.lvi_3y, 2),
   winrate_m_5y: f => pct(f.metrics.winrate_m_5y, 1), q_win_20q: f => pct(f.metrics.q_win_20q, 1),
   q_excess_20q: f => pct(f.metrics.q_excess_20q, 1),
@@ -491,10 +493,10 @@ function openCmp(){
           const cd = (MGR3KEYS.indexOf(k) >= 0 && coefOf(f) > 1) ? coefOf(f) : 1;
           const det2 = det == null ? det : det / cd;
           const bar = w > 0 ? '<div class="bar"><i style="width:' + Math.min(100, (det2 || 0) / w * 100).toFixed(0) + '%"></i></div>' : '';
-          return (det2 == null ? '—' : det2.toFixed(2)) + ' / ' + w.toFixed(2) + bar
+          return (det2 == null ? '—' : det2.toFixed(2)) + ' / ' + (w > 0 ? w.toFixed(2) : '—') + bar
             + '<span class="raw">' + (RAW_OF[k] ? RAW_OF[k](f) + (cd > 1 ? ' 共管×' + cd : '') : '分 ' + Math.min(100, sc)) + '</span>';
         });
-        H += row((DIM_LABELS[k] || k) + '<span class="w" style="color:var(--sub);font-size:10px"> ' + w.toFixed(2) + '</span>',
+        H += row((DIM_LABELS[k] || k) + (w > 0 ? '<span class="w" style="color:var(--sub);font-size:10px"> ' + w.toFixed(2) + '</span>' : ''),
                  cells, bestOf(fs.map(f => (f.score_detail || {})[k])));
       });
     });
@@ -568,7 +570,8 @@ function cmpTSV(fs, W, totW){
       : (f.earned_weight / totW * 100).toFixed(0) + '%')).join('\t'));
     (poolGroupsOf(fs[0].category || D.category) || []).forEach(function(g){
       L.push('');
-      L.push(['【' + g[0] + '】权重 ' + g[1].reduce((s, k) => s + (W[k] || 0), 0).toFixed(2)].join(''));
+      const gw = g[1].reduce((s, k) => s + (W[k] || 0), 0);
+      L.push(['【' + g[0] + '】' + (gw > 0 ? '权重 ' + gw.toFixed(2) : '')].join(''));
       g[1].filter(k => W[k] != null).forEach(function(k){
         L.push([DIM_LABELS[k] || k + '(' + Number(W[k]).toFixed(2) + ')'].concat(fs.map(function(f){
           const det = (f.score_detail || {})[k], sc = (f.sub_scores || {})[k];
@@ -646,7 +649,7 @@ function renderList(){
       <div class="fc-foot">
         <span>合并规模 ${yi(f.fund_info.scale_yi)}</span><span>·</span>
         ${f.is_index
-          ? '<span class="idx-foot">债指单列榜 · 评分=业绩画像分+池内经理块基线（与同画像主动≈同分）</span>'
+          ? '<span class="idx-foot">债指单列榜 · 评分=业绩画像分+同画像锚定（与同画像主动≈同分）</span>'
           : '<span>经理从业 '+(f.manager.career_years==null?'—':f.manager.career_years+'年')+'</span>'}
         ${(f.manager&&f.manager.seats>=2)?`<span class="seats" title="该经理当期上榜占席数（集中度提示，不扣分）">占席×${f.manager.seats}</span>`:''}
         <span>·</span>
@@ -785,7 +788,7 @@ function bodyHTML(f){
   <!-- 基金经理；债指单列（v5.12）不看经理业绩 → 换成跟踪/费率/公司规模口径 -->
   ${f.is_index ? `
   <div class="sec"><h3>指数评估口径<span class="hint">不看基金经理业绩</span></h3>
-    <div class="mgr-sub">债指单列榜：按跟踪标的、业绩、费率与公司规模评估（指数评估卡，v5.15：分位=本池主动候选同尺，总分含池内经理块基线——主动候选带经理块、指数无经理可评，基线对齐后同画像≈同分）。
+    <div class="mgr-sub">债指单列榜：按跟踪标的、业绩、费率与公司规模评估（指数评估卡，v5.18：分位=本池主动候选同尺，总分按同画像逐只锚定——主动候选带经理块、指数无经理可评，锚定后同画像≈同分）。
       同一跟踪指数只展示 1 只——优先费率低、公司非货规模大，其次跟踪偏离小（同组中位收益代理）。
       同指数其他优秀基金见本页下方。</div>
     <div class="kv"><span class="k">指数族 / 久期段</span><span>${fi.idx_fam||'—'} / ${fi.idx_dur||'—'}</span></div>
@@ -824,7 +827,7 @@ function bodyHTML(f){
 
   <!-- 评分明细：主动 = v5.2 分项贡献分；债指单列（v5.12）= 指数评估卡分项贡献（族内相对）。
        （merged 回退路径的"业绩位置插值"渲染随 display="merged" 再接，docs/17 §8 甲案休眠） -->
-  <div class="sec"><h3>评分明细<span class="hint">${f.is_index ? '指数评估卡 · 同尺贡献分+经理块基线' : 'v5.2 · 分项贡献分'}</span></h3>
+  <div class="sec"><h3>评分明细<span class="hint">${f.is_index ? '指数评估卡 · 同尺贡献分+同画像锚定' : 'v5.2 · 分项贡献分'}</span></h3>
     ${scoreRows.map(([k,v])=>`
       <div class="bar-row"><div class="bl">${LABELS[k]||k}</div>
         <div class="bar-bg"><div class="bar" style="width:${Math.min(100, v/w*100).toFixed(1)}%"></div></div>
@@ -857,7 +860,7 @@ const LABELS = {
   fee:'费率（A类）', ms_rating:'晨星评级', inst_ratio:'机构占比', fund_scale:'基金合并规模',
   age:'成立年限', company_scale:'公司规模',
   /* v5.12 指数评估卡因子（INDEX.card_weights，与主动因子同用 bars 渲染） */
-  fee_total:'总费率', scale:'基金规模', idx_mgr_base:'经理块基线（同画像主动对齐）',
+  fee_total:'总费率', scale:'基金规模', idx_mgr_base:'同画像锚定（对齐同画像主动中位）',
 };
 
 /* ============ 走势图 ============ */
