@@ -114,7 +114,7 @@ class TestBuildDigest:
 class TestMain:
     def test_writes_to_local_archive(self, tmp_path):
         payload = tmp_path / "top20.json"
-        payload.write_text(json.dumps(_payload(), ensure_ascii=False))
+        payload.write_text(json.dumps(_payload(), ensure_ascii=False), encoding="utf-8")
         out = tmp_path / "榜单"
         rc = CD.main(["--payload", str(payload), "--out", str(out), "--week", "2026-W42",
                       "--watch", "006980"])
@@ -124,7 +124,7 @@ class TestMain:
         assert (week_dir / "小红书骨架.md").exists()
         assert (week_dir / "公众号骨架.md").exists()
         assert (week_dir / "数据切片.json").exists()
-        assert DISCLAIMER in (week_dir / "公众号骨架.md").read_text()
+        assert DISCLAIMER in (week_dir / "公众号骨架.md").read_text(encoding="utf-8")
 
     def test_missing_payload_returns_error(self, tmp_path):
         rc = CD.main(["--payload", str(tmp_path / "nope.json"), "--out", str(tmp_path)])
@@ -132,7 +132,7 @@ class TestMain:
 
     def test_week_defaults_to_asof_iso_week(self, tmp_path):
         payload = tmp_path / "top20.json"
-        payload.write_text(json.dumps(_payload(), ensure_ascii=False))
+        payload.write_text(json.dumps(_payload(), ensure_ascii=False), encoding="utf-8")
         out = tmp_path / "榜单"
         assert CD.main(["--payload", str(payload), "--out", str(out)]) == 0
         # 2026-10-17 落在 2026 年第 42 周

@@ -9,10 +9,15 @@ cd "$(dirname "$0")/.."
 
 LOG=data/pipeline_cron.log
 echo "[$(date '+%F %T')] === 周更推送脚本开始 ===" >> "$LOG"
-.venv/bin/python -m fundscorer.pipeline >> "$LOG" 2>&1
+
+# 解释器选择：Linux/macOS 用 .venv/bin/python；Windows(venv 在 Git Bash 下) 回退 .venv/Scripts/python
+PY=.venv/bin/python
+[ -x "$PY" ] || PY=.venv/Scripts/python
+
+"$PY" -m fundscorer.pipeline >> "$LOG" 2>&1
 
 # 运营素材包（小红书/公众号取材）：写进 gitignore 的 运营/ 下；失败只记警告
-.venv/bin/python scripts/content_digest.py >> "$LOG" 2>&1 \
+"$PY" scripts/content_digest.py >> "$LOG" 2>&1 \
   || echo "[$(date '+%F %T')] [警告] 运营素材包生成失败（不影响周更推送）" >> "$LOG"
 
 # 防误入库守卫：暂存区任何路径命中「运营/」即中止 —— 运营归档永不 push

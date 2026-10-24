@@ -513,7 +513,7 @@ def main(argv=None) -> int:
         return 1
 
     snap_path = Path(args.snapshot) if args.snapshot else ROOT / cfg["score_snapshot"]
-    snap = json.loads(snap_path.read_text())
+    snap = json.loads(snap_path.read_text(encoding="utf-8"))
     if snap.get("model_version") != C.MODEL_VERSION:
         print(f"[警告] 快照模型版本 {snap.get('model_version')} ≠ 当前 {C.MODEL_VERSION}，"
               "建议先重跑 rank 刷新快照")

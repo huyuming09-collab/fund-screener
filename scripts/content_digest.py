@@ -273,7 +273,7 @@ def main(argv=None) -> int:
         print(f"[错误] 找不到 payload：{payload_path}（先跑周更管线）")
         return 1
     try:
-        payload = json.loads(payload_path.read_text())
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         print(f"[错误] payload 解析失败：{e}")
         return 1
