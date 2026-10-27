@@ -26,6 +26,8 @@
        P2 近 5 个完整自然年收益分位的中位数 ≥ 55%（可比完整年 ≥ 4）
      百分位基准均为短债合并全池（含未过硬条件者），与干跑验证一致。
   4. 排序：按 v5.2 分数降序（A 类份额优先，无 A 类用代表份额）。
+     v5.14（用户 2026-10-27 拍板）：A 类确证全部暂停申购时，改选同基金
+     "确证可申购且费率最低"的其他份额上卡片（评分费率随之；全停则回退 A 类）。
      - 手动模式：读 data/full_scores.json 快照（--snapshot 可换）；
      - 周更管线（fundscorer.pipeline）：筛后即时评分（score_pool score_only=候选），
        分位基准仍是短债全池，分数与全市场快照逐位一致，再按 config.TOP_N 截取前 N。
@@ -50,6 +52,7 @@ import numpy as np
 import pandas as pd
 
 from . import config as C
+from . import data as D
 from . import indexfund as IF
 from . import metrics
 
@@ -234,13 +237,40 @@ def _qualify_flags(pool: pd.DataFrame, yearly: dict) -> pd.Series:
 
 
 def _pick_rank_share(classes: list[tuple[str, str]], rep_code: str,
-                     snapshot: dict, prefer_letter: str = "A") -> tuple[str | None, str]:
+                     snapshot: dict, prefer_letter: str = "A",
+                     sgzt: dict | None = None) -> tuple[str | None, str]:
     """排序用份额：优先指定字母份额（默认 A，多取时选分高者），否则代表份额，
-    再否则任一有分数的份额。返回 (code, 来源说明)。"""
+    再否则任一有分数的份额。返回 (code, 来源说明)。
+
+    v5.14（用户 2026-10-27 拍板）：A 类份额确证全部暂停申购时，改选同基金
+    "确证可申购且费率最低（fee_total）"的其他份额上卡片——所选份额的分数自带其
+    费率，评分口径随之；其他份额申购状态缺失（未知）不参与切换；全部暂停或无可
+    切换候选 → 维持 A 类原口径。状态来源：快照记录的 purchase_status（周更管线
+    注入），sgzt 为可选补充（手动模式读缓存，缺省不联网）。
+    """
+    sgzt = sgzt or {}
+
+    def _status(code: str) -> str | None:
+        return snapshot.get(code, {}).get("purchase_status") or sgzt.get(code)
+
     pref = [c for c, n in classes
             if share_letter(n) == prefer_letter and c in snapshot]
     if pref:
-        return max(pref, key=lambda c: snapshot[c].get("score_capped") or -1), "A类"
+        a_buy = [c for c in pref if not D.sgzt_suspended(_status(c))]
+        if a_buy:
+            return (max(a_buy, key=lambda c: snapshot[c].get("score_capped") or -1),
+                    "A类")
+        alts = [c for c, _ in classes
+                if c not in pref and c in snapshot
+                and snapshot[c].get("score_capped") is not None
+                and _status(c) is not None
+                and not D.sgzt_suspended(_status(c))
+                and snapshot[c].get("fee_total") is not None]
+        if alts:
+            return (min(alts, key=lambda c: snapshot[c].get("fee_total")),
+                    "A暂停→低费份额")
+        return (max(pref, key=lambda c: snapshot[c].get("score_capped") or -1),
+                "A类")
     if rep_code in snapshot:
         return rep_code, "代表份额"
     scored = [c for c, _ in classes if c in snapshot]
@@ -391,10 +421,13 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
 
 def rank_candidates(candidates: pd.DataFrame, snapshot: dict,
                     cfg: dict | None = None,
-                    top_n: int | None = None) -> pd.DataFrame:
-    """阶段三：按 v5.2 分数排序（A 类份额优先）；top_n>0 时只保留前 N 名。
+                    top_n: int | None = None,
+                    sgzt: dict | None = None) -> pd.DataFrame:
+    """阶段三：按 v5.2 分数排序（A 类份额优先；v5.14：A 暂停申购 → 低费可申购份额）；
+    top_n>0 时只保留前 N 名。
 
     snapshot {code: 分数记录}（周更=筛后即时评分结果；手动=full_scores.json 快照）
+    sgzt    可选申购状态补充 {code: 状态文本}（快照缺 purchase_status 时使用）
     """
     cfg = dict(C.SCREEN if cfg is None else cfg)
     if candidates.empty:
@@ -403,7 +436,7 @@ def rank_candidates(candidates: pd.DataFrame, snapshot: dict,
     for _, f in candidates.iterrows():
         classes = list(zip(f["codes"], f["names"]))
         code, src = _pick_rank_share(classes, f["rep_code"], snapshot,
-                                     cfg.get("prefer_letter", "A"))
+                                     cfg.get("prefer_letter", "A"), sgzt=sgzt)
         rec = snapshot.get(code, {}) if code else {}
         share_scores = " ".join(
             f"{c}:{snapshot[c].get('score_capped'):.1f}"
@@ -518,9 +551,14 @@ def main(argv=None) -> int:
         print(f"[警告] 快照模型版本 {snap.get('model_version')} ≠ 当前 {C.MODEL_VERSION}，"
               "建议先重跑 rank 刷新快照")
     snapshot = {r["code"]: r for r in snap["results"]}
+    # v5.14：申购状态缓存（只读，缺失不联网）——A 暂停申购切换低费份额需要
+    try:
+        sgzt = D.fetch_purchase_status(sorted(snapshot), refresh=False)
+    except Exception:
+        sgzt = {}
 
     candidates, funnel = screen_candidates(records, spikes, yearly, cfg)
-    res = rank_candidates(candidates, snapshot, cfg, top_n=args.top)
+    res = rank_candidates(candidates, snapshot, cfg, top_n=args.top, sgzt=sgzt)
 
     print(f"== {cfg['pool']} 两段式筛选漏斗（快照 {snap.get('generated_at', '?')}）==")
     for k, v in funnel.items():

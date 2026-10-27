@@ -6,6 +6,7 @@ import pytest
 
 from fundscorer import config as C
 from fundscorer.screen import (
+    _pick_rank_share,
     base_name,
     complete_yearly_returns,
     composite_percentiles,
@@ -462,3 +463,83 @@ class TestFixedPlusPool:
         assert "ret_5y_max" not in cfg      # v2 删除 S8 收益上限
         # S1~S5/P1~P2 与两债池同键（结构同构）
         assert set(C.SCREENS["fixed_plus"]) >= set(C.SCREENS["short_bond"])
+
+
+class TestRankShareV514:
+    """v5.14（用户 2026-10-27 拍板）：A 类确证暂停申购 → 低费可申购份额上卡片。"""
+
+    @staticmethod
+    def snap(entries):
+        return {c: {"name": n, "score_capped": s, "fee_total": fee,
+                    "purchase_status": st}
+                for c, n, s, fee, st in entries}
+
+    def test_a_buyable_keeps_a(self):
+        classes = [("000001", "某债A"), ("000002", "某债C")]
+        snap = self.snap([("000001", "某债A", 90.0, 0.30, "开放申购"),
+                          ("000002", "某债C", 88.0, 0.20, "开放申购")])
+        assert _pick_rank_share(classes, "000001", snap, "A") == ("000001", "A类")
+
+    def test_a_suspended_picks_lowest_fee_buyable(self):
+        classes = [("000001", "某债A"), ("000002", "某债C"), ("000003", "某债D")]
+        snap = self.snap([("000001", "某债A", 90.0, 0.30, "暂停申购"),
+                          ("000002", "某债C", 88.0, 0.25, "开放申购"),
+                          ("000003", "某债D", 87.0, 0.15, "开放申购")])
+        assert _pick_rank_share(classes, "000001", snap, "A") == ("000003", "A暂停→低费份额")
+
+    def test_limited_amount_counts_buyable(self):
+        # "限大额"仍可小额申购 → 视为可申购（sgzt_suspended=False）
+        classes = [("000001", "某债A"), ("000002", "某债D")]
+        snap = self.snap([("000001", "某债A", 90.0, 0.30, "暂停申购"),
+                          ("000002", "某债D", 87.0, 0.35, "限大额")])
+        assert _pick_rank_share(classes, "000001", snap, "A") == ("000002", "A暂停→低费份额")
+
+    def test_all_suspended_falls_back_to_a(self):
+        classes = [("000001", "某债A"), ("000002", "某债C")]
+        snap = self.snap([("000001", "某债A", 90.0, 0.30, "暂停申购"),
+                          ("000002", "某债C", 88.0, 0.20, "暂停申购")])
+        assert _pick_rank_share(classes, "000001", snap, "A") == ("000001", "A类")
+
+    def test_unknown_status_does_not_switch(self):
+        # 其他份额状态未知 → 不确证可申购，不切换（宁保守不误选）
+        classes = [("000001", "某债A"), ("000002", "某债C")]
+        snap = self.snap([("000001", "某债A", 90.0, 0.30, "暂停申购"),
+                          ("000002", "某债C", 88.0, 0.20, None)])
+        assert _pick_rank_share(classes, "000001", snap, "A") == ("000001", "A类")
+
+    def test_no_a_keeps_legacy_behavior(self):
+        # 无 A 类：维持原口径（代表份额）
+        classes = [("000002", "某债C"), ("000003", "某债D")]
+        snap = self.snap([("000002", "某债C", 88.0, 0.20, "暂停申购"),
+                          ("000003", "某债D", 87.0, 0.15, "开放申购")])
+        assert _pick_rank_share(classes, "000002", snap, "A") == ("000002", "代表份额")
+
+    def test_sgzt_param_supplements_snapshot(self):
+        # 快照缺状态时，sgzt 缓存参数（手动模式）补充生效
+        classes = [("000001", "某债A"), ("000002", "某债D")]
+        snap = self.snap([("000001", "某债A", 90.0, 0.30, None),
+                          ("000002", "某债D", 87.0, 0.15, None)])
+        got = _pick_rank_share(classes, "000001", snap, "A",
+                               sgzt={"000001": "暂停申购", "000002": "开放申购"})
+        assert got == ("000002", "A暂停→低费份额")
+
+    def test_switched_share_score_used_in_rank(self):
+        # 端到端：A 暂停 → 榜上分数/名称取低费可申购份额（费率口径随之）
+        from fundscorer.screen import rank_candidates
+        cand = pd.DataFrame([{
+            "base": "某债", "rep_code": "000001", "rep_name": "某债A",
+            "src_code": "000001", "src_name": "某债A", "manager": "张三",
+            "codes": ["000001", "000003"], "names": ["某债A", "某债D"],
+            "scale_sum": 30.0, "n_classes": 2, "career": 8.0, "tenure": 2000,
+            "nav_years": 6.0, "ret_5y": 0.03, "mdd_5y": 0.004,
+            "ret_3y": 0.028, "mdd_3y": 0.003, "ret_1y": 0.02,
+            "vol_1y": 0.003, "vol_5y": 0.004,
+            "max_gain_5y": 0.001, "comp_pct": 0.8, "yearly_med": 0.7,
+        }])
+        snap = self.snap([("000001", "某债A", 90.0, 0.30, "暂停申购"),
+                          ("000003", "某债D", 87.0, 0.15, "开放申购")])
+        out = rank_candidates(cand, snap, C.SCREENS["short_bond"])
+        assert out.iloc[0]["code"] == "000003"
+        assert out.iloc[0]["name"] == "某债D"
+        assert out.iloc[0]["score"] == 87.0
+        assert out.iloc[0]["score_source"] == "A暂停→低费份额"
