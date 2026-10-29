@@ -130,20 +130,22 @@ class TestWeightsSum:
     def test_fixed_plus_sums_100(self):
         assert sum(C.FIXED_PLUS_WEIGHTS.values()) == 100
 
-    def test_fixed_plus_v58_weights(self):
-        # v5.6 结构块重排 → v5.8 微调（2026-10-20 用户拍板）：
-        # 收益↑稳健↓（风险 35→31：回撤 9/7/5、波动 10）、ret_5y 0→2（反向证据已标注）、
-        # 经理块 10→12（任期 4、从业 4）
+    def test_fixed_plus_v7_weights(self):
+        # v7.0（2026-10-29 用户拍板，docs/18）：回撤 21→14、vol 10（曲线改）、calmar 25→30、
+        # 胜率 17→0（展示保留）、经理块 12→14（4/5/5）、超额胜率 6、近1年 6、成立年限 5
         w = C.FIXED_PLUS_WEIGHTS
-        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (4, 4, 4)  # v5.16 回滚（v5.13 误降 3）
-        assert (w["mdd_1y"], w["mdd_3y"], w["mdd_5y"], w["vol_5y"]) == (9, 7, 5, 10)
+        assert (w["mgr_products_ann"], w["fund_scale"], w["mgr_career"]) == (5, 4, 5)
+        assert (w["mdd_1y"], w["mdd_3y"], w["mdd_5y"], w["vol_5y"]) == (6, 5, 3, 10)
         assert w["mgr_tenure"] == 4 and w["ret_5y"] == 2
-        assert w["calmar_5y"] == 25 and w["sharpe_5y"] == 0       # v5.16 回滚（v5.13 误升 26）
+        assert w["calmar_5y"] == 30 and w["sharpe_5y"] == 0
+        assert w["winrate_m_5y"] == 0 and w["q_win_20q"] == 0      # 仅展示
+        assert (w["q_excess_20q"], w["ret_1y"], w["age"]) == (6, 6, 5)
         assert sum(w.values()) == 100
 
     def test_team_coef_contract(self):
-        # v5.7：1/2/≥3 名满3年共管 = 1.00/1.05/1.10；经理块三键在三个池都计分
-        assert C.TEAM_COEF == {1: 1.0, 2: 1.05, 3: 1.10}
+        # v7.0：全体现任经理从业≥8年且任本基金≥3年才加成；2 人 1.03、≥3 人 1.05（旧 1.05/1.10）
+        assert C.TEAM_COEF == {1: 1.0, 2: 1.03, 3: 1.05}
+        assert C.TEAM_RULE == {"min_career_years": 8.0, "min_tenure_days": 1095, "require_all": True}
         assert set(C.MGR_BLOCK_KEYS) == {"mgr_tenure", "mgr_career", "mgr_products_ann"}
         for w in (C.FIXED_PLUS_WEIGHTS, C.PURE_BOND_WEIGHTS, C.PURE_BOND_WEIGHTS_LONG):
             assert all(k in w for k in C.MGR_BLOCK_KEYS)
@@ -196,12 +198,13 @@ class TestManagerCareerPctV513:
         old, mid = self._f(11.4, 16.7), self._f(6.4, 6.0)
         peers = [old, mid]
         out_old = _quality_scores(old, peers, "fixed_plus")
-        assert out_old["mgr_tenure"] == 100 and out_old["mgr_career"] == 100
+        # v7.0 任期细分档 12/10/8/5/3/1 → 100/97/92/82/63/30：11.4 年落 97 档（旧 10 年即满 100）
+        assert out_old["mgr_tenure"] == 97 and out_old["mgr_career"] == 100
         out_mid = _quality_scores(mid, peers, "fixed_plus")
-        assert out_mid["mgr_tenure"] == 85 and out_mid["mgr_career"] == 50   # 两人池低位=50 分位
+        assert out_mid["mgr_tenure"] == 82 and out_mid["mgr_career"] == 50   # 两人池低位=50 分位
         nine = self._f(9.0, 8.5)
         out9 = _quality_scores(nine, peers + [nine], "fixed_plus")
-        assert out9["mgr_tenure"] == 85 and out9["mgr_career"] == pytest.approx(200 / 3)
+        assert out9["mgr_tenure"] == 92 and out9["mgr_career"] == pytest.approx(200 / 3)
 
     def test_no_peer_falls_back_full(self):
         mid = self._f(6.4, 6.0)
@@ -276,11 +279,10 @@ class TestRiskRatios:
         for k in ("calmar_5y", "sharpe_5y"):
             assert C.PERCENTILE_METRICS[k] == "higher"
         # v6（docs/12，11 截面双段验证）：比率族同族择优——夏普与卡玛 ρ=0.902 冗余，
-        # 并入卡玛（卡玛为唯一代表）；v5.16（docs/15 §3）：calmar 回 25（v5.13 曾误升 26，
-        # 用户复核「4→3 平移只在短债和长债生效」），夏普仍 0
-        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] == 25
+        # 并入卡玛（卡玛为唯一代表）；v7.0（docs/18）：calmar 25→30（胜率 17 分释放后的承接），夏普仍 0
+        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] == 30
         assert C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 0
-        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] + C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 25
+        assert C.FIXED_PLUS_WEIGHTS["calmar_5y"] + C.FIXED_PLUS_WEIGHTS["sharpe_5y"] == 30
 
 
 class TestMultiManager:
@@ -361,13 +363,13 @@ class TestTeamCoef:
         peer = dict(base, code="b", mgr_team_n=1)
         return f, [f, peer]
 
-    def test_two_managers_scale_to_105(self):
+    def test_two_managers_scale_to_103(self):
         from fundscorer.scorer import _score_one
         f, peers = self._funds(2)
         _score_one(f, peers, {"mgr_tenure": 4, "fee": 6}, "short_bond", 0.05, [0.5, 0.5])
-        assert f["mgr_team_coef"] == 1.05
-        assert f["sub_scores"]["mgr_tenure"] == pytest.approx(105.0)   # 100×1.05
-        assert f["score_detail"]["mgr_tenure"] == pytest.approx(4.2)   # 4×1.05
+        assert f["mgr_team_coef"] == 1.03
+        assert f["sub_scores"]["mgr_tenure"] == pytest.approx(103.0)   # 100×1.03
+        assert f["score_detail"]["mgr_tenure"] == pytest.approx(4.12)  # 4×1.03
         assert f["raw_score"] == pytest.approx(sum(f["score_detail"].values()))
         assert f["score"] == pytest.approx(f["raw_score"] * 100 / f["earned_weight"], abs=0.02)
 
@@ -379,12 +381,41 @@ class TestTeamCoef:
         assert f["sub_scores"]["mgr_tenure"] == pytest.approx(100.0)
         assert f["score_detail"]["mgr_tenure"] == pytest.approx(4.0)
 
-    def test_team_n_over_three_caps_at_110(self):
+    def test_team_n_over_three_caps_at_105(self):
         from fundscorer.scorer import _score_one
         f, peers = self._funds(5)
         _score_one(f, peers, {"mgr_tenure": 4, "fee": 6}, "short_bond", 0.05, [0.5, 0.5])
-        assert f["mgr_team_coef"] == 1.10
-        assert f["sub_scores"]["mgr_tenure"] == pytest.approx(110.0)
+        assert f["mgr_team_coef"] == 1.05
+        assert f["sub_scores"]["mgr_tenure"] == pytest.approx(105.0)
+
+    def test_team_gate_requires_all_managers_8y(self):
+        # v7.0 契约：**全体现任经理** 从业≥8 年 且 任本基金≥3 年 才加成；任一人不达标 ⇒ 1.00
+        from fundscorer.scorer import _score_one
+
+        def mk(careers):
+            ms = [{"name": f"m{i}", "id": str(i), "start": "2018-01-01",
+                   "tenure_days": 3000 if len(careers) > 1 else 3000, "career_years": c}
+                  for i, c in enumerate(careers)]
+            return {"managers": ms}
+
+        ok = {"name": "ok", "mgr_tenure_days": 4000, "mgr_career_years": 12.0, "fee_total": 0.006,
+              "yearly": {}, "ms_rating": 5.0, "inst_ratio": 0.5, "scale_yi": 50.0,
+              "repair_5y": {"signif": False, "depth": None, "repair_days": None, "recovered": True}}
+        peer = dict(ok, code="p")
+
+        f2 = dict(ok, code="x1", **mk([9.0, 8.5]))
+        _score_one(f2, [f2, peer], {"mgr_tenure": 4, "fee": 6}, "short_bond", 0.05, [0.5, 0.5])
+        assert f2["mgr_team_coef"] == pytest.approx(1.03)
+
+        f3 = dict(ok, code="x2", **mk([11.0, 10.0, 9.0]))
+        _score_one(f3, [f3, peer], {"mgr_tenure": 4, "fee": 6}, "short_bond", 0.05, [0.5, 0.5])
+        assert f3["mgr_team_coef"] == pytest.approx(1.05)
+
+        # 一人 7.9 年（差 0.1 年）→ 全体现任经理不达标 → 不加成
+        f4 = dict(ok, code="x3", **mk([12.0, 7.9]))
+        _score_one(f4, [f4, peer], {"mgr_tenure": 4, "fee": 6}, "short_bond", 0.05, [0.5, 0.5])
+        assert f4["mgr_team_coef"] == 1.0
+        assert f4["mgr_team_all_ok"] is False
 
     def test_missing_team_n_defaults_to_one(self):
         # 旧缓存无 mgr_team_n（未刷新记录）→ 回退 1.0，不惩罚

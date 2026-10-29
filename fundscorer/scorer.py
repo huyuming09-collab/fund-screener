@@ -639,18 +639,15 @@ def _score_one(f: dict, peers: list[dict], weights: dict, pool: str,
             else:
                 top = C.FIXED_PLUS_MDD["full_mark_at"]
                 scores[k] = 100.0 if v <= top else max(0.0, 100.0 * (cap - v) / (cap - top))
-        # 固收+ 波动同样"够稳即满分"（与回撤口径一致，避免低波基金被分位压分）
-        if len(peers) >= C.RISK_THRESHOLD["min_pool"]:
-            rt = C.RISK_THRESHOLD
-            vals = [p.get("vol_5y") for p in peers if p.get("vol_5y") is not None]
-            if vals and f.get("vol_5y") is not None:
-                mu = float(np.mean(vals))
-                if mu > 0:
-                    full_at, zero_at = mu * rt["full_at_mult"], mu * rt["zero_at_mult"]
-                    v = f["vol_5y"]
-                    scores["vol_5y"] = (100.0 if v <= full_at else
-                                        0.0 if v >= zero_at else
-                                        100.0 * (zero_at - v) / (zero_at - full_at))
+        # v7.0 波动同构分档（docs/18 §3）：3% 满分、8% 归零（旧口径 mean×1.5≈6.3%，
+        # 97% 候选恒 100 分，10 分实际未参与排序）
+        if f.get("vol_5y") is not None:
+            full_at = C.FIXED_PLUS_VOL["full_at"]
+            zero_at = C.FIXED_PLUS_VOL["zero_at"]
+            v = f["vol_5y"]
+            scores["vol_5y"] = (100.0 if v <= full_at else
+                                0.0 if v >= zero_at else
+                                100.0 * (zero_at - v) / (zero_at - full_at))
 
     # 纯债 回撤/波动"门槛给满分"——够稳即满分，超出线性扣分（用户口径，替代纯分位）
     if pool in ("short_bond", "long_bond") and len(peers) >= C.RISK_THRESHOLD["min_pool"]:
@@ -680,10 +677,24 @@ def _score_one(f: dict, peers: list[dict], weights: dict, pool: str,
     scores.update(q)
 
     # ---- 总分
-    # 共管团队系数（v5.7，直觉规则 docs/12 §15）：经理块子项分 ×系数（≥3 名满3年共管
-    # 封顶 1.10）。子项分与贡献同步放大 → 校验行 Σ贡献×100÷载分=评分 恒成立。
-    team_n = int(f.get("mgr_team_n") or 0)
-    coef = C.TEAM_COEF.get(min(team_n, 3), C.TEAM_COEF[1])
+    # 团队系数（v7.0，docs/18 §5）：**全体现任经理**各自 从业≥8 年 且 任本基金≥3 年 才加成，
+    # 任一不达标 ⇒ 1.00；人数 2→1.03、≥3→1.05（旧版按人数 1.05/1.10，无门槛）。
+    # 从 f["managers"] 现算，不依赖缓存里的 mgr_team_n（缓存是旧口径）。
+    _rule = getattr(C, "TEAM_RULE", None) or {}
+    _ms = f.get("managers") or []
+    if _ms:
+        _ok = [m for m in _ms
+               if (m.get("career_years") or 0) >= float(_rule.get("min_career_years", 8.0))
+               and (m.get("tenure_days") or 0) >= int(_rule.get("min_tenure_days", 1095))]
+        team_n = len(_ok)
+        all_ok = len(_ok) == len(_ms)
+    else:
+        team_n = int(f.get("mgr_team_n") or 0)
+        all_ok = team_n >= 1
+    coef = (C.TEAM_COEF.get(min(team_n, 3), C.TEAM_COEF[1])
+            if (team_n >= 2 and all_ok) else 1.0)
+    f["mgr_team_n"] = team_n
+    f["mgr_team_all_ok"] = bool(all_ok)
     f["mgr_team_coef"] = coef
     total, detail = 0.0, {}
     for k, w in weights.items():
