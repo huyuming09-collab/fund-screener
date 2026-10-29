@@ -38,7 +38,7 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 REFERER = "https://danjuanfunds.com/djmodule/value-center"
 BASE = "https://danjuanfunds.com/djapi/index_eva/"
 
-GROUP_ORDER = ["宽基", "行业", "策略", "海外"]
+GROUP_ORDER = ["宽基", "行业", "海外"]
 
 
 # ---------------------------------------------------------------- 1. 指数目录（63）
@@ -187,8 +187,66 @@ CATALOG = [
          ["国证基本面120指数", "基本面120指数", "基本面120"], _WHY_DIV),
     _cat("CSI930782", "500低波", "策略", "策略", "pb",
          ["中证500行业中性低波动指数", "中证500低波动指数", "500低波动指数", "500低波"], _WHY_DIV),
+    # ---- v3 基础版：主流宽基/行业/海外（红利/价值/低波暂不上线，见 _DEFER）----
+    _cat("SH000510", "中证A500", "宽基", "宽基", "pe",
+         ["中证A500指数", "中证A500"], _WHY_PE),
+    _cat("SH899050", "北证50", "宽基", "宽基", "pe",
+         ["北证50成份指数", "北证50成分指数", "北证50"], _WHY_PE),
+    _cat("SH000001", "上证综指", "宽基", "宽基", "pe",
+         ["上证综合指数", "上证综指", "上证指数"], _WHY_PE),
+    _cat("SH000698", "科创100", "宽基", "宽基", "pe",
+         ["上证科创板100指数", "科创100指数", "科创100"], _WHY_GROWTH),
+    _cat("SH000699", "科创200", "宽基", "宽基", "pe",
+         ["上证科创板200指数", "科创200指数", "科创200"], _WHY_GROWTH),
+    _cat("H30184", "半导体", "行业", "行业", "pe",
+         ["中证全指半导体产品与设备指数", "中证全指半导体", "半导体产品与设备指数"], _WHY_GROWTH),
+    _cat("CSI931151", "光伏产业", "行业", "行业", "pe",
+         ["中证光伏产业指数", "光伏产业指数"], _WHY_GROWTH),
+    _cat("SZ399976", "新能源汽车", "行业", "行业", "pe",
+         ["中证新能源汽车指数", "中证新能源汽车", "新能源汽车指数"], _WHY_GROWTH),
+    _cat("CSI930713", "人工智能", "行业", "行业", "pe",
+         ["中证人工智能主题指数", "中证人工智能主题", "人工智能主题指数"], _WHY_GROWTH),
+    _cat("H30590", "机器人", "行业", "行业", "pe",
+         ["中证机器人指数", "机器人指数"], _WHY_GROWTH),
+    _cat("SZ399965", "800地产", "行业", "行业", "pb",
+         ["中证800地产指数", "800地产指数", "800地产"], _WHY_PB),
 ]
 
+CATALOG_BY_CODE = {c["code"]: c for c in CATALOG}
+
+# v3 基础版：页面只上“主流指数”，红利/价值/低波/基本面先不上线（后续单列）。
+_MAINSTREAM = {
+    "SH000300", "SH000016", "SH000510", "SH000905", "SH000852", "SZ399006",
+    "SH000688", "SH899050", "SH000001", "SH000698", "SH000699",
+    "SZ399997", "SH000932", "SH000991", "SZ399989", "SZ399986", "SZ399975",
+    "H30184", "CSI931151", "SZ399976", "SZ399967", "CSI930652", "CSI930713",
+    "H30590", "CSI931079", "CSI931087", "SZ399971", "SH000827",
+    "HKHSTECH", "NDX", "SP500", "HKHSI",
+}
+_DEFER = {
+    "SH000922", "SH000015", "SZ399324", "CSIH30269", "CSI931157", "CSI930740",
+    "SH000919", "SH000925", "SZ399701", "SZ399702", "CSI930782", "CSIH30094",
+    "CSPSADRP", "SPACEVCP", "SPCQVCP",
+}
+
+
+def _cs_code(code: str) -> str | None:
+    """雪球代码 → 中证官网代码；海外/港交所代码返回 None。"""
+    if re.fullmatch(r"H?\d{5,6}", str(code or "")):
+        return str(code)
+    for pre in ("CSIH", "CSI", "SH", "SZ"):
+        if code.startswith(pre) and len(code) > len(pre):
+            c = code[len(pre):]
+            return c if (c.isdigit() or (c[0] == "H" and c[1:].isdigit())) else None
+    return None
+
+
+for _c in CATALOG:
+    _c["mainstream"] = _c["code"] in _MAINSTREAM
+    _c["defer"] = _c["code"] in _DEFER
+    _c["cs"] = _cs_code(_c["code"])
+    # 行业/主题默认展示 PB（金融/周期/消费更稳），宽基/成长默认 PE
+    _c["default_metric"] = "pb" if _c.get("type") == "行业" else "pe"
 CATALOG_BY_CODE = {c["code"]: c for c in CATALOG}
 
 
@@ -469,6 +527,239 @@ def _round(v, nd):
         return None if v is None or pd.isna(v) else round(float(v), nd)
     except (TypeError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------- 4b. 中证官方 PE + 指数点位（v3 基础版）
+CS_BASE = "https://www.csindex.com.cn/csindex-home"
+CS_HEADERS = {"User-Agent": UA, "Referer": "https://www.csindex.com.cn/"}
+
+
+def _cs_json(url: str, timeout: float = 20.0) -> dict:
+    req = urllib.request.Request(url, headers=CS_HEADERS)
+    last: Exception | None = None
+    for i in range(2):
+        try:
+            return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+        except Exception as e:                     # noqa: BLE001
+            last = e
+            if i == 0:
+                time.sleep(0.8)
+    raise last  # type: ignore[misc]
+
+
+def load_cs(code: str, refresh: bool) -> dict | None:
+    """中证官网 PE(TTM) 日频 + 指数收盘日频（缓存 20h，失败沿用旧缓存）。"""
+    key = f"eqcs_v1_{code}"
+    cached = D._load_cache(key, C.EQ_INDEX["cache_hours"])
+    if cached is not None:
+        return cached
+    if not refresh:
+        try:
+            p = D._cache_path(key)
+            return pd.read_pickle(p) if p.exists() else None
+        except Exception:                          # noqa: BLE001
+            return None
+    try:
+        info = _cs_json(f"{CS_BASE}/indexInfo/index-basic-info/{code}").get("data") or {}
+        pe = _cs_json(f"{CS_BASE}/perf/indexCsiDsPe?indexCode={code}"
+                      f"&startDate=20050101&endDate=20261231").get("data") or []
+        pr = _cs_json(f"{CS_BASE}/perf/index-perf?indexCode={code}"
+                      f"&startDate=20050101&endDate=20261231").get("data") or []
+        raw = {"publish": str(info.get("publishDate") or ""),
+               "pe": [[str(x.get("tradeDate")), x.get("peg")] for x in pe
+                      if x.get("peg") is not None],
+               "close": [[str(x.get("tradeDate")), x.get("close")] for x in pr
+                         if x.get("close") is not None]}
+        if not raw["pe"] and not raw["close"]:
+            return None
+        D._save_cache(key, raw)
+        return raw
+    except Exception:                              # noqa: BLE001
+        try:
+            p = D._cache_path(key)
+            return pd.read_pickle(p) if p.exists() else None
+        except Exception:                          # noqa: BLE001
+            return None
+
+
+def _pairs_series(pairs: list) -> pd.Series:
+    if not pairs:
+        return pd.Series(dtype=float)
+    data = {}
+    for d, v in pairs:
+        try:
+            data[pd.Timestamp(str(d))] = float(v)
+        except (TypeError, ValueError):
+            continue
+    if not data:
+        return pd.Series(dtype=float)
+    s = pd.Series(data, dtype=float)
+    s = s[s > 0].sort_index()
+    return s.resample("W-FRI").last().dropna()
+
+
+def _win_stats(s: pd.Series, cur: float | None, years: float | None) -> dict | None:
+    if s is None or s.empty or cur is None:
+        return None
+    end = s.index.max()
+    w = s if years is None else s[s.index >= end - pd.DateOffset(years=int(years))]
+    if len(w) < 8:
+        return None
+    q = w.quantile([0.2, 0.4, 0.5, 0.6, 0.8]).tolist()
+    mean, std = float(w.mean()), float(w.std(ddof=0) or 0)
+    return {
+        "pct": round(float((w <= cur).mean() * 100), 2),
+        "weeks": int(len(w)),
+        "min": round(float(w.min()), 4), "max": round(float(w.max()), 4),
+        "mean": round(mean, 4), "std": round(std, 4),
+        "z": round((cur - mean) / std, 2) if std else None,
+        "q20": round(q[0], 4), "q40": round(q[1], 4), "q50": round(q[2], 4),
+        "q60": round(q[3], 4), "q80": round(q[4], 4),
+        "danger": round(q[4], 4), "median": round(q[2], 4), "opportunity": round(q[0], 4),
+        "start": w.index.min().strftime("%Y-%m-%d"),
+        "end": w.index.max().strftime("%Y-%m-%d"),
+    }
+
+
+def _monthly_pairs(s: pd.Series, points: int = 132) -> list:
+    if s is None or s.empty:
+        return []
+    g = s.groupby([s.index.year, s.index.month]).last()
+    items = list(g.items())
+    if len(items) > points:
+        items = items[-points:]
+    return [[f"{y}-{m:02d}-01", round(float(v), 4)] for (y, m), v in items]
+
+
+def _tier_of(pct: float | None) -> str | None:
+    """五档（20/40/60/80；估值分位越低越便宜）。"""
+    if pct is None:
+        return None
+    t = C.EQ_INDEX["tiers"]
+    if pct <= t["极低估"]:
+        return "极低估"
+    if pct <= t["低估"]:
+        return "低估"
+    if pct <= t["合理偏低"]:
+        return "合理偏低"
+    if pct <= t["合理偏高"]:
+        return "合理偏高"
+    return "高估"
+
+
+_ACTION = {"极低估": 4, "低估": 2, "合理偏低": 1, "合理偏高": 0.5, "高估": 0}
+
+# 无中证点位数据的指数（深交所/海外）：用对应场外基金净值做“点位代理”，只用于画图/近1年
+_CLOSE_PROXY = {"SZ399006": "110026", "HKHSTECH": "012348", "NDX": "006479",
+                "SP500": "161125", "HKHSI": "000071"}
+
+
+def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
+    """v3 基础版：中证 PE/点位为主、雪球 PB 为辅；10Y 为主窗口，3/5/全历史可切。"""
+    cs = load_cs(entry["cs"], refresh) if entry.get("cs") else None
+    dj = None
+    try:
+        dj = load_valuation(entry["code"], refresh)
+    except Exception:                              # noqa: BLE001
+        dj = None
+    pe_pairs = (cs or {}).get("pe") or []
+    close_pairs = (cs or {}).get("close") or []
+    pe_s = _pairs_series(pe_pairs)
+    if pe_s.empty and dj:
+        vals, dates = _hist_pairs(dj.get("pe_hist"), "pe")
+        pe_s = _pairs_series([[pd.Timestamp(d).strftime("%Y%m%d"), v]
+                              for d, v in zip(dates, vals)])
+    pb_s = pd.Series(dtype=float)
+    if dj:
+        vals, dates = _hist_pairs(dj.get("pb_hist"), "pb")
+        pb_s = _pairs_series([[pd.Timestamp(d).strftime("%Y%m%d"), v]
+                              for d, v in zip(dates, vals)])
+        if len(pb_s) < 26:                         # 雪球未覆盖时只回 1 个占位点，视为无 PB
+            pb_s = pd.Series(dtype=float)
+    close_s = _pairs_series(close_pairs)
+    close_proxy = False
+    if close_s.empty and entry["code"] in _CLOSE_PROXY:
+        try:
+            nav = D.fetch_nav(_CLOSE_PROXY[entry["code"]])
+            if nav is not None and len(nav):
+                n = nav.copy()
+                n["date"] = pd.to_datetime(n["date"])
+                n = n.set_index("date")["nav"].sort_index().resample("W-FRI").last().dropna()
+                close_s = n
+                close_proxy = True
+        except Exception:                          # noqa: BLE001
+            pass
+    # 只保留指数发布日之后（避免中证回填历史）
+    pub = (cs or {}).get("publish") or ""
+    if pub:
+        try:
+            start = pd.Timestamp(pub)
+            pe_s = pe_s[pe_s.index >= start]
+            pb_s = pb_s[pb_s.index >= start]
+            close_s = close_s[close_s.index >= start]
+        except Exception:                          # noqa: BLE001
+            pass
+    if pe_s.empty and pb_s.empty:
+        return None
+    cur_pe = float(pe_s.iloc[-1]) if not pe_s.empty else None
+    cur_pb = float(pb_s.iloc[-1]) if not pb_s.empty else None
+    windows = {}
+    for label, years in (("3y", 3), ("5y", 5), ("10y", 10), ("all", None)):
+        pe_w = _win_stats(pe_s, cur_pe, years)
+        pb_w = _win_stats(pb_s, cur_pb, years)
+        pcts = [x["pct"] for x in (pe_w, pb_w) if x and x["pct"] is not None]
+        comp = round(sum(pcts) / len(pcts), 2) if pcts else None
+        windows[label] = {"label": {"3y": "近3年", "5y": "近5年",
+                                    "10y": "近10年", "all": "上市以来"}[label],
+                          "comp_pct": comp, "tier": _tier_of(comp),
+                          "pe": pe_w, "pb": pb_w}
+    base = windows["10y"] if windows["10y"]["comp_pct"] is not None else next(
+        (windows[k] for k in ("5y", "3y", "all") if windows[k]["comp_pct"] is not None), None)
+    if base is None:
+        return None
+    pct = base["comp_pct"]
+    tier = _tier_of(pct)
+    default_metric = "pb" if (not pb_s.empty and entry.get("default_metric") == "pb") else "pe"
+    if default_metric == "pb" and windows["10y"]["pb"] is None:
+        default_metric = "pe"
+    if default_metric == "pe" and windows["10y"]["pe"] is None:
+        default_metric = "pb"
+    method_label = ("PE+PB" if (not pe_s.empty and not pb_s.empty) else "PE") + " · 分位"
+    weeks10 = max((windows["10y"][m] or {}).get("weeks", 0)
+                  for m in ("pe", "pb") if windows["10y"].get(m))
+    history_label = ("近10年" if weeks10 >= 468 else "近5年" if weeks10 >= 260
+                     else "近3年" if weeks10 >= 156 else "上市以来")
+    if entry["group"] == "宽基":
+        why = "宽基指数用 PE/PB 综合分位（越低越便宜），PE 反映盈利定价、PB 反映资产端。"
+    elif entry["group"] == "行业":
+        why = "行业指数用 PE/PB 综合分位：PB 对盈利波动更稳，PE 并列校正；只作历史位置参考。"
+    else:
+        why = "海外/跨境指数用 PE/PB 分位；净值与估值日期可能滞后，汇率折算会带来偏差。"
+    ret_1y = None
+    if len(close_s) > 53:
+        try:
+            ret_1y = round(float(close_s.iloc[-1] / close_s.iloc[-53] - 1), 4)
+        except Exception:                          # noqa: BLE001
+            ret_1y = None
+    return {
+        "code": entry["code"], "name": entry["name"], "type": entry["type"],
+        "group": entry["group"], "cs": entry.get("cs"),
+        "tier": tier, "percentile": pct,
+        "windows": windows,
+        "pe": _round(cur_pe, 2), "pb": _round(cur_pb, 4),
+        "div_yield": _round(((dj or {}).get("detail") or {}).get("yeild"), 4),
+        "default_metric": default_metric,
+        "method_label": method_label,
+        "history_label": history_label,
+        "why": why,
+        "action": _ACTION.get(tier, 0), "action_label": f"{_ACTION.get(tier, 0):g} 倍",
+        "ret_1y": ret_1y,
+        "close_proxy": close_proxy,
+        "valuation_date": base.get("pe", {}).get("end") if base.get("pe") else (
+            base.get("pb", {}).get("end") if base.get("pb") else None),
+        "series": {"pe": _monthly_pairs(pe_s), "pb": _monthly_pairs(pb_s),
+                   "close": _monthly_pairs(close_s)},
+    }
 
 
 # ---------------------------------------------------------------- 5. 基金建库（F10）
@@ -752,6 +1043,8 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
     indices: list[dict] = []
     missing: list[dict] = []
     for entry in CATALOG:
+        if entry.get("defer") or not entry.get("mainstream"):
+            continue
         recs = by_idx.get(entry["code"]) or []
         if not recs:
             continue
@@ -759,13 +1052,11 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
             missing.append({"code": entry["code"], "name": entry["name"],
                             "reason": "估值抓取预算超时"})
             continue
-        raw = load_valuation(entry["code"], refresh)
-        val = build_index_valuation(entry, raw) if raw else None
+        val = build_index_valuation_v2(entry, refresh)
         if not val:
             missing.append({"code": entry["code"], "name": entry["name"],
                             "reason": "估值数据缺失/样本不足"})
             continue
-        val["peer_rank"], val["peer_n"] = None, 0
         val["fund_count"] = len(recs)
         val["funds"] = select_funds(recs, status, rets, code2co, co2scale,
                                     cfg["fund_list_n"])
@@ -773,24 +1064,23 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
         val["min_fee_total"] = min(fees) if fees else None
         indices.append(val)
 
-    # 同类横向排名（同 group 内按分位升序 = 越便宜越靠前）
-    for g in GROUP_ORDER:
-        gs = [x for x in indices if x["group"] == g]
-        gs.sort(key=lambda x: x["percentile"])
-        for i, x in enumerate(gs, 1):
-            x["peer_rank"], x["peer_n"] = i, len(gs)
-    indices.sort(key=lambda x: (GROUP_ORDER.index(x["group"]), x["percentile"]))
+    indices.sort(key=lambda x: (GROUP_ORDER.index(x["group"])
+                                if x["group"] in GROUP_ORDER else 99,
+                                x["percentile"] if x["percentile"] is not None else 999))
     asof = max((x.get("valuation_date") or "") for x in indices) if indices else ""
     tier_cnt: dict[str, int] = {}
     for x in indices:
         tier_cnt[x["tier"]] = tier_cnt.get(x["tier"], 0) + 1
-    log(f"[7][指数估值] 目录 {len(CATALOG)} / 展示 {len(indices)} / 缺 {len(missing)}；"
+    log(f"[7][指数估值] 主流目录 {sum(1 for c in CATALOG if c.get('mainstream') and not c.get('defer'))}"
+        f" / 展示 {len(indices)} / 缺 {len(missing)}；"
         f"基金 {sum(x['fund_count'] for x in indices)} 只；档位 "
         + "、".join(f"{k}{v}" for k, v in tier_cnt.items())
         + f"；耗时 {time.time() - t0:.1f}s")
     return {"version": cfg["version"], "asof": asof,
-            "source": "雪球基金·指数估值（分位为程序按近5年周频自算）",
-            "catalog_n": len(CATALOG), "funds_n": len(mapped),
+            "source": "中证指数官网 PE/点位 + 雪球基金 PB（分位为程序自算）",
+            "catalog_n": len(CATALOG),
+            "mainstream_n": sum(1 for c in CATALOG if c.get("mainstream") and not c.get("defer")),
+            "funds_n": len(mapped),
             "indices": indices, "missing": missing}
 
 

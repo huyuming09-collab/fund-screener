@@ -54,6 +54,12 @@ header .meta b.asof{font-size:12.5px;letter-spacing:.2px;text-shadow:0 0 8px rgb
 .tab.active{background:#fff;color:var(--accent-ink);font-weight:700;box-shadow:0 2px 6px rgba(140,50,0,.25);}
 .tab.disabled{opacity:.45;}
 .tab .soon{font-size:10px;margin-left:3px;}
+/* 两级导航：稳健型 / 指数型 / 债指 */
+.nav-groups{display:flex;gap:6px;margin-top:8px;}
+.nav-group{flex:0 0 auto;min-height:32px;padding:5px 12px;border-radius:10px;border:none;
+           background:rgba(255,255,255,.30);color:#fff;font-size:12px;font-weight:600;}
+.nav-group.on{background:#fff;color:var(--accent-ink);box-shadow:0 2px 6px rgba(140,50,0,.25);}
+.nav-tabs{display:flex;gap:8px;margin-top:6px;overflow-x:auto;padding-bottom:2px;}
 
 /* ---------- 榜单卡 ---------- */
 main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;}
@@ -140,6 +146,46 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eqf-r span{font-size:10px;color:var(--sub);}
 .eqf-sub{flex:1 1 100%;font-size:10.5px;color:var(--sub);line-height:1.5;}
 .eqf.susp .eqf-l b{color:#b3261e;}
+/* v3 主流指数表 + 参考图 */
+.eq-filter{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px;}
+.eq-filter button{padding:5px 11px;border-radius:9px;border:1px solid var(--line);background:#fff;
+                  color:var(--sub);font-size:12px;}
+.eq-filter button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:650;}
+.eq-group{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;
+          padding:8px 12px;margin:12px 0 6px;border-radius:10px;background:#eef3fd;
+          border-left:4px solid #3b6fd4;color:#1d3f7a;font-size:13px;font-weight:700;}
+.eq-group .sub{font-weight:400;font-size:10.5px;color:#4a6fae;}
+.eqrow{background:#fff;border-radius:12px;padding:9px 11px;margin-bottom:7px;
+       box-shadow:0 1px 4px rgba(20,24,40,.05);cursor:pointer;}
+.eqrow:active{transform:scale(.99);}
+.eqrow-main{display:flex;align-items:center;gap:8px;}
+.eqrow-name{flex:1;min-width:0;}
+.eqrow-name b{display:block;font-size:14.5px;font-weight:650;line-height:1.35;}
+.eqrow-name span{font-size:10.5px;color:var(--sub);}
+.eqrow-pct{flex:0 0 auto;text-align:right;}
+.eqrow-pct b{display:block;font-size:16px;color:var(--accent-ink);line-height:1.1;}
+.eqrow-pct span{font-size:9.5px;color:var(--sub);}
+.eqrow-act{flex:0 0 auto;min-width:42px;text-align:center;border-radius:8px;padding:4px 6px;
+           font-size:12px;font-weight:700;}
+.eqrow-act.a4{background:#e3f5ec;color:#0b6b46;}
+.eqrow-act.a2{background:#e9f6ee;color:#1a7f37;}
+.eqrow-act.a1{background:#eef0f3;color:#4b5563;}
+.eqrow-act.a05{background:#fff3e3;color:#a85100;}
+.eqrow-act.a0{background:#fdecea;color:#b3261e;}
+.eqrow-sub{font-size:10.5px;color:var(--sub);margin-top:4px;line-height:1.5;}
+.eq-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 8px;}
+.eq-act{background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:12px;}
+.eq-act b{font-size:16px;color:var(--accent-ink);}
+.eq-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0;}
+.eq-stat{background:#fafbfc;border-radius:8px;padding:6px 8px;}
+.eq-stat .l{font-size:9.5px;color:var(--sub);line-height:1.3;}
+.eq-stat .v{font-size:13px;font-weight:650;line-height:1.3;}
+.eq-toggle{display:flex;gap:5px;flex-wrap:wrap;margin:4px 0 8px;}
+.eq-toggle button{padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;
+                  color:var(--sub);font-size:11.5px;}
+.eq-toggle button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+.eq-chart{background:#fff;border-radius:10px;padding:4px 2px 0;}
+.cmp-bar[hidden]{display:none;}
 .empty-tip{color:var(--sub);text-align:center;font-size:13px;padding:30px 0;}
 
 /* ---------- 详情页 ---------- */
@@ -374,12 +420,36 @@ function screenOf(cat){
   return {scale_min_yi:5, comp_pct_min:0.45, yearly_median_min:0.55,
           spike_max_gain: cat==='long_bond' ? 0.02 : 0.01};
 }
+/* v3 两级导航：稳健型（中短债/长债/固收+）｜指数型（指数估值）｜债指 */
+const NAV_GROUPS = [
+  {id:'stable', name:'稳健型', tabs:['short_bond','long_bond','fixed_plus']},
+  {id:'index',  name:'指数型', tabs:['eq_index']},
+  {id:'bondindex', name:'债指', tabs:['index']},
+];
+const navCats = () => ((D && D.categories) || []).filter(c => !(c && c.hidden));
+const navGroups = () => NAV_GROUPS.map(g => ({...g,
+  tabs: g.tabs.filter(id => navCats().some(c => c.id === id && c.enabled))}))
+  .filter(g => g.tabs.length);
+function navGroupOf(id){
+  return navGroups().find(g => g.tabs.includes(id)) || navGroups()[0] || null;
+}
 function renderTabs(active){
-  $('tabs').innerHTML = D.categories.filter(c=>!(c&&c.hidden)).map(c =>
-    `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
-      ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast(\'该分类暂未开放\')"'}>
-      ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`
-  ).join('');
+  const cats = navCats();
+  const g = navGroupOf(active) || {id:'stable', tabs:[]};
+  const tabs = g.tabs.map(id => cats.find(c => c.id === id)).filter(Boolean);
+  $('tabs').innerHTML = '<div class="nav-groups">'
+    + navGroups().map(x => `<button class="nav-group ${x.id===g.id?'on':''}"
+        onclick="switchGroup('${x.id}')">${x.name}</button>`).join('')
+    + '</div><div class="nav-tabs">'
+    + tabs.map(c => `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
+        ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast(\'该分类暂未开放\')"'}>
+        ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`).join('')
+    + '</div>';
+}
+function switchGroup(gid){
+  const g = navGroups().find(x => x.id === gid);
+  if (!g || !g.tabs.length) return;
+  switchTab(g.tabs[0]);
 }
 function switchTab(id){
   const c = (D.categories||[]).find(x=>x.id===id);
@@ -717,7 +787,7 @@ document.getElementById('list').addEventListener('click', function(e){
 const EQ_TIER_CLS = {'极低估':'t1','低估':'t2','合理偏低':'t3','合理偏高':'t4','高估':'t5'};
 const EQ_TIER_COLOR = {'极低估':'#0b6b46','低估':'#1a7f37','合理偏低':'#6b7280',
                        '合理偏高':'#a85100','高估':'#b3261e'};
-const EQ_GROUP_ORDER = ['宽基','行业','策略','海外'];
+const EQ_GROUP_ORDER = ['宽基','行业','海外'];
 const eqIndices = () => ((D && D.eq_index && D.eq_index.indices) || []);
 const numPos = (v, nd) => (v == null || Number(v) <= 0) ? '—' : num(v, nd);  /* PE≤0/缺失显示破折号 */
 const tierCls = t => EQ_TIER_CLS[t] || 't3';
@@ -881,6 +951,222 @@ function openEqIndexDetail(code){
   el.scrollTop = 0;
   document.body.style.overflow = 'hidden';
 }
+
+/* ============ v3 指数估值：主流指数表 + 参考图详情（覆盖上面的旧卡片实现） ============ */
+const EQ_GROUPS = ['宽基','行业','海外'];
+let EQ_FILTER = 'all', EQ_CUR = null, EQ_WIN = '10y', EQ_METRIC = 'pe';
+const eqActionCls = a => a >= 4 ? 'a4' : a >= 2 ? 'a2' : a >= 1 ? 'a1' : a > 0 ? 'a05' : 'a0';
+const eqActionTxt = a => a > 0 ? (a + 'x') : '暂停';
+const eqWinLabel = w => ({'3y':'近3年','5y':'近5年','10y':'近10年','all':'上市以来'}[w] || '近10年');
+function eqPctLabel(x){
+  const w = (x.windows || {})['10y'] || {};
+  const weeks = (w.pe && w.pe.weeks) || (w.pb && w.pb.weeks) || 0;
+  return weeks >= 468 ? '10Y分位' : ('可用' + Math.max(1, Math.round(weeks / 52)) + 'Y分位');
+}
+function eqRowHTML(x){
+  const w = (x.windows || {})['10y'] || {};
+  const fcount = x.fund_count || 0;
+  return `<div class="eqrow" onclick='openEqIndexDetail(${JSON.stringify(x.code)})'>
+    <div class="eqrow-main">
+      <div class="tier ${tierCls(x.tier)}">${x.tier}</div>
+      <div class="eqrow-name"><b>${x.name}</b>
+        <span>${x.group} · 可选基金 ${fcount} 只 · 最低费率 ${fpct(x.min_fee_total)}</span></div>
+      <div class="eqrow-pct"><b>${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</b>
+        <span>${eqPctLabel(x)}</span></div>
+      <div class="eqrow-act ${eqActionCls(x.action)}">${eqActionTxt(x.action)}</div>
+    </div>
+    <div class="eqrow-sub">PE ${numPos(x.pe,2)} · PB ${numPos(x.pb,2)}
+      · 近1年 ${x.ret_1y==null?'—':pct(x.ret_1y)} · ${x.method_label||''}</div>
+  </div>`;
+}
+function setEqFilter(g){ EQ_FILTER = g; renderEqIndexList(); }
+function renderEqIndexList(){
+  const eq = (D && D.eq_index) || {};
+  const list = eqIndices();
+  $('meta').innerHTML = `数据基准 <b class="asof">${D.asof}</b> · 主流指数 <b>${list.length}</b> 个`
+    + ` · 估值日期 ${eq.asof || '—'} · ${eq.source || ''}`;
+  if (!list.length){
+    $('list').innerHTML = '<div class="empty-tip">指数估值数据未生成：先运行 '
+      + '<b>python -m fundscorer.eqindex --ingest</b>，再跑管线。</div>';
+    return;
+  }
+  const groups = EQ_GROUPS.filter(g => list.some(x => x.group === g));
+  const filters = ['all'].concat(groups);
+  const html = '<div class="eq-filter">' + filters.map(g =>
+      `<button class="${EQ_FILTER===g?'on':''}" onclick="setEqFilter('${g}')">`
+      + (g==='all'?'全部':g) + '</button>').join('') + '</div>'
+    + groups.map(g => {
+        if (EQ_FILTER !== 'all' && EQ_FILTER !== g) return '';
+        const gs = list.filter(x => x.group === g)
+          .sort((a,b) => (a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile));
+        if (!gs.length) return '';
+        return `<div class="eq-group"><b>${g} · ${gs.length} 个</b>
+          <span class="sub">按估值分位从低到高（越便宜越靠前）· 卡片不列具体基金</span></div>`
+          + gs.map(eqRowHTML).join('');
+      }).join('');
+  $('list').innerHTML = html;
+}
+function eqWindowStats(x, win, metric){
+  const w = (x.windows || {})[win] || {};
+  return w[metric] || null;
+}
+function eqSeriesInWindow(series, win){
+  const pts = (series || []).filter(p => p && p[1] != null);
+  if (!pts.length) return [];
+  if (win === 'all') return pts;
+  const years = {'3y':3,'5y':5,'10y':10}[win] || 10;
+  const last = new Date(pts[pts.length-1][0]);
+  const cut = new Date(last); cut.setFullYear(last.getFullYear() - years);
+  return pts.filter(p => new Date(p[0]) >= cut);
+}
+function eqChartSVG(x, win, metric){
+  const mpts = eqSeriesInWindow((x.series||{})[metric], win);
+  if (mpts.length < 2) return '<div class="eq-line">该指标历史数据不足，无法画图。</div>';
+  const cpts = eqSeriesInWindow((x.series||{}).close, win);
+  const W = 660, H = 270, L = 44, R = 54, T = 18, B = 30;
+  const vals = mpts.map(p => +p[1]);
+  let mn = Math.min(...vals), mx = Math.max(...vals);
+  const pad = (mx - mn || 1) * 0.08; mn -= pad; mx += pad;
+  const X = i => L + (W - L - R) * i / (mpts.length - 1);
+  const Y = v => T + (H - T - B) * (1 - (v - mn) / (mx - mn));
+  const st = eqWindowStats(x, win, metric) || {};
+  const bands = [st.q20, st.q40, st.q60, st.q80].map(v => v==null?null:+v);
+  const yOf = v => v==null?null:Y(v);
+  const zone = (v0,v1,color) => {
+    const y0 = yOf(v0), y1 = yOf(v1);
+    if (y0==null || y1==null) return '';
+    return `<rect x="${L}" y="${Math.min(y0,y1).toFixed(1)}" width="${W-L-R}"
+      height="${Math.abs(y1-y0).toFixed(1)}" fill="${color}" opacity=".55"/>`;
+  };
+  let bg = '';
+  if (bands.every(v => v!=null)){
+    bg += zone(mn, bands[0], '#e3f5ec') + zone(bands[0], bands[1], '#e9f6ee')
+      + zone(bands[1], bands[2], '#eef0f3') + zone(bands[2], bands[3], '#fff3e3')
+      + zone(bands[3], mx, '#fdecea');
+  }
+  const path = mpts.map((p,i) => (i?'L':'M') + X(i).toFixed(1) + ' ' + Y(+p[1]).toFixed(1)).join(' ');
+  const line = (v,color,dash) => {
+    const y = yOf(v); if (y==null) return '';
+    return `<line x1="${L}" y1="${y.toFixed(1)}" x2="${W-R}" y2="${y.toFixed(1)}"
+      stroke="${color}" stroke-width="1.1" ${dash?'stroke-dasharray="4 4"':''}/>`;
+  };
+  const refs = line(st.danger,'#b3261e',true) + line(st.median,'#6b7280',true)
+    + line(st.opportunity,'#0b6b46',true);
+  const sig = (v,color) => line(v,color,true);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block"
+    role="img" aria-label="指数估值走势">
+    ${bg}${refs}
+    ${sig(st.mean==null?null:st.mean - (st.std||0),'#c9cdd4')}
+    ${sig(st.mean==null?null:st.mean + (st.std||0),'#c9cdd4')}
+    <path d="${path}" fill="none" stroke="#c54300" stroke-width="2" stroke-linejoin="round"/>`;
+  // 指数点位（右轴）
+  if (cpts.length >= 2){
+    const cv = cpts.map(p => +p[1]);
+    let cmin = Math.min(...cv), cmax = Math.max(...cv);
+    const cpad = (cmax - cmin || 1) * 0.06; cmin -= cpad; cmax += cpad;
+    const CY = v => T + (H - T - B) * (1 - (v - cmin) / (cmax - cmin));
+    const cpath = cpts.map((p,i) => (i?'L':'M') + X(i).toFixed(1) + ' ' + CY(+p[1]).toFixed(1)).join(' ');
+    svg += `<path d="${cpath}" fill="none" stroke="#2456b8" stroke-width="1.3"
+      stroke-dasharray="5 4" opacity=".85"/>`;
+    svg += `<text x="${W-R+4}" y="${T+10}" font-size="10" fill="#2456b8">指数点位</text>`;
+  }
+  svg += `<circle cx="${X(mpts.length-1).toFixed(1)}" cy="${Y(+mpts[mpts.length-1][1]).toFixed(1)}"
+      r="3.4" fill="#c54300"/>`;
+  svg += `<text x="${L}" y="${T+10}" font-size="10" fill="#6b7280">${num(mx,2)}</text>`;
+  svg += `<text x="${L}" y="${H-B-2}" font-size="10" fill="#6b7280">${num(mn,2)}</text>`;
+  const first = mpts[0][0].slice(0,7), last = mpts[mpts.length-1][0].slice(0,7);
+  svg += `<text x="${L}" y="${H-8}" font-size="10" fill="#9aa0a6">${first}</text>`;
+  svg += `<text x="${W-R}" y="${H-8}" font-size="10" fill="#9aa0a6" text-anchor="end">${last}</text>`;
+  svg += `<text x="${W-R+4}" y="${H-B-2}" font-size="10" fill="#c54300">${num(+mpts[mpts.length-1][1],2)}</text>`;
+  svg += '</svg>';
+  return svg;
+}
+function eqStat(l, v){ return `<div class="eq-stat"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
+function eqIndexBodyHTML(x){
+  const metric = EQ_METRIC, win = EQ_WIN;
+  const st = eqWindowStats(x, win, metric) || {};
+  const cur = metric === 'pb' ? x.pb : x.pe;
+  const closePts = x.series && x.series.close || [];
+  const closeLast = closePts.length ? +closePts[closePts.length-1][1] : null;
+  const comp = ((x.windows||{})[win]||{}).comp_pct;
+  const tier = x.tier;                           /* 档位/倍数固定按 10Y；图表窗口只切图 */
+  const metricBtn = m => {
+    const has = (x.series||{})[m] && (x.series[m]||[]).length > 1;
+    return `<button class="${metric===m?'on':''}" ${has?'':'disabled'} onclick="setEqMetric('${m}')">`
+      + (m==='pe'?'市盈率 PE':'市净率 PB') + '</button>';
+  };
+  const winBtn = w => `<button class="${win===w?'on':''}" onclick="setEqWin('${w}')">${eqWinLabel(w)}</button>`;
+  return `
+  <div class="sec"><h3>估值结论<span class="hint">${x.history_label||eqWinLabel(win)} · ${x.method_label||'PE+PB'}</span></h3>
+    <div class="eq-summary">
+      <div class="tier big ${tierCls(tier)}">${tier}</div>
+      <div class="eq-act">定投参考 <b>${eqActionTxt(x.action)}</b>
+        <span style="color:var(--sub)">（按综合档位，仅供参考）</span></div>
+    </div>
+    <div class="eq-stats">
+      ${eqStat('综合分位', x.percentile==null?'—':x.percentile.toFixed(1)+'%')}
+      ${eqStat((metric==='pb'?'PB':'PE')+' 分位', st.pct==null?'—':st.pct.toFixed(1)+'%')}
+      ${eqStat('当前 ' + (metric==='pb'?'PB':'PE'), numPos(cur, 2))}
+      ${eqStat('危险值 / 机会值', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)}
+      ${eqStat('中位数', num(st.median,2))}
+      ${eqStat('最大 / 最小', `${num(st.max,2)} / ${num(st.min,2)}`)}
+      ${eqStat('均值 / 标准差', `${num(st.mean,2)} / ${num(st.std,2)}`)}
+      ${eqStat('z 分数', st.z==null?'—':st.z.toFixed(2))}
+      ${eqStat('指数点位', num(closeLast,2))}
+    </div>
+    <div class="eq-line">综合分位 = ${x.pb!=null?'PE 与 PB 分位均值':'PE 分位'}；
+      ${x.pb==null?'PB 历史暂无，按 PE 单一指标；':'PE 与 PB 同时参与；'}
+      档位阈值 20/40/60/80；样本 ${st.weeks?st.weeks+' 周':'—'}；估值日期 ${x.valuation_date||'—'}。</div>
+  </div>
+  <div class="sec"><h3>估值走势<span class="hint">${metric==='pb'?'市净率 PB':'市盈率 PE'} · 点位${x.close_proxy?'（基金净值代理）':''}</span></h3>    <div class="eq-toggle">${winBtn('3y')}${winBtn('5y')}${winBtn('10y')}${winBtn('all')}
+      <span style="width:8px"></span>${metricBtn('pe')}${metricBtn('pb')}</div>
+    <div class="eq-chart">${eqChartSVG(x, win, metric)}</div>
+    <div class="eq-line">三条虚线：危险值（80分位）/ 中位数（50）/ 机会值（20）；浅色虚线为均值 ±1σ。</div>
+  </div>
+  <div class="sec"><h3>方法口径</h3>
+    <div class="mgr-sub">${x.why||''}<br>
+      当前档位 = ${x.pb!=null?'PE+PB':'PE'} 的 ${x.history_label||eqWinLabel('10y')}综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}；
+      定投倍数为 <b>历史分位参考</b>，不代表未来收益，也不构成投资建议。<br>
+      数据：中证指数官网 PE(TTM)/点位${x.pb!=null?' + 雪球基金 PB':''}；估值日期 ${x.valuation_date||'—'}。</div>
+  </div>
+  <div class="sec"><h3>场外基金<span class="hint">按综合费率升序 · 已剔场内 ETF 与增强型</span></h3>
+    ${(x.funds||[]).length ? x.funds.map(eqFundRow).join('')
+      : '<div class="eq-line">暂无符合条件的场外基金</div>'}
+    <div class="eq-line">综合费率 = 管理 + 托管 + 销售服务；买入费率单列；暂停申购排最后。
+      清单仅为同指数低费率份额整理，不构成推荐。</div>
+  </div>`;
+}
+function openEqIndexDetail(code){
+  const x = eqIndices().find(i => i.code === code);
+  if (!x) return;
+  CUR = null;
+  EQ_CUR = x;
+  EQ_WIN = '10y';
+  EQ_METRIC = (x.default_metric === 'pb' && (x.series||{}).pb && (x.series.pb||[]).length > 1) ? 'pb' : 'pe';
+  $('d-name').textContent = x.name;
+  $('d-score-label').textContent = '估值档位';
+  $('d-score').textContent = x.tier;
+  $('d-score').style.color = '#fff';
+  $('d-code-inline').textContent = x.code;
+  $('d-rank').textContent = `${x.history_label||eqWinLabel('10y')}综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}`
+    + ` · 定投参考 ${eqActionTxt(x.action)}`;
+  $('d-code').textContent = `${x.group} · ${x.valuation_date||'—'}`;
+  $('d-disc').textContent = D.disclaimer;
+  $('d-pick').style.display = 'none';
+  $('d-body').innerHTML = eqIndexBodyHTML(x);
+  const el = $('detail'); el.style.display = 'block';
+  requestAnimationFrame(() => el.classList.add('show'));
+  el.scrollTop = 0;
+  document.body.style.overflow = 'hidden';
+}
+function refreshEqDetail(){
+  if (!EQ_CUR) return;
+  const el = $('detail'); const st = el.scrollTop;
+  $('d-body').innerHTML = eqIndexBodyHTML(EQ_CUR);
+  el.scrollTop = st;
+}
+function setEqWin(w){ EQ_WIN = w; refreshEqDetail(); }
+function setEqMetric(m){ EQ_METRIC = m; refreshEqDetail(); }
 
 /* ============ 详情 ============ */
 let CUR = null, WIN = '1y';
@@ -1255,8 +1541,8 @@ function _drawEqExport(canvas, S, rowsLimit){
       ctx.fillStyle = '#b3261e'; ctx.font = '700 ' + Math.round(fData * 1.1) + 'px sans-serif';
       ctx.fillText(x.percentile.toFixed(1) + '%', cols[2], l1);
       ctx.fillStyle = '#44403a'; ctx.font = fData + 'px sans-serif';
-      ctx.fillText(x.metric === 'pe' ? ('PE ' + numPos(x.pe, 1)) : ('PB ' + numPos(x.pb, 2)), cols[3], l1);
-      ctx.fillText((x.metric === 'pb' ? 'PE ' + numPos(x.pe, 1) : 'PB ' + numPos(x.pb, 2)), cols[4], l1);
+      ctx.fillText(x.default_metric === 'pe' ? ('PE ' + numPos(x.pe, 1)) : ('PB ' + numPos(x.pb, 2)), cols[3], l1);
+      ctx.fillText((x.default_metric === 'pb' ? 'PE ' + numPos(x.pe, 1) : 'PB ' + numPos(x.pb, 2)), cols[4], l1);
       ctx.fillText('息 ' + pct(x.div_yield), cols[5], l1);
       ctx.fillStyle = '#5273b8';
       ctx.fillText('基金 ' + x.fund_count + ' 只', cols[6], l1);

@@ -162,9 +162,9 @@ class TestPercentile:
 
 class TestTier:
     @pytest.mark.parametrize("pct,tier", [
-        (0, "极低估"), (10, "极低估"), (10.1, "低估"), (30, "低估"),
-        (30.1, "合理偏低"), (50, "合理偏低"), (50.1, "合理偏高"),
-        (70, "合理偏高"), (70.1, "高估"), (100, "高估"),
+        (0, "极低估"), (20, "极低估"), (20.1, "低估"), (40, "低估"),
+        (40.1, "合理偏低"), (60, "合理偏低"), (60.1, "合理偏高"),
+        (80, "合理偏高"), (80.1, "高估"), (100, "高估"),
     ])
     def test_boundaries(self, pct, tier):
         assert E.tier_of(pct) == tier
@@ -297,6 +297,12 @@ class TestBuildPayload:
                             lambda code, refresh: raw_with(
                                 [10 + i * 0.1 for i in range(130)],
                                 [1 + i * 0.01 for i in range(130)]))
+        def fake_cs(code, refresh):
+            dates = pd.date_range("2020-01-05", periods=300, freq="W")
+            return {"publish": "2019-01-01",
+                    "pe": [[d.strftime("%Y%m%d"), 10 + i * 0.02] for i, d in enumerate(dates)],
+                    "close": [[d.strftime("%Y%m%d"), 100 + i * 0.1] for i, d in enumerate(dates)]}
+        monkeypatch.setattr(E, "load_cs", fake_cs)
         monkeypatch.setattr(E.D, "fetch_purchase_status",
                             lambda codes, refresh=False: {})
         out = E.build(log=lambda *a, **k: None, refresh=False)
@@ -309,10 +315,11 @@ class TestBuildPayload:
             assert x["tier"] in ("极低估", "低估", "合理偏低", "合理偏高", "高估")
             assert 0 <= x["percentile"] <= 100
             assert 1 <= len(x["funds"]) <= C.EQ_INDEX["fund_list_n"]
-            assert x["peer_rank"] >= 1 and x["peer_n"] >= 1
-            assert isinstance(x["series"], list)
+            assert x["action"] in (0, 0.5, 1, 2, 4)
+            assert isinstance(x["series"], dict) and "pe" in x["series"]
+            assert set(x["windows"]) == {"3y", "5y", "10y", "all"}
         h = [x for x in out["indices"] if x["group"] == "宽基"][0]
-        assert h["peer_rank"] == 1 and h["peer_n"] == 1
+        assert h["method_label"] and h["history_label"]
 
     def test_no_cache_returns_none(self, monkeypatch):
         monkeypatch.setattr(E, "_load_fund_cache", lambda: {})

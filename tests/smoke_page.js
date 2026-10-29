@@ -171,12 +171,19 @@ chk('data.js 契约 n_screened/top_n 字段保留', D.n_screened != null && D.to
 const tabsHTML = document.getElementById('tabs').innerHTML;
 const nEnabled  = D.categories.filter(c=>c.enabled).length;
 const nDisabled = D.categories.filter(c=>!c.enabled).length;
-// hidden 分类不渲染 tab（当前 0 个 hidden；断言保留以守未来隐藏开关）
-  // hidden 分类不渲染 tab → 只数可见分类
+// hidden 分类不渲染 tab → 只数可见分类；v3 两级导航需切换分组后查
   const visCats = D.categories.filter(c=>!(c&&c.hidden));
+  let navOK = true;
+  for (const c of visCats) {
+    const g = navGroupOf(c.id);
+    if (!g) { navOK = false; continue; }
+    switchGroup(g.id);
+    if (!document.getElementById('tabs').innerHTML.includes(c.name)) navOK = false;
+  }
+  switchTab('short_bond');
   chk('可见分类渲染 tab、hidden 分类不渲染',
-      visCats.every(c => tabsHTML.includes(c.name))
-      && D.categories.filter(c=>c&&c.hidden).every(c => !tabsHTML.includes(c.name)));
+      navOK && D.categories.filter(c=>c&&c.hidden)
+        .every(c => !document.getElementById('tabs').innerHTML.includes(c.name)));
 chk('禁用分类不可点击（toast 提示）', (tabsHTML.match(/toast\\('/g)||[]).length === nDisabled);
 if (D.pools && D.pools.long_bond && longFunds.length) {
   // 池显示名从 data.js 派生（2026-10-19 改名 中短债/长债/固收+），不再写死
@@ -323,24 +330,24 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     const le = document.getElementById('list').innerHTML;
     chk('指数估值页签可切换、meta 显示估值日期',
         ACTIVE==='eq_index' && document.getElementById('meta').innerHTML.includes('估值日期'));
-    chk('指数卡渲染（eqcard）且无勾选对比按钮',
-        le.includes('eqcard') && !le.includes('class="pick"'));
+    chk('指数表渲染（eqrow）且无勾选对比按钮',
+        le.includes('eqrow') && !le.includes('class="pick"'));
     const x0 = eqs[0];
-    const seg = le.split('<div class="fundcard').find(s=>s.includes(x0.name)) || '';
-    chk('指数卡含档位/分位/可选基金数/最低综合费率',
+    const seg = le.split('<div class="eqrow"').find(s=>s.includes(x0.name)) || '';
+    chk('指数行含档位/分位/可选基金数/最低费率',
         seg.includes(x0.tier) && seg.includes(x0.percentile.toFixed(1)+'%')
-        && seg.includes('可选基金 '+x0.fund_count) && seg.includes('最低综合费率'));
-    chk('指数卡不含具体基金代码', (x0.funds||[]).every(f=>!seg.includes(f.code)));
+        && seg.includes('可选基金 '+x0.fund_count) && seg.includes('最低费率'));
+    chk('指数行不含具体基金代码', (x0.funds||[]).every(f=>!seg.includes(f.code)));
     chk('组内按估值分位升序',
-        ['宽基','行业','策略','海外'].every(g=>{
+        ['宽基','行业','海外'].every(g=>{
           const ps = eqs.filter(x=>x.group===g).map(x=>x.percentile);
           return ps.every((v,i)=>i===0 || ps[i-1]<=v);
         }));
     openEqIndexDetail(x0.code);
     const de = document.getElementById('d-body').innerHTML;
-    chk('指数详情含估值总览/走势/对应基金/口径',
-        de.includes('估值总览') && de.includes('估值走势')
-        && de.includes('对应基金') && de.includes('口径与说明') && de.includes('<svg'));
+    chk('指数详情含估值结论/走势/方法口径/场外基金',
+        de.includes('估值结论') && de.includes('估值走势')
+        && de.includes('方法口径') && de.includes('场外基金') && de.includes('<svg'));
     chk('指数详情头部为「估值档位」且显示档位',
         document.getElementById('d-score-label').textContent==='估值档位'
         && document.getElementById('d-score').textContent===x0.tier);
