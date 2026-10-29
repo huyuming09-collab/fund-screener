@@ -25,6 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import batch, cards, config as C, data as D
+from . import eqindex
 from . import indexfund as IF
 from . import screen as S
 from .scorer import anchor_index_scores, score_pool, score_index_pool
@@ -573,8 +574,18 @@ def run(skip_refresh: bool = False, top: int | None = None,
 
         merged_snap = {k: v for p in pools for k, v in out[p]["snapshot"].items()}
         merged_navs = {k: v for p in pools for k, v in out[p]["navs"].items()}
+        # ---- 6b. 指数估值（v5.22，债指之外的指数型基金，独立页签）----
+        #   只读建库缓存 + 估值缓存；--skip-refresh 不联网（沿用过期缓存）。
+        #   任何异常只降级（页签不出现），绝不影响主动三池/债指的产物与退出码。
+        eq_payload = None
+        if C.EQ_INDEX.get("enabled"):
+            try:
+                eq_payload = eqindex.build(log=log, refresh=not skip_refresh)
+            except Exception as e:                 # noqa: BLE001
+                log(f"[7][指数估值] 构建失败：{type(e).__name__}: {e}"
+                    "（跳过本模块，主动三池与债指不受影响）")
         payload = cards.build_payload(cards_df, merged_snap, merged_navs,
-                                      pool_stats=stats)
+                                      pool_stats=stats, eq_index=eq_payload)
         cards.write_payload(payload, JSON_PATH, JS_PATH)
         for pool in pools:                   # 导出成功后才写历史（失败不污染基准）
             save_history(out[pool]["res"], pool=pool)

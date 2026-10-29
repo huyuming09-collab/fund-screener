@@ -137,21 +137,28 @@ def _parse_purchase_fee(html: str) -> tuple[float | None, float | None]:
     return orig, disc
 
 
-def fetch_f10(code: str) -> dict:
+def fetch_f10(code: str, with_manager: bool = True,
+              max_age_hours: float = 24 * 7) -> dict:
     """基金基本概况：类型、成立日期、规模、费率（含申购原价/优惠价）、经理、基准。
 
     缓存 7 天；key v3 = 新 schema（managers 现任经理列表，v5.5 共管）。
     2026-10-20 修复回归：读端曾留在 v2（旧 key 7 天内直接命中 → 永不重抓、
     managers 永远为空、共管/团队系数全失效），写端已在 v3 → 读写不一致；
     现读写统一 v3，旧 v2 缓存自然失效重抓。
+
+    2026-10-29（指数估值模块）：新增 with_manager / max_age_hours——
+    指数基金不看经理，建库时 with_manager=False 可省掉 jjjl 页请求（约省一半）；
+    max_age_hours 供建库缓存按月复用。默认值保持原行为（7 天、抓经理）。
+    若缓存是"跳过经理"版而本次需要经理字段 → 重新抓取，避免债券池读端拿空 managers。
     """
-    cached = _load_cache(f"f10_v3_{code}", 24 * 7)
+    cached = _load_cache(f"f10_v3_{code}", max_age_hours)
     if cached is not None:
         info = cached.to_dict() if isinstance(cached, pd.Series) else cached
-        # 读端修正（2026-10-21 回归接管 bug）：缓存条目里的 managers[].start 也可能
-        # 是 jl_intro 简介里的"首次上任日"——现任经理离任后回归接管时（如某债基经理
-        # 2018 首任、2025-12 回归），本轮任期会被虚增成全基金年龄，S3 经理闸误过。
-        return _reconcile_mgr_starts(info)
+        if not with_manager or "managers" in info:
+            # 读端修正（2026-10-21 回归接管 bug）：缓存条目里的 managers[].start 也可能
+            # 是 jl_intro 简介里的"首次上任日"——现任经理离任后回归接管时（如某债基经理
+            # 2018 首任、2025-12 回归），本轮任期会被虚增成全基金年龄，S3 经理闸误过。
+            return _reconcile_mgr_starts(info)
     html = _http(f"https://fundf10.eastmoney.com/jbgk_{code}.html", encoding="utf-8")
 
     def grab(pat, default=""):
@@ -175,6 +182,12 @@ def fetch_f10(code: str) -> dict:
         "benchmark": grab(r"业绩比较基准</th>\s*<td[^>]*>([^<]+)<"),
     }
     # 经理任职起始（F10 基金经理页第一行"至今"）
+    if not with_manager:
+        # 指数估值建库路径：指数基金不看经理，跳过 jjjl 页（省一半请求）。
+        # 不写 managers 键 → 后续债券池若拿到同 code 会重新抓（类型互斥，实际不会撞）。
+        info["manager_start"] = ""
+        _save_cache(f"f10_v3_{code}", info)
+        return info
     try:
         jjjl = _http(f"https://fundf10.eastmoney.com/jjjl_{code}.html", encoding="utf-8")
         m = re.search(r"<td>([\d-]{10})</td><td>至今</td>", jjjl)

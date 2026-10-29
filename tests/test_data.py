@@ -177,3 +177,57 @@ class TestMgrTenureContinuousRun:
     def test_reconcile_noop_without_managers(self):
         info = {"manager_id": "1", "manager_start": "2024-01-01"}
         assert D._reconcile_mgr_starts(info) == info
+
+
+# ---------------------------------------------------------------- v5.22 指数估值建库
+class TestFetchF10Options:
+    """指数估值建库用 with_manager=False 省掉 jjjl 页（且不得污染债券池读端）。"""
+
+    JBGK = ('<table><tr><th>基金简称</th><td>测试指数A</td></tr>'
+            '<tr><th>基金类型</th><td>指数型-股票</td></tr>'
+            '<tr><th>成立日期/规模</th><td>2019年01月01日</td></tr>'
+            '<tr><th>净资产规模</th><td>12.34亿元</td></tr>'
+            '<tr><th>管理费率</th><td>0.50%</td></tr>'
+            '<tr><th>托管费率</th><td>0.10%</td></tr>'
+            '<tr><th>销售服务费率</th><td>0.00%</td></tr>'
+            '<tr><th>业绩比较基准</th><td>沪深300指数收益率*95%+银行活期存款利率(税后)*5%</td></tr>'
+            '<tr><th>基金经理人</th><td><a>张三</a></td></tr></table>')
+
+    def test_skip_manager_avoids_jjjl_request(self, monkeypatch):
+        calls, saved = [], {}
+        monkeypatch.setattr(D, "_load_cache", lambda key, hours: None)
+        monkeypatch.setattr(D, "_save_cache", lambda key, obj: saved.update({key: obj}))
+
+        def fake_http(url, encoding="gbk", referer=None):
+            calls.append(url)
+            return self.JBGK
+
+        monkeypatch.setattr(D, "_http", fake_http)
+        info = D.fetch_f10("999001", with_manager=False)
+        assert info["benchmark"].startswith("沪深300指数")
+        assert "managers" not in info
+        assert len(calls) == 1 and "/jbgk_" in calls[0]
+        assert "f10_v3_999001" in saved
+
+    def test_manager_request_refetches_managerless_cache(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(D, "_load_cache",
+                            lambda key, hours: {"code": "999002", "benchmark": "x"})
+        monkeypatch.setattr(D, "_save_cache", lambda key, obj: None)
+
+        def fake_http(url, encoding="gbk", referer=None):
+            calls.append(url)
+            return self.JBGK
+
+        monkeypatch.setattr(D, "_http", fake_http)
+        info = D.fetch_f10("999002", with_manager=True)
+        assert "/jjjl_999002" in "".join(calls)      # 缓存缺 managers → 重抓
+        assert "managers" in info
+
+    def test_managerless_cache_served_when_not_needed(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(D, "_load_cache",
+                            lambda key, hours: {"code": "999003", "benchmark": "x"})
+        monkeypatch.setattr(D, "_http", lambda *a, **k: calls.append(1) or "")
+        info = D.fetch_f10("999003", with_manager=False)
+        assert info["benchmark"] == "x" and not calls

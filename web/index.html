@@ -107,6 +107,38 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .idx-group .sub{font-weight:400;font-size:11px;color:#4a6fae;}
 .idx-foot{flex:1 1 100%;order:9;font-size:10.5px;line-height:1.5;color:#5273b8;}
 .fundcard.is-index{box-shadow:inset 3px 0 0 #3b6fd4,0 1px 4px rgba(20,24,40,.05);}
+/* ---------- 指数估值（v5.22，债指之外的指数型基金） ---------- */
+.eqcard{box-shadow:inset 3px 0 0 #0b6b46,0 1px 4px rgba(20,24,40,.05);cursor:pointer;}
+.tier{flex:0 0 auto;min-width:60px;text-align:center;border-radius:9px;padding:5px 7px;
+      font-size:12.5px;font-weight:700;line-height:1.25;}
+.tier.t1{background:#e3f5ec;color:#0b6b46;}   /* 极低估 */
+.tier.t2{background:#e9f6ee;color:#1a7f37;}   /* 低估 */
+.tier.t3{background:#eef0f3;color:#4b5563;}   /* 合理偏低 */
+.tier.t4{background:#fff3e3;color:#a85100;}   /* 合理偏高 */
+.tier.t5{background:#fdecea;color:#b3261e;}   /* 高估 */
+.tier.big{display:inline-block;font-size:16px;padding:7px 14px;border-radius:11px;margin:2px 0 8px;}
+.eq-pct{text-align:right;flex:0 0 auto;}
+.eq-pct b{display:block;font-size:18px;color:var(--accent-ink);line-height:1.1;}
+.eq-pct span{font-size:10.5px;color:var(--sub);}
+.pctbands{position:relative;display:flex;height:9px;border-radius:5px;overflow:hidden;
+          margin:8px 0 2px;background:#f2f4f7;}
+.pctbands span{display:block;height:100%;opacity:.55;}
+.pctbands i.m{position:absolute;top:-4px;width:3px;height:17px;background:#1c1e22;
+              border-radius:2px;box-shadow:0 0 0 1px #fff;}
+.eq-line{font-size:11.5px;color:var(--sub);line-height:1.6;margin-top:6px;}
+.eq-warn{background:#fff7e0;border-left:3px solid #e8a33d;border-radius:8px;
+         padding:7px 10px;margin-top:8px;font-size:11.5px;color:#7a4d00;line-height:1.6;}
+.eqf{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px;padding:9px 0;
+     border-bottom:1px solid var(--line);}
+.eqf:last-child{border-bottom:none;}
+.eqf-l{flex:1 1 60%;min-width:0;}
+.eqf-l b{display:block;font-size:13px;font-weight:650;line-height:1.4;word-break:break-all;}
+.eqf-l span{font-size:10.5px;color:var(--sub);}
+.eqf-r{flex:0 0 auto;text-align:right;}
+.eqf-r b{display:block;font-size:14px;color:var(--accent-ink);}
+.eqf-r span{font-size:10px;color:var(--sub);}
+.eqf-sub{flex:1 1 100%;font-size:10.5px;color:var(--sub);line-height:1.5;}
+.eqf.susp .eqf-l b{color:#b3261e;}
 .empty-tip{color:var(--sub);text-align:center;font-size:13px;padding:30px 0;}
 
 /* ---------- 详情页 ---------- */
@@ -258,7 +290,7 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
       <div class="d-title"><button class="back" onclick="closeDetail()">‹</button>
         <span class="n" id="d-name">—</span><span class="d-code-inline" id="d-code-inline"></span></div>
       <div class="d-scoreline">
-        <span>综合评分 <b id="d-score">—</b></span>
+        <span><span id="d-score-label">综合评分</span> <b id="d-score">—</b></span>
         <span id="d-rank"></span>
         <span id="d-code" style="opacity:.9"></span>
         <button class="d-pick" id="d-pick" onclick="detailPick()">加入对比</button>
@@ -621,6 +653,7 @@ const METRIC_CELLS = f => [
 
 function renderList(){
   const cat = ACTIVE;
+  if (cat === 'eq_index') return renderEqIndexList();   /* v5.22 指数估值页签 */
   const ps = poolStat(cat);
   /* 按 tab 过滤；旧 data.js 的 funds 无 category → 按顶层 category（单池）归类 */
   const funds = (D.funds || []).filter(f => (f.category || D.category || 'short_bond') === cat);
@@ -679,11 +712,181 @@ document.getElementById('list').addEventListener('click', function(e){
   pickTgl(b.closest('.fundcard').dataset.code, e);
 }, true);
 
+/* ============ 指数估值（v5.22，债指之外的指数型基金：卡片=指数，不含基金） ============ */
+const EQ_TIER_CLS = {'极低估':'t1','低估':'t2','合理偏低':'t3','合理偏高':'t4','高估':'t5'};
+const EQ_TIER_COLOR = {'极低估':'#0b6b46','低估':'#1a7f37','合理偏低':'#6b7280',
+                       '合理偏高':'#a85100','高估':'#b3261e'};
+const EQ_GROUP_ORDER = ['宽基','行业','策略','海外'];
+const eqIndices = () => ((D && D.eq_index && D.eq_index.indices) || []);
+const numPos = (v, nd) => (v == null || Number(v) <= 0) ? '—' : num(v, nd);  /* PE≤0/缺失显示破折号 */
+const tierCls = t => EQ_TIER_CLS[t] || 't3';
+const tierColor = t => EQ_TIER_COLOR[t] || '#6b7280';
+
+/* 五段分位条：10/30/50/70 阈值（与 config.EQ_INDEX.tiers 同源，前端只做展示） */
+function eqBandHTML(pct){
+  const zones = [[10,'#0f8a5f'],[20,'#4aab7a'],[20,'#b9bec6'],[20,'#e8a33d'],[30,'#d9534f']];
+  const x = Math.max(0, Math.min(100, Number(pct) || 0));
+  return '<div class="pctbands">'
+    + zones.map(z => `<span style="width:${z[0]}%;background:${z[1]}"></span>`).join('')
+    + `<i class="m" style="left:${x}%"></i></div>`;
+}
+function renderEqIndexList(){
+  const eq = (D && D.eq_index) || {};
+  const list = eqIndices();
+  $('meta').innerHTML = `数据基准 <b class="asof">${D.asof}</b> · 指数估值 <b>${list.length}</b> 个`
+    + `（目录 ${eq.catalog_n || '—'} 个）· 估值日期 ${eq.asof || '—'}`
+    + ` · 来源：雪球基金（分位为程序按近5年周频自算）`;
+  if (!list.length){
+    $('list').innerHTML = '<div class="empty-tip">指数估值数据未生成：先运行'
+      + ' <b>python -m fundscorer.eqindex --ingest</b>，再跑管线；'
+      + '或检查 data/eq_index_funds.pkl 是否存在。</div>';
+    return;
+  }
+  const card = x => `
+    <div class="fundcard eqcard" data-idx="${x.code}" onclick='openEqIndexDetail(${JSON.stringify(x.code)})'>
+      <div class="fc-head">
+        <div class="tier ${tierCls(x.tier)}">${x.tier}</div>
+        <div style="flex:1;min-width:0">
+          <div class="fc-name">${x.name}</div>
+          <div class="fc-code">${x.group} · ${x.type}<span class="dot">·</span>同类 ${x.peer_rank}/${x.peer_n}
+            ${x.sufficient ? '' : '<span class="rk sgz" title="历史样本不足，分位仅供参考">样本不足</span>'}</div>
+        </div>
+        <div class="eq-pct"><b>${x.percentile.toFixed(1)}%</b><span>近${x.window_years}年分位</span></div>
+      </div>
+      ${eqBandHTML(x.percentile)}
+      <div class="eq-line">${x.metric_label} ${x.percentile.toFixed(1)}%（越低越便宜）·
+        PE ${numPos(x.pe,2)} · PB ${numPos(x.pb,2)} · 股息率 ${pct(x.div_yield)}</div>
+      <div class="fc-foot">
+        <span class="eq-funds">可选基金 ${x.fund_count} 只 · 最低综合费率 ${fpct(x.min_fee_total)}</span>
+      </div>
+    </div>`;
+  $('list').innerHTML = EQ_GROUP_ORDER.map(g => {
+    const gs = list.filter(x => x.group === g).sort((a,b) => a.percentile - b.percentile);
+    if (!gs.length) return '';
+    return `<div class="idx-group"><b>${g} · ${gs.length} 个指数</b>`
+      + `<span class="sub">按估值分位从低到高（越便宜越靠前）· 分位越低越便宜 · 卡片不列具体基金</span></div>`
+      + gs.map(card).join('');
+  }).join('');
+}
+
+/* 估值走势：内联 SVG（月度采样），避免 canvas 生命周期问题 */
+function eqSparkSVG(x){
+  const pts = (x.series || []).filter(p => p && p[1] != null);
+  if (pts.length < 2) return '<div class="eq-line">走势数据不足</div>';
+  const W = 640, H = 180, P = 12;
+  const vals = pts.map(p => p[1]);
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const span = (mx - mn) || 1;
+  const X = i => P + (W - 2 * P) * i / (pts.length - 1);
+  const Y = v => H - P - (H - 2 * P) * (v - mn) / span;
+  const d = pts.map((p,i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
+  const med = x.range && x.range.median;
+  const medY = (med != null) ? Y(med) : null;
+  const col = tierColor(x.tier);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block"
+      role="img" aria-label="估值走势">
+    ${medY != null ? `<line x1="${P}" y1="${medY.toFixed(1)}" x2="${W-P}" y2="${medY.toFixed(1)}"
+      stroke="#c9cdd4" stroke-dasharray="4 4"/>` : ''}
+    <path d="${d}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round"/>
+    <circle cx="${X(pts.length-1).toFixed(1)}" cy="${Y(pts[pts.length-1][1]).toFixed(1)}"
+      r="3.6" fill="${col}"/>
+    <text x="${P}" y="14" font-size="11" fill="#6b7280">${num(mx,2)}</text>
+    <text x="${P}" y="${H-2}" font-size="11" fill="#6b7280">${num(mn,2)}</text>
+    <text x="${W-P}" y="14" font-size="11" fill="#9aa0a6" text-anchor="end">${pts[0][0]} 起</text>
+  </svg>`;
+}
+
+function eqFundRow(f){
+  const buy = (f.purchase_fee_disc != null ? f.purchase_fee_disc : f.purchase_fee);
+  return `<div class="eqf${f.suspended ? ' susp' : ''}">
+    <div class="eqf-l"><b>${f.name}${f.cls ? '<span class="rk idx">'+f.cls+'类</span>' : ''}</b>
+      <span>${f.code} · 规模 ${yi(f.scale_yi)}${f.ret_1y != null ? ' · 近1年 '+pct(f.ret_1y) : ''}</span></div>
+    <div class="eqf-r"><b>${fpct(f.fee_total)}</b><span>综合费率</span></div>
+    <div class="eqf-sub">买入 ${fpct(buy)} · 管理 ${fpct(f.mgmt_fee)} · 托管 ${fpct(f.custody_fee)}
+      · 销售服务 ${fpct(f.sales_fee)} · ${f.purchase_status || '申购状态未知'}
+      ${f.suspended ? '<span class="rk sgz">暂停申购</span>' : ''}</div>
+  </div>`;
+}
+
+function eqIndexBodyHTML(x){
+  const gap = (x.pe_pb_gap != null && x.pe_pb_gap >= 30);
+  const funds = x.funds || [];
+  return `
+  <div class="sec"><h3>估值总览<span class="hint">分位越低越便宜</span></h3>
+    <div class="tier big ${tierCls(x.tier)}">${x.tier}</div>
+    <div class="kv"><span class="k">主口径</span><span>${x.metric_label}
+      ${x.percentile.toFixed(1)}%（近${x.window_years}年）</span></div>
+    <div class="kv"><span class="k">PE-TTM / 分位</span><span>${numPos(x.pe,2)}
+      ${x.pe_pct == null ? '（—）' : '（'+x.pe_pct.toFixed(1)+'%）'}</span></div>
+    <div class="kv"><span class="k">PB / 分位</span><span>${numPos(x.pb,2)}
+      ${x.pb_pct == null ? '（—）' : '（'+x.pb_pct.toFixed(1)+'%）'}</span></div>
+    <div class="kv"><span class="k">股息率 / ROE</span><span>${pct(x.div_yield)} / ${pct(x.roe)}</span></div>
+    <div class="kv"><span class="k">估值日期</span><span>${x.valuation_date || '—'}</span></div>
+    ${eqBandHTML(x.percentile)}
+    <div class="eq-line">分位口径：该指数自身近${x.window_years}年周频历史（${x.weeks} 周，
+      自 ${x.window_start || '—'}）${x.sufficient ? '' : ' · <b style="color:#b3261e">样本不足，分位仅供参考</b>'}
+      · 同类 ${x.group} 第 ${x.peer_rank}/${x.peer_n} 便宜</div>
+    ${gap ? `<div class="eq-warn">PE 与 PB 分位相差 ${x.pe_pb_gap.toFixed(0)} 个百分点：
+      可能是盈利周期位置不同（如周期底部 PE 高、PB 低），单看一个指标容易误判，两个分位请一起看。</div>` : ''}
+    <div class="mgr-sub">${x.why || ''}</div>
+  </div>
+
+  <div class="sec"><h3>估值走势<span class="hint">${x.metric_label} · 月度采样</span></h3>
+    ${eqSparkSVG(x)}
+    <div class="eq-line">近${x.window_years}年区间：最低 ${num(x.range && x.range.min,2)} /
+      中位 ${num(x.range && x.range.median,2)} / 最高 ${num(x.range && x.range.max,2)}</div>
+  </div>
+
+  <div class="sec"><h3>对应基金<span class="hint">按综合费率升序 · 含 A/C 份额</span></h3>
+    ${funds.length ? funds.map(eqFundRow).join('')
+      : '<div class="eq-line">暂无符合条件的场外基金</div>'}
+    <div class="eq-line">综合费率 = 管理 + 托管 + 销售服务；买入费率单列。
+      已剔除场内 ETF 与指数增强型；暂停申购排在最后。清单仅为同指数低费率份额整理，不构成推荐。</div>
+  </div>
+
+  <div class="sec"><h3>口径与说明</h3>
+    <div class="mgr-sub">
+      1. 估值数据来自雪球基金·指数估值（PE/PB/股息率/ROE），历史分位由本工具按该指数自身近
+      ${x.window_years} 年周频历史自算，未直接采用第三方分位口径；估值日期 ${x.valuation_date || '—'}。<br>
+      2. 档位阈值：极低估 ≤10% / 低估 ≤30% / 合理偏低 ≤50% / 合理偏高 ≤70% / 高估 &gt;70%（分位越低越便宜）。<br>
+      3. 估值分位只说明「相对自身历史的位置」，不代表未来收益，也不构成买卖信号；指数基金仍承担市场风险。<br>
+      4. 海外/QDII 指数的净值与估值日期可能滞后一个交易日，汇率折算也会带来偏差。<br>
+      5. 本页只覆盖有 PE/PB 历史数据的 ${(D.eq_index && D.eq_index.catalog_n) || '—'} 个主流指数；
+      其余指数基金本期不展示（不用价格分位冒充估值）。
+    </div>
+  </div>`;
+}
+
+function openEqIndexDetail(code){
+  const x = eqIndices().find(i => i.code === code);
+  if (!x) return;
+  CUR = null;                                   /* 指数详情不参与基金对比 */
+  $('d-name').textContent = x.name;
+  $('d-score-label').textContent = '估值档位';
+  $('d-score').textContent = x.tier;
+  $('d-score').style.color = tierColor(x.tier);
+  $('d-code-inline').textContent = x.code;
+  $('d-rank').textContent = `近${x.window_years}年${x.metric_label} ${x.percentile.toFixed(1)}%`
+    + ` · 同类 ${x.peer_rank}/${x.peer_n}`
+    + (x.sufficient ? '' : ` · 样本不足（${x.weeks}周）`);
+  $('d-code').textContent = `${x.group} · ${x.type} · 估值日期 ${x.valuation_date || '—'}`;
+  $('d-disc').textContent = D.disclaimer;
+  $('d-pick').style.display = 'none';
+  $('d-body').innerHTML = eqIndexBodyHTML(x);
+  const el = $('detail'); el.style.display = 'block';
+  requestAnimationFrame(() => el.classList.add('show'));
+  el.scrollTop = 0;
+  document.body.style.overflow = 'hidden';
+}
+
 /* ============ 详情 ============ */
 let CUR = null, WIN = '1y';
 
 function openDetail(code){
   CUR = D.funds.find(f=>f.code===code); if(!CUR) return;
+  /* v5.22：指数估值详情会改档位标签/颜色，回到基金详情时复位 */
+  $('d-score-label').textContent = '综合评分';
+  $('d-score').style.color = '';
   WIN = '1y';
   $('d-name').textContent = CUR.name;
   $('d-score').textContent = CUR.score;
@@ -941,6 +1144,12 @@ const EXPORT_SIZES = {
   wide: {w:1200, h:800,  rows:10, label:'公众号宽图 3:2（1200×800，TOP10）'},
 };
 function exportRows(pool, rows){
+  if (pool === 'eq_index'){
+    const list = ((D && D.eq_index && D.eq_index.indices) || []).slice()
+      .sort((a,b) => (EQ_GROUP_ORDER.indexOf(a.group) - EQ_GROUP_ORDER.indexOf(b.group))
+        || (a.percentile - b.percentile));
+    return rows ? list.slice(0, rows) : list;
+  }
   const list = ((D && D.funds) || [])
     .filter(f => (f.category || (D && D.category) || 'short_bond') === pool)
     .sort((a,b) => (a.rank||0) - (b.rank||0));
@@ -968,8 +1177,108 @@ function _deltaTxt(f, hasPrev){
   if (d == null) return '—';
   return d > 0 ? '↑' + d : (d < 0 ? '↓' + (-d) : '—');
 }
+/* v5.22 指数估值导出：按宽基/行业/策略/海外分段，只画指数行（不含具体基金）。
+   63 行手机图不可读 → 默认按尺寸行数（xhs 20 / wide 10），显式 &rows 可覆盖。 */
+function _drawEqExport(canvas, S, rowsLimit){
+  const EQ_TC = {'极低估':['#e3f5ec','#0b6b46'],'低估':['#e9f6ee','#1a7f37'],
+                 '合理偏低':['#eef0f3','#4b5563'],'合理偏高':['#fff3e3','#a85100'],
+                 '高估':['#fdecea','#b3261e']};
+  const list = exportRows('eq_index', rowsLimit || S.rows);
+  const W = S.w, H = S.h, PAD = 48;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const wide = W > H;
+  const rr = (x,y,w,h,r) => {
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  };
+  ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ff6a00'; rr(PAD, wide ? 30 : 34, 10, wide ? 40 : 44, 5); ctx.fill();
+  ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 36 : 42) + 'px sans-serif';
+  ctx.fillText('指数估值', PAD + 24, wide ? 66 : 74);
+  const pill = '估值日期 ' + ((D.eq_index && D.eq_index.asof) || '—');
+  ctx.font = (wide ? 17 : 19) + 'px sans-serif';
+  const pw = ctx.measureText(pill).width + 32, ph = wide ? 34 : 38;
+  ctx.fillStyle = '#ffe9d9'; rr(W - PAD - pw, wide ? 34 : 38, pw, ph, ph/2); ctx.fill();
+  ctx.fillStyle = '#b3541e'; ctx.fillText(pill, W - PAD - pw + 16, (wide ? 34 : 38) + ph * 0.68);
+  const rowsTop = wide ? 152 : 162;
+  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 15 : 17) + 'px sans-serif';
+  ctx.fillText('按估值分位（越低越便宜）· 卡片只列指数，基金清单见网页详情', PAD, rowsTop - 44);
+  const eqTotal = ((D.eq_index && D.eq_index.indices) || []).length;
+  if (list.length < eqTotal) {
+    ctx.fillStyle = '#a39a8c'; ctx.font = (wide ? 13 : 15) + 'px sans-serif';
+    ctx.fillText('共 ' + eqTotal + ' 个指数 · 本图按估值分位取前 ' + list.length
+      + '（顺序：宽基 → 行业 → 策略 → 海外）', PAD, rowsTop - 23);
+  }
+
+  const foot = Math.round(H * (wide ? 0.19 : 0.13));
+  const rowsBot = H - foot - 6;
+  const groups = EQ_GROUP_ORDER.map(g => ({g, list: list.filter(x => x.group === g)}))
+    .filter(x => x.list.length);
+  const nRows = groups.reduce((s, x) => s + x.list.length, 0) || 1;
+  const headH = wide ? 26 : 30;
+  const rowH = Math.max(24, Math.floor((rowsBot - rowsTop - groups.length * headH) / nRows));
+  const h = Math.max(20, rowH - 4);
+  const fName = Math.min(wide ? 19 : 22, Math.round(h * 0.46) + 8);
+  const fData = Math.max(11, Math.min(wide ? 13 : 14, Math.round(h * 0.30) + 6));
+  const cols = wide
+    ? [PAD + 8, PAD + 300, PAD + 392, PAD + 486, PAD + 566, PAD + 646, PAD + 740, W - PAD - 8]
+    : [PAD + 8, PAD + 236, PAD + 318, PAD + 396, PAD + 470, PAD + 546, PAD + 640, W - PAD - 8];
+  let y = rowsTop;
+  ctx.fillStyle = '#ffffff'; rr(PAD, y - 6, W - PAD * 2,
+    Math.min(rowsBot - y + 10, groups.length * headH + nRows * rowH + 12), 14); ctx.fill();
+  groups.forEach(grp => {
+    ctx.fillStyle = '#eef3fd'; rr(PAD + 4, y + 2, W - PAD * 2 - 8, headH - 6, 7); ctx.fill();
+    ctx.fillStyle = '#1d3f7a'; ctx.font = '700 ' + (wide ? 14 : 16) + 'px sans-serif';
+    ctx.fillText(grp.g + ' · ' + grp.list.length + ' 个指数', cols[0] + 2, y + headH - 10);
+    y += headH;
+    grp.list.forEach((x, i) => {
+      const ty = y + Math.round((rowH - h) / 2);
+      if (i < grp.list.length - 1) {
+        ctx.fillStyle = '#f3efe8'; ctx.fillRect(PAD + 12, y + rowH - 1, W - PAD * 2 - 24, 1);
+      }
+      const l1 = ty + Math.round(h * 0.42);
+      ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
+      ctx.fillText(_fitText(ctx, x.name, cols[1] - cols[0] - 92), cols[0], l1);
+      const tc = EQ_TC[x.tier] || ['#eef0f3','#4b5563'];
+      const bw = Math.max(52, ctx.measureText(x.tier).width + 22);
+      ctx.fillStyle = tc[0]; rr(cols[1] - bw - 8, ty + Math.round((h - h * 0.62) / 2), bw,
+        Math.max(18, h * 0.62), 7); ctx.fill();
+      ctx.fillStyle = tc[1]; ctx.font = '700 ' + Math.round(fData * 1.05) + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(x.tier, cols[1] - bw / 2 - 8, ty + h * 0.62);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#b3261e'; ctx.font = '700 ' + Math.round(fData * 1.1) + 'px sans-serif';
+      ctx.fillText(x.percentile.toFixed(1) + '%', cols[2], l1);
+      ctx.fillStyle = '#44403a'; ctx.font = fData + 'px sans-serif';
+      ctx.fillText(x.metric === 'pe' ? ('PE ' + numPos(x.pe, 1)) : ('PB ' + numPos(x.pb, 2)), cols[3], l1);
+      ctx.fillText((x.metric === 'pb' ? 'PE ' + numPos(x.pe, 1) : 'PB ' + numPos(x.pb, 2)), cols[4], l1);
+      ctx.fillText('息 ' + pct(x.div_yield), cols[5], l1);
+      ctx.fillStyle = '#5273b8';
+      ctx.fillText('基金 ' + x.fund_count + ' 只', cols[6], l1);
+      ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + fData + 'px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(fpct(x.min_fee_total), cols[7], l1);
+      ctx.textAlign = 'left';
+      y += rowH;
+    });
+  });
+
+  const fy = H - foot;
+  ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 20 : 22) + 'px sans-serif';
+  ctx.fillText('每周五自动更新 · 估值分位不是买卖信号', PAD, fy + 24);
+  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
+  const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
+  lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 54 + i * 19));
+  ctx.textAlign = 'right'; ctx.fillStyle = '#9aa0a6';
+  ctx.fillText('@班马成长日记', W - PAD, fy + 24); ctx.textAlign = 'left';
+  return {width: W, height: H, rows: nRows};
+}
+
 function drawExport(canvas, pool, sizeKey, rows){
   const S = EXPORT_SIZES[sizeKey] || EXPORT_SIZES.xhs;
+  if (pool === 'eq_index') return _drawEqExport(canvas, S, rows);
   const ps = (D && D.pools && D.pools[pool]) || {};
   const hasPrev = ps.has_prev != null ? !!ps.has_prev : !!(D && D.has_prev);
   /* 债指（v5.17）：全量分组绘制，不套尺寸默认行数（用户 2026-10-22 拍板"截断不合理"）；显式 &rows 仍生效 */
@@ -1259,6 +1568,8 @@ function initExport(){
       + (pools.length > 1 ? '（共 ' + pools.length + ' 个分类，页签切换）' : '');
     hint.textContent = (pool === 'index'
       ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '全量分组')   /* v5.17 债指不分 TOP 截断 */
+      : pool === 'eq_index'
+      ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '指数估值·按尺寸行数')
       : EXPORT_SIZES[sizeKey].label) + ' · ' + info.rows + ' 行 · 数据基准 '
       + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）'
       + (pools.length > 1 ? '；「下载全部」逐池出图，浏览器可能询问是否允许多文件下载' : '');

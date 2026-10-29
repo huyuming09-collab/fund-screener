@@ -316,6 +316,55 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     }
   }
   switchTab('short_bond');
+  // 12. 指数估值（v5.22 债指之外的指数型基金）：卡片=指数（不含基金）、详情=估值+低费率基金
+  if (D.eq_index && (D.eq_index.indices||[]).length) {
+    const eqs = D.eq_index.indices;
+    switchTab('eq_index');
+    const le = document.getElementById('list').innerHTML;
+    chk('指数估值页签可切换、meta 显示估值日期',
+        ACTIVE==='eq_index' && document.getElementById('meta').innerHTML.includes('估值日期'));
+    chk('指数卡渲染（eqcard）且无勾选对比按钮',
+        le.includes('eqcard') && !le.includes('class="pick"'));
+    const x0 = eqs[0];
+    const seg = le.split('<div class="fundcard').find(s=>s.includes(x0.name)) || '';
+    chk('指数卡含档位/分位/可选基金数/最低综合费率',
+        seg.includes(x0.tier) && seg.includes(x0.percentile.toFixed(1)+'%')
+        && seg.includes('可选基金 '+x0.fund_count) && seg.includes('最低综合费率'));
+    chk('指数卡不含具体基金代码', (x0.funds||[]).every(f=>!seg.includes(f.code)));
+    chk('组内按估值分位升序',
+        ['宽基','行业','策略','海外'].every(g=>{
+          const ps = eqs.filter(x=>x.group===g).map(x=>x.percentile);
+          return ps.every((v,i)=>i===0 || ps[i-1]<=v);
+        }));
+    openEqIndexDetail(x0.code);
+    const de = document.getElementById('d-body').innerHTML;
+    chk('指数详情含估值总览/走势/对应基金/口径',
+        de.includes('估值总览') && de.includes('估值走势')
+        && de.includes('对应基金') && de.includes('口径与说明') && de.includes('<svg'));
+    chk('指数详情头部为「估值档位」且显示档位',
+        document.getElementById('d-score-label').textContent==='估值档位'
+        && document.getElementById('d-score').textContent===x0.tier);
+    chk('指数详情无 NaN/undefined',
+        !/NaN|undefined/.test(de + document.getElementById('d-rank').textContent));
+    if ((x0.funds||[]).length) {
+      chk('基金清单含综合费率与买入费率',
+          de.includes('综合费率') && de.includes('买入'));
+      chk('基金清单按综合费率升序（暂停申购沉底）',
+          (() => { const fs = x0.funds;
+            return fs.every((f,i)=> i===0
+              || (fs[i-1].suspended <= f.suspended
+                  && (f.suspended || fs[i-1].fee_total <= f.fee_total))); })());
+    }
+    closeDetail();
+    chk('指数详情关闭恢复', !document.getElementById('detail').classList.contains('show'));
+    openDetail(shortFunds[0].code);
+    chk('回到基金详情恢复「综合评分」标签',
+        document.getElementById('d-score-label').textContent==='综合评分');
+    closeDetail();
+    switchTab('short_bond');
+  } else {
+    console.log('· 无指数估值数据（旧 data.js / 未建库）');
+  }
   chk('未知分类切换被忽略', (switchTab('nonexistent_cat'), ACTIVE==='short_bond'));
 } else {
   console.log('· 单池 data.js：多池切换分支未适用（跑完周更管线后应出现多池分支）');
@@ -360,6 +409,15 @@ chk('exportPools：启用且有数据的池（多池=中短债+长债+固收+，
 chk('drawExport 遍历全部可导出池：每池都有行且画布为请求尺寸',
   poolsExp.every(p => { const info = drawExport(cv2, p.id, 'xhs');
     return info.rows > 0 && cv2.width === 1080 && cv2.height === 1620; }));
+if (D.eq_index && (D.eq_index.indices||[]).length) {
+  const eqRows = exportRows('eq_index');
+  const infoE = drawExport(cv2, 'eq_index', 'xhs');
+  chk('指数估值导出：行数=min(20,指数数)、画布尺寸正确',
+      eqRows.length === D.eq_index.indices.length
+      && infoE.rows === Math.min(20, eqRows.length)
+      && cv2.width === 1080 && cv2.height === 1620);
+  chk('exportPools 含指数估值页签', poolsExp.some(p => p.id === 'eq_index'));
+}
 let drawOK = true;
 try { drawExport(cv2,'long_bond','xhs'); drawExport(cv2,'not_a_pool','wide'); } catch(e){ drawOK = false; }
 chk('drawExport 容错：未知池/空池不抛异常', drawOK);
