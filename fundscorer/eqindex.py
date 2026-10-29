@@ -329,13 +329,16 @@ def tier_of(pct: float | None) -> str | None:
     return "高估"
 
 
-def _monthly_series(values: list[float], dates: list, points: int = 40) -> list[list]:
+def _monthly_series(values: list[float], dates: list, points: int = 40,
+                    window_years: int | None = None) -> list[list]:
     if not values:
         return []
     s = pd.Series(values, index=pd.to_datetime(dates), dtype=float).dropna()
     s = s[s > 0].sort_index()
     if s.empty:
         return []
+    if window_years:                              # 走势只画估值窗口内（与分位口径一致）
+        s = s[s.index >= s.index.max() - pd.DateOffset(years=window_years)]
     g = s.groupby([s.index.year, s.index.month]).last()
     items = list(g.items())
     if len(items) > points:                       # 等距抽稀，保留首尾与整段跨度
@@ -455,7 +458,8 @@ def build_index_valuation(entry: dict, raw: dict) -> dict | None:
         "range": {"min": prim["min"], "median": prim["median"], "max": prim["max"]},
         "valuation_date": prim["end"] or detail.get("date"),
         "series": _monthly_series(pe_vals if metric == "pe" else pb_vals,
-                                  pe_dates if metric == "pe" else pb_dates),
+                                  pe_dates if metric == "pe" else pb_dates,
+                                  window_years=C.EQ_INDEX["window_years"]),
     }
     return out
 

@@ -97,6 +97,7 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .rk.sgz{color:#c0392b;background:#fdecea;border-radius:5px;padding:0 5px;
   border:1px solid rgba(192,57,43,.35);font-size:10.5px;}   /* 暂停申购标注（2026-10-20） */
 .d-code-inline{opacity:.55;font-size:12px;margin-left:8px;font-weight:600;letter-spacing:.5px;}
+#d-score{white-space:nowrap;}
 .rk.style.wave{background:#f3ecfd;color:#7237c0;}      /* 震荡型：收益低波动高 */
 .seats{color:#a15c00;background:#fff7e0;border-radius:8px;padding:1px 6px;
        font-size:10.5px;font-weight:600;}
@@ -864,12 +865,14 @@ function openEqIndexDetail(code){
   $('d-name').textContent = x.name;
   $('d-score-label').textContent = '估值档位';
   $('d-score').textContent = x.tier;
-  $('d-score').style.color = tierColor(x.tier);
+  /* 头部是橙色底，档位文字用白色保证对比度；档位配色留给页内徽标 */
+  $('d-score').style.color = '#fff';
   $('d-code-inline').textContent = x.code;
   $('d-rank').textContent = `近${x.window_years}年${x.metric_label} ${x.percentile.toFixed(1)}%`
     + ` · 同类 ${x.peer_rank}/${x.peer_n}`
     + (x.sufficient ? '' : ` · 样本不足（${x.weeks}周）`);
-  $('d-code').textContent = `${x.group} · ${x.type} · 估值日期 ${x.valuation_date || '—'}`;
+  $('d-code').textContent = (x.type && x.type !== x.group ? `${x.group} · ${x.type}` : x.group)
+    + ` · 估值日期 ${x.valuation_date || '—'}`;
   $('d-disc').textContent = D.disclaimer;
   $('d-pick').style.display = 'none';
   $('d-body').innerHTML = eqIndexBodyHTML(x);
