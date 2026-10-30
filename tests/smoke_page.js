@@ -8,6 +8,7 @@ const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
 
 const classes = new Set();
 const mkEl = () => ({ innerHTML:'', textContent:'', style:{}, dataset:{}, onclick:null, disabled:false, scrollTop:0, hidden:false, addEventListener(){},
+  setAttribute(){}, getAttribute(){ return null; }, focus(){},
   classList:{ add:c=>classes.add(c), remove:c=>classes.delete(c), contains:c=>classes.has(c), toggle:()=>{} } });
 const els = {};
 global.document = {
@@ -286,15 +287,15 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     // 断言用 <h3> 锚定：裸串会匹配到 HTML 注释（<!-- 评分明细… -->）
     // v5.12：评分明细 = 指数评估卡分项贡献（merged 回退路径的插值锚点渲染休眠）
     // v5.18：明细提示行「经理块基线」→「同画像锚定」（逐只锚定，docs/17 §13）
-    chk('指数详情"心跳值明细"展示评估卡分项贡献而非插值锚点',
-        dbI.includes('<h3>心跳值明细') && !dbI.includes('<h3>评分依据')
+    chk('指数详情"心动值明细"展示评估卡分项贡献而非插值锚点',
+        dbI.includes('<h3>心动值明细') && !dbI.includes('<h3>评分依据')
         && dbI.includes('指数评估卡 · 同尺贡献分+同画像锚定') && dbI.includes('总费率')
         && !dbI.includes('下邻锚点') && !dbI.includes('线性插值得分'));
     if (ac) {
       openDetail(ac.code);
       const dbA = document.getElementById('d-body').innerHTML;
       chk('主动详情仍显示"基金经理"+"评分明细·分项贡献分"',
-          dbA.includes('<h3>基金经理') && dbA.includes('<h3>心跳值明细')
+          dbA.includes('<h3>基金经理') && dbA.includes('<h3>心动值明细')
           && dbA.includes('分项贡献分') && !dbA.includes('<h3>评分依据'));
     }
     switchTab('short_bond');
@@ -324,8 +325,8 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
   switchTab('index');
   const listIx = document.getElementById('list').innerHTML;
   // v5.14（2026-10-21）：债指分位与本池主动候选同尺（"业绩差不多分数也差不多"）+ 去截断全显示
-  chk('债指 tab 分组头（心跳值与本池主动榜同尺，跨池不可比）',
-      listIx.includes('债指 · ') && listIx.includes('心跳值与本池主动榜同尺'));
+  chk('债指 tab 分组头（心动值与本池主动榜同尺，跨池不可比）',
+      listIx.includes('债指 · ') && listIx.includes('心动值与本池主动榜同尺'));
   const ixWithPeers = (D.funds||[]).find(f=>f.is_index && (f.index_peers||[]).length);
   if (ixWithPeers) {
     openDetail(ixWithPeers.code);
@@ -333,7 +334,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('详情"同指数其他优秀基金"块渲染且注明口径',
         dbP.includes('<h3>同指数其他优秀基金')
         && dbP.includes('同一跟踪指数只在榜内展示 1 只')
-        && dbP.includes('池内相对心跳值，与主动榜不可比'));
+        && dbP.includes('池内相对心动值，与主动榜不可比'));
     chk('债指详情名次分母 = 组内只数',
         document.getElementById('d-rank').textContent
           .includes('第 '+ixWithPeers.rank+' 名 / '+ixWithPeers.idx_group_n));
@@ -348,7 +349,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
       openCmp();
       const cbi = document.getElementById('cmp-body').innerHTML;
       chk('债指对比表含分项得分（收益/风险/费率/规模/锚定）',
-          cbi.includes('心跳值明细') && cbi.includes('近3年年化') && cbi.includes('近3年最大回撤')
+          cbi.includes('心动值明细') && cbi.includes('近3年年化') && cbi.includes('近3年最大回撤')
           && cbi.includes('综合费率') && cbi.includes('同画像锚定'));
       chk('债指对比经理行换指数族·久期段（无经理从业）',
           cbi.includes('指数族·久期段') && !cbi.includes('>经理从业<'));
@@ -364,27 +365,54 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     const le = document.getElementById('list').innerHTML;
     chk('指数估值页签可切换、meta 显示估值日期',
         ACTIVE==='eq_index' && document.getElementById('meta').innerHTML.includes('估值日期'));
-    chk('指数页含搜索框 + 分类筛选 + 结果容器',
-        le.includes('id="eq-search"') && le.includes('eq-filter') && le.includes('id="eq-results"'));
+    chk('指数页含搜索图标（默认不占位）+ 分类筛选 + 结果容器',
+        le.includes('eqToggleSearch()') && !le.includes('id="eq-search"')
+        && le.includes('eq-filter') && le.includes('id="eq-results"'));
+    // v1.4：点搜索图标展开输入框
+    eqToggleSearch();
+    const le2 = document.getElementById('list').innerHTML;
+    chk('点搜索图标展开输入框', le2.includes('id="eq-search"'));
+    eqToggleSearch();
+    chk('再点收起搜索框', !document.getElementById('list').innerHTML.includes('id="eq-search"'));
     // v1.2：行渲染进 #eq-results（stub DOM 不解析嵌套 innerHTML，故直接取该元素）
     const res = document.getElementById('eq-results').innerHTML;
     chk('指数表渲染（紧凑列表行 eqi）且无勾选对比按钮',
         res.includes('class="eqi"') && !res.includes('class="pick"'));
     const x0 = eqs[0];
     const seg = res.split('<div class="eqi"').find(s=>s.includes(x0.name)) || '';
-    chk('指数行含档位/温度分位/热度值/最低费率',
+    // v1.4：行=档位+名称+当前温度；热度值小字已删（问题4/10）
+    chk('指数行含档位/温度分位/当前温度标签',
         seg.includes(x0.tier) && seg.includes(x0.percentile.toFixed(1)+'%')
-        && seg.includes('热度值'+x0.fund_count) && seg.includes('最低费率'));
+        && seg.includes('当前温度'));
+    chk('指数行不再有热度值/最低费率小字', !seg.includes('热度值') && !seg.includes('最低费率'));
     chk('指数行不含具体基金代码', (x0.funds||[]).every(f=>!seg.includes(f.code)));
-    // v1.2：每类默认热度 Top N，超出给「查看更多」
-    const hotN = (D.eq_index && D.eq_index.hot_per_group) || 5;
+    // v1.4：每类默认重点 Top N，「查看更多」进全量页
+    const hotN = (D.eq_index && D.eq_index.hot_per_group) || 12;
     const groups = ['宽基','行业','策略','海外'].filter(g=>eqs.some(x=>x.group===g));
-    chk('每类默认只展示热度 Top N（其余进查看更多）',
+    chk('每类默认只展示重点 Top N（其余进全量页）',
         groups.every(g => {
           const n = eqs.filter(x=>x.group===g).length;
-          const shown = res.split('<div class="eqi"').length - 1;
           return n <= hotN || res.includes('查看更多');
         }));
+    // v1.4 全量页：查看更多进入，含该组全部指数 + 搜索图标
+    const bigG = groups.find(g => eqs.filter(x=>x.group===g).length > hotN) || groups[0];
+    eqOpenFull(bigG);
+    const fullBody = document.getElementById('eqfull-body').innerHTML;
+    chk('全量页渲染该组全部指数',
+        document.getElementById('eqfull').classList.contains('show')
+        && fullBody.split('<div class="eqi"').length - 1 === eqs.filter(x=>x.group===bigG).length);
+    chk('全量页含搜索图标且默认收起',
+        document.getElementById('eqfull-searchbar').hidden === true);
+    eqFullToggleSearch();
+    chk('全量页点图标展开搜索', document.getElementById('eqfull-searchbar').hidden === false);
+    // v1.4：全量页搜索跨全部指数（不区分分组）
+    const other = eqs.find(x => x.group !== bigG);
+    eqFullSearch(other.name.slice(0, 2));
+    chk('全量页搜索跨全部指数',
+        document.getElementById('eqfull-body').innerHTML.includes(other.name)
+        && (document.getElementById('eqfull-sub').textContent||'').includes('全库匹配'));
+    closeEqFull();
+    chk('全量页可关闭', !document.getElementById('eqfull').classList.contains('show'));
     // v1.2：搜索跨类过滤
     const first = (eqs.find(x=>x.group===groups[0]) || eqs[0]);
     eqSearch(first.name.slice(0, 2));
@@ -422,8 +450,8 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     closeDetail();
     chk('指数详情关闭恢复', !document.getElementById('detail').classList.contains('show'));
     openDetail(shortFunds[0].code);
-    chk('回到基金详情恢复「综合心跳值」标签',
-        document.getElementById('d-score-label').textContent==='综合心跳值');
+    chk('回到基金详情恢复「综合心动值」标签',
+        document.getElementById('d-score-label').textContent==='综合心动值');
     closeDetail();
     switchTab('short_bond');
   } else {
@@ -501,8 +529,8 @@ if (shortFunds.length >= 2) {
   const cb = document.getElementById('cmp-body').innerHTML;
   chk('对比表无 NaN/undefined 泄漏', !/NaN|undefined/.test(cb));
   chk('对比表含四分区与校验行',
-      cb.includes('综合概览') && cb.includes('心跳值明细') && cb.includes('关键指标')
-      && cb.includes('Σ 贡献分') && cb.includes('= 卡片上的心跳值'));
+      cb.includes('综合概览') && cb.includes('心动值明细') && cb.includes('关键指标')
+      && cb.includes('Σ 贡献分') && cb.includes('= 卡片上的心动值'));
   const selCmp = CMP.map(c=>D.funds.find(f=>f.code===c));
   const tsvCmp = cmpTSV(selCmp, null, 0);
   const anySeat = selCmp.some(f=>f.manager && f.manager.seats>=2);

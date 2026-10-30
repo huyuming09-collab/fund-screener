@@ -41,25 +41,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 }
 #phone>header{flex:0 0 auto;}
 
-/* ---------- 顶部 ---------- */
+/* ---------- 顶部（v1.4 压缩：让数据区占更多有效高度） ---------- */
 header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#ff8a3d,#ff6a00);
-       color:#fff;padding:10px 16px 8px;}
-header h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.5px;}
-header .meta{font-size:11px;opacity:1;font-weight:500;margin-top:4px;text-shadow:0 1px 2px rgba(90,35,0,.30);}
-header .meta b.asof{font-size:12.5px;letter-spacing:.2px;text-shadow:0 0 8px rgba(255,209,102,.35);}
-.tabs{display:flex;gap:8px;margin-top:8px;overflow-x:auto;padding-bottom:2px;}
+       color:#fff;padding:7px 12px 6px;}
+header h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.5px;}
+header .meta{font-size:10.5px;opacity:1;font-weight:500;margin-top:2px;text-shadow:0 1px 2px rgba(90,35,0,.30);}
+header .meta b.asof{font-size:11.5px;letter-spacing:.2px;text-shadow:0 0 8px rgba(255,209,102,.35);}
+/* v1.4 下滚收起 meta（问题6：把高度还给数据区） */
+header .meta{transition:max-height .18s,opacity .15s,margin .18s;max-height:32px;overflow:hidden;}
+header.compact .meta{max-height:0;opacity:0;margin-top:0;}
 /* 页签（2026-10-22 对比度重做：非激活 半透白底+深棕字 5.5:1；激活 纯白底+深橙字 4.6:1） */
 .tab{flex:0 0 auto;min-height:36px;display:inline-flex;align-items:center;padding:8px 14px;border-radius:14px;font-size:13px;background:rgba(255,255,255,.55);
      color:#7c3a12;white-space:nowrap;border:none;}
 .tab.active{background:#fff;color:var(--accent-ink);font-weight:700;box-shadow:0 2px 6px rgba(140,50,0,.25);}
 .tab.disabled{opacity:.45;}
 .tab .soon{font-size:10px;margin-left:3px;}
-/* 两级导航：稳健型 / 指数型 / 债指 */
-.nav-groups{display:flex;gap:6px;margin-top:8px;}
-.nav-group{flex:0 0 auto;min-height:32px;padding:5px 12px;border-radius:10px;border:none;
-           background:rgba(255,255,255,.30);color:#fff;font-size:12px;font-weight:600;}
+/* v1.4：#tabs 改块级——一级分区行与二级标签行分两行（修手机上叠一块）；
+   二级标签改用指数型过滤条同款小胶囊（用户 2026-10-31） */
+.tabs{display:block;margin-top:5px;}
+.nav-groups{display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;
+  scrollbar-width:none;}
+.nav-groups::-webkit-scrollbar{display:none;}
+.nav-group{flex:0 0 auto;min-height:28px;padding:4px 10px;border-radius:9px;border:none;
+           background:rgba(255,255,255,.30);color:#fff;font-size:11.5px;font-weight:600;
+           white-space:nowrap;}
 .nav-group.on{background:#fff;color:var(--accent-ink);box-shadow:0 2px 6px rgba(140,50,0,.25);}
-.nav-tabs{display:flex;gap:8px;margin-top:6px;overflow-x:auto;padding-bottom:2px;}
+.nav-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;}
+.nav-tabs .tab{min-height:26px;padding:4px 11px;border-radius:8px;font-size:11.5px;
+               background:rgba(255,255,255,.82);color:#7c3a12;border:1px solid rgba(140,50,0,.14);
+               box-shadow:none;}
+.nav-tabs .tab.active{background:var(--accent);color:#fff;font-weight:650;border-color:var(--accent);}
 
 /* ---------- 榜单卡 ---------- */
 main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;}
@@ -184,20 +195,34 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eq-toggle button{padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;
                   color:var(--sub);font-size:11.5px;}
 .eq-toggle button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
-/* v1.2 紧凑列表行（非卡片） */
-.eqi{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid #edeff2;
+/* v1.2 紧凑列表行（非卡片）· v1.4 简化：名称手机可两行、右侧「当前温度」 */
+.eqi{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid #edeff2;
      cursor:pointer;transition:background .1s;}
 .eqi:active{background:#f6f7f9;}
-.eqi-l{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;}
-.eqi-l .tier{flex:0 0 auto;}
-.eqi-name{min-width:0;}
-.eqi-name b{display:block;font-size:14px;font-weight:650;line-height:1.25;
-            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.eqi-code{font-size:9.5px;color:var(--sub);font-weight:500;margin-left:4px;}
-.eqi-r{flex:0 0 auto;text-align:right;min-width:0;}
-.eqi-pct{font-size:16px;font-weight:700;color:var(--accent-ink);line-height:1.15;}
-.eqi-sub{font-size:9.5px;color:var(--sub);line-height:1.45;white-space:nowrap;}
+.eqi .tier{flex:0 0 auto;}
+.eqi-name{flex:1;min-width:0;}
+.eqi-name b{display:block;font-size:14.5px;font-weight:650;line-height:1.3;
+            word-break:break-word;}
+.eqi-code{font-size:9.5px;color:var(--sub);font-weight:500;}
+.eqi-r{flex:0 0 auto;text-align:right;min-width:58px;}
+.eqi-lab{font-size:9px;color:var(--sub);line-height:1.2;}
+.eqi-pct{font-size:17px;font-weight:700;color:var(--accent-ink);line-height:1.2;}
 /* v1.3 走势图左侧图例：每条线的图示说明（用户 2026-10-30） */
+/* v1.4 搜索图标化 + 全量页（问题7/8/9） */
+.eq-bar{display:flex;gap:6px;margin:2px 0 8px;align-items:center;}
+.eq-bar input{flex:1;min-width:0;padding:8px 11px;border-radius:10px;border:1px solid var(--line);
+  background:#fff;font-size:13px;color:var(--text);outline:none;}
+.eq-sbtn{flex:0 0 auto;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);
+  background:#fff;color:var(--sub);display:inline-flex;align-items:center;justify-content:center;}
+.eq-sbtn:active{background:#fff6ef;}
+#eqfull{position:absolute;inset:0;background:var(--bg);z-index:44;transform:translateX(100%);
+  transition:transform .22s ease;visibility:hidden;display:flex;flex-direction:column;}
+#eqfull.show{transform:translateX(0);visibility:visible;}
+#eqfull .d-head{flex:0 0 auto;}
+#eqfull-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 14px 20px;}
+.eqfull-search{flex:0 0 auto;padding:0 14px 8px;}
+.eqfull-search input{width:100%;padding:8px 11px;border-radius:10px;border:1px solid var(--line);
+  background:#fff;font-size:13px;color:var(--text);outline:none;}
 .eq-chart-wrap{display:flex;gap:10px;align-items:flex-start;}
 .eq-legend{flex:0 0 92px;padding-top:10px;}
 .eq-legend .lg{display:flex;align-items:center;gap:5px;font-size:9.5px;color:var(--sub);
@@ -216,7 +241,6 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
     column-gap:28px;align-items:start;}
   #list.eq-mode .eq-group,#list.eq-mode .eq-more,#list.eq-mode .empty-tip{grid-column:1/-1;}
   #list.eq-mode .eqi{padding:10px 4px;}
-  #list.eq-mode .eqi-sub{font-size:10px;}
   #list.eq-mode .eq-bar,#list.eq-mode .eq-filter{max-width:720px;}
 }
 /* 搜索框 + 查看更多 */
@@ -333,15 +357,16 @@ table.yr tr:last-child td{border-bottom:none;}
 .mgr-cards .mc .v{font-size:15px;font-weight:650;color:var(--accent-ink);}
 .mgr-cards .mc .l{font-size:10.5px;color:var(--sub);margin-top:2px;}
 .disclaimer{font-size:11px;color:#69707e;line-height:1.7;padding:6px 16px 26px;}
-/* 列表页常显免责底栏（小程序停做改网页后按公开页面口径挂载）
-   底部留白 ≥ 对比浮条高度（~57px）：手机上勾选对比后 cmp-bar 浮在 #phone 底部，曾把页脚免责声明整条盖住（2026-10-22 修复） */
-.page-disc{flex:0 0 auto;font-size:10.5px;color:#69707e;line-height:1.6;text-align:center;
-           padding:8px 14px calc(72px + env(safe-area-inset-bottom));background:var(--bg);
-           border-top:1px solid var(--line);}
-/* 公众号引流位（列表页底部，免责声明上方） */
-.page-mp{flex:0 0 auto;text-align:center;font-size:11.5px;color:var(--sub);
-         padding:9px 14px 1px;background:var(--bg);}
-.page-mp b{color:var(--accent-ink);font-weight:650;}
+/* v1.4 底部单行化（问题6：数据区太小）——账号 + 免责开关一行；免责全文默认折叠点击展开。
+   底部留白 ≥ 对比浮条高度（~57px）：手机上勾选对比后 cmp-bar 浮底（2026-10-22 修复，保留） */
+.page-foot{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+  padding:5px 12px calc(58px + env(safe-area-inset-bottom));background:var(--bg);
+  border-top:1px solid var(--line);font-size:11px;color:var(--sub);}
+.page-foot b{color:var(--accent-ink);font-weight:650;}
+.pf-btn{border:1px solid var(--line);background:#fff;border-radius:8px;font-size:10.5px;
+  color:var(--sub);padding:3px 9px;flex:0 0 auto;}
+.page-disc{flex:0 0 auto;font-size:10.5px;color:#69707e;line-height:1.65;text-align:left;
+  padding:8px 14px;background:var(--bg);border-top:1px dashed var(--line);}
 .redline-tag{display:inline-block;background:#fff0f0;color:var(--up);border-radius:6px;
              font-size:11px;padding:1px 6px;margin-left:6px;}
 /* ---------- 隐藏导出模式：?export=<pool>（仅 URL 触发，页面无入口） ----------
@@ -367,7 +392,7 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
 </head>
 <body>
 <div id="phone">
-  <header>
+  <header id="hdr">
     <h1>班马日记本</h1>
     <div class="meta" id="meta">—</div>
     <div class="tabs" id="tabs"></div>
@@ -375,11 +400,12 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
 
   <main id="list"></main>
 
-  <!-- 公众号引流位（免责声明上方常显） -->
-  <div class="page-mp"><b>@班马成长日记</b> · 班马日记本每周更新</div>
-
-  <!-- 列表页常显免责声明（data.js 缺失时用同文案兜底） -->
-  <div class="page-disc" id="p-disc"></div>
+  <!-- 底部单行（v1.4）：账号 + 免责开关；免责全文默认折叠 -->
+  <div class="page-foot">
+    <span><b>@班马成长日记</b> · 班马日记本每周更新</span>
+    <button class="pf-btn" id="pf-btn" onclick="toggleDisc()">免责声明</button>
+  </div>
+  <div class="page-disc" id="p-disc" hidden></div>
 
   <!-- 详情页 -->
   <div id="detail" aria-hidden="true">
@@ -387,7 +413,7 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
       <div class="d-title"><button class="back" onclick="closeDetail()">‹</button>
         <span class="n" id="d-name">—</span><span class="d-code-inline" id="d-code-inline"></span></div>
       <div class="d-scoreline">
-        <span><span id="d-score-label">综合心跳值</span> <b id="d-score">—</b></span>
+        <span><span id="d-score-label">综合心动值</span> <b id="d-score">—</b></span>
         <span id="d-rank"></span>
         <span id="d-code" style="opacity:.9"></span>
         <button class="d-pick" id="d-pick" onclick="detailPick()">加入对比</button>
@@ -395,6 +421,27 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
     </div>
     <div id="d-body"></div>
     <div class="disclaimer" id="d-disc"></div>
+  </div>
+
+  <!-- v1.4 指数全量页（问题8：查看更多进入；有效区域更大 + 搜索图标） -->
+  <div id="eqfull" aria-hidden="true">
+    <div class="d-head">
+      <div class="d-title"><button class="back" onclick="closeEqFull()">‹</button>
+        <span class="n" id="eqfull-title">全部指数</span></div>
+      <div class="d-scoreline">
+        <span id="eqfull-sub"></span>
+        <button class="eq-sbtn" style="width:30px;height:30px;" onclick="eqFullToggleSearch()"
+          aria-label="搜索指数">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+            stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/>
+            <path d="M15.5 15.5L21 21"/></svg></button>
+      </div>
+    </div>
+    <div class="eqfull-search" id="eqfull-searchbar" hidden>
+      <input id="eqfull-search" type="search" placeholder="搜索全部指数名称或代码…"
+        oninput="eqFullSearch(this.value)">
+    </div>
+    <div id="eqfull-body"></div>
   </div>
 
   <!-- 池内对比：底部浮条 + 覆盖层 -->
@@ -408,7 +455,7 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
       <div class="d-title"><button class="back" onclick="closeCmp()">‹</button><span class="n">池内横向对比</span></div>
       <div class="d-scoreline"><span id="cmp-sub"></span></div>
     </div>
-    <div class="cmp-note">本表仅在**同一池内**对比：各池心跳值独立标准化，跨池不可比。每格为「贡献分 / 权重」，下方条为载分率。</div>
+    <div class="cmp-note">本表仅在**同一池内**对比：各池心动值独立标准化，跨池不可比。每格为「贡献分 / 权重」，下方条为载分率。</div>
     <div class="cmp-scroll" id="cmp-body"></div>
     <button class="cmp-copy" onclick="cmpCopy(this)">复制对比表（文本）</button>
     <div class="disclaimer" id="cmp-disc"></div>
@@ -516,7 +563,7 @@ function switchTab(id){
   ACTIVE = id;
   ACTIVE_GROUP = navGroupOf(id).id;
   renderTabs(ACTIVE); renderList();
-  CMP = []; renderPick();                       /* 跨池心跳值不可比 → 切池清空对比选择 */
+  CMP = []; renderPick();                       /* 跨池心动值不可比 → 切池清空对比选择 */
   document.getElementById('list').scrollTop = 0;
 }
 
@@ -627,7 +674,7 @@ function openCmp(){
 
   /* ① 综合概览 */
   H += grp('综合概览');
-  H += row('综合心跳值', fs.map(f => f.score == null ? '—' : f.score.toFixed(2)), bestOf(fs.map(f => f.score)));
+  H += row('综合心动值', fs.map(f => f.score == null ? '—' : f.score.toFixed(2)), bestOf(fs.map(f => f.score)));
   H += row('榜内位次', fs.map(f => '#' + f.rank), bestOf(fs.map(f => f.rank == null ? null : -f.rank)));
   H += row('风格', fs.map(f => f.style || '—'), -1);            /* v5.5 池内相对，仅展示 */
   H += row(pid === 'index' ? '指数族·久期段' : '经理', pid === 'index'
@@ -642,8 +689,8 @@ function openCmp(){
 
   /* ② 评分维度（按权重分块；每格 = 贡献分 / 权重 + 载分率条 + 原始值） */
   if(W){
-    H += grp('心跳值明细：贡献分 / 权重（条 = 载分率）');
-    (G || [['心跳值维度', Object.keys(W)]]).forEach(function(g){
+    H += grp('心动值明细：贡献分 / 权重（条 = 载分率）');
+    (G || [['心动值维度', Object.keys(W)]]).forEach(function(g){
       const keys = g[1].filter(k => W[k] != null);
       if(!keys.length) return;
       H += grp(g[0], keys.reduce((s, k) => s + (W[k] || 0), 0));
@@ -665,7 +712,7 @@ function openCmp(){
       });
     });
   } else {
-    H += grp('心跳值明细（本期 data.js 未含权重，仅显示贡献分）');
+    H += grp('心动值明细（本期 data.js 未含权重，仅显示贡献分）');
     H += row('贡献分合计', fs.map(f => f.raw_score == null ? '—' : f.raw_score.toFixed(2)), -1);
   }
 
@@ -701,7 +748,7 @@ function openCmp(){
   H += row('Σ 贡献分 = 原始总分', fs.map(f => f.raw_score == null ? '—' : f.raw_score.toFixed(2)), -1);
   H += row('× 100 ÷ 载分权重', fs.map(f => (f.raw_score == null || !f.earned_weight) ? '—'
       : (f.raw_score * 100 / f.earned_weight).toFixed(2)), -1);
-  H += row('= 卡片上的心跳值', fs.map(f => f.score == null ? '—' : f.score.toFixed(2)),
+  H += row('= 卡片上的心动值', fs.map(f => f.score == null ? '—' : f.score.toFixed(2)),
            bestOf(fs.map(f => f.score)));
   H += '</tbody></table>';
 
@@ -749,7 +796,7 @@ function cmpTSV(fs, W, totW){
   }
   L.push('');
   L.push(['Σ贡献分'].concat(fs.map(f => f.raw_score)).join('\t'));
-  L.push(['=心跳值(复算)'].concat(fs.map(f => (f.raw_score != null && f.earned_weight)
+  L.push(['=心动值(复算)'].concat(fs.map(f => (f.raw_score != null && f.earned_weight)
     ? (f.raw_score * 100 / f.earned_weight).toFixed(2) : '—')).join('\t'));
   L.push('数据基准 ' + D.asof + ' · 仅池内可比，跨池不可比');
   return L.join('\n');
@@ -806,7 +853,7 @@ function renderList(){
         <div style="flex:1;min-width:0">
           <div class="fc-name">${f.name}${f.is_index?'<span class="rk idx">指数</span>':''}${f.style?`<span class="rk style ${STYLE_CLS[f.style]||''}">${f.style}</span>`:''}${f.suspended?'<span class="rk sgz" title="该基金当前暂停申购/封闭，勿直接下单">暂停申购</span>':''}</div>
           <div class="fc-code">${f.code}<span class="dot">·</span>${catLabel(f.category)}
-            <span class="dot">·</span><span class="score">心跳值 ${f.score}</span>${rkHTML(f)}</div>
+            <span class="dot">·</span><span class="score">心动值 ${f.score}</span>${rkHTML(f)}</div>
         </div>
         <button class="pick" title="加入对比" aria-label="加入对比">＋</button>
       </div>
@@ -816,7 +863,7 @@ function renderList(){
       <div class="fc-foot">
         <span>合并规模 ${yi(f.fund_info.scale_yi)}</span><span>·</span>
         ${f.is_index
-          ? '<span class="idx-foot">债指单列榜 · 心跳值=业绩画像分+同画像锚定（与同画像主动≈同分）</span>'
+          ? '<span class="idx-foot">债指单列榜 · 心动值=业绩画像分+同画像锚定（与同画像主动≈同分）</span>'
           : '<span>经理从业 '+(f.manager.career_years==null?'—':f.manager.career_years+'年')+'</span>'}
         ${(f.manager&&f.manager.seats>=2)?`<span class="seats" title="该经理当期上榜占席数（集中度提示，不扣分）">占席×${f.manager.seats}</span>`:''}
         <span>·</span>
@@ -829,7 +876,7 @@ function renderList(){
       if (!gs.length) return '';
       return `<div class="idx-group">`
         + `<b>${catLabel(g)}债指 · ${gs.length} 只</b>`
-        + `<span class="sub">同指数只展示1只 · 心跳值与本池主动榜同尺（仅作水平参照，不一起排位）· 跨池不可比</span></div>`
+        + `<span class="sub">同指数只展示1只 · 心动值与本池主动榜同尺（仅作水平参照，不一起排位）· 跨池不可比</span></div>`
         + gs.map(cardHTML).join('');
     }).join('');
     $('list').innerHTML = GRP_HEAD;
@@ -859,7 +906,7 @@ const tierColor = t => EQ_TIER_COLOR[t] || '#6b7280';
 /* 占位分区（红利类/偏股主动型）：数据未上线，显示开发中面板 */
 function renderPlaceholder(){
   const g = NAV_GROUPS.find(x => x.id === ACTIVE_GROUP) || {};
-  $('meta').innerHTML = `班马日记本 · <b>${g.name || ''}</b> · 即将上线`;
+  $('meta').innerHTML = `<b>${g.name || ''}</b> · 即将上线`;
   $('list').innerHTML = `<div class="eq-dev">
     <div class="eq-dev-t">${g.name || ''}</div>
     <div class="eq-dev-s">正在开发中，暂无数据</div>
@@ -1025,87 +1072,144 @@ function openEqIndexDetail(code){
   document.body.style.overflow = 'hidden';
 }
 
-/* ============ v1.2 指数估值：紧凑列表 + 热度Top5 + 搜索 + 参考图详情 ============ */
+/* v1.2 指数估值 · v1.4 搜索图标化 + 全量页（问题7/8/9） */
 const EQ_GROUPS = ['宽基','行业','策略','海外'];
-let EQ_FILTER = 'all', EQ_SEARCH = '', EQ_EXPANDED = {}, EQ_CUR = null, EQ_WIN = '10y', EQ_METRIC = 'pe';
-const eqHotN = () => (D.eq_index && D.eq_index.hot_per_group) || 5;
+let EQ_FILTER = 'all', EQ_SEARCH = '', EQ_SEARCH_OPEN = false;
+let EQ_FULL_GROUP = null, EQ_FULL_SEARCH = '';
+let EQ_CUR = null, EQ_WIN = '10y', EQ_METRIC = 'pe';
+const eqHotN = () => (D.eq_index && D.eq_index.hot_per_group) || 12;
 const eqWinLabel = w => ({'3y':'近3年','5y':'近5年','10y':'近10年','all':'上市以来'}[w] || '近10年');
 function eqPctLabel(x){
   const w = (x.windows || {})['10y'] || {};
   const weeks = (w.pe && w.pe.weeks) || (w.pb && w.pb.weeks) || 0;
   return weeks >= 468 ? '10Y温度分位' : ('可用' + Math.max(1, Math.round(weeks / 52)) + 'Y温度分位');
 }
-/* 紧凑列表行（非卡片）：一行档位+名称+温度分位，次行关键指标 */
-function eqRowHTML(x){
-  const fcount = x.fund_count || 0;
+const EQ_SEARCH_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'
+  + ' stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/>'
+  + '<path d="M15.5 15.5L21 21"/></svg>';
+/* 紧凑列表行（v1.4）：档位 + 名称（手机可两行不截断）+ 右侧「当前温度」；
+   删除 PE/PB/近1年/热度值/最低费率小字（问题4：小字重叠、名称显示不全）。
+   「热度值」原义=同指数可选基金数，与估值无关易误读（问题10）→ 行内不再出现 */
+function eqRowHTML(x, withGroup){
   return `<div class="eqi" onclick='openEqIndexDetail(${JSON.stringify(x.code)})'>
-    <div class="eqi-l">
-      <div class="tier ${tierCls(x.tier)}">${x.tier}</div>
-      <div class="eqi-name"><b>${x.name}</b><span class="eqi-code">${x.code}</span></div>
-    </div>
+    <div class="tier ${tierCls(x.tier)}">${x.tier}</div>
+    <div class="eqi-name"><b>${x.name}</b>
+      <span class="eqi-code">${withGroup ? x.group + ' · ' : ''}${x.code}</span></div>
     <div class="eqi-r">
+      <div class="eqi-lab">当前温度</div>
       <div class="eqi-pct">${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
-      <div class="eqi-sub">PE ${numPos(x.pe,2)} · PB ${numPos(x.pb,2)} · 近1年 ${x.ret_1y==null?'—':pct(x.ret_1y)} · 热度值${fcount} · 最低费率 ${fpct(x.min_fee_total)}</div>
     </div>
   </div>`;
 }
 function setEqFilter(g){ EQ_FILTER = (EQ_FILTER === g ? 'all' : g); renderEqIndexList(); }
+/* v1.4 搜索图标化（问题7）：默认只有放大镜；点开弹出输入框，再点✕收起 */
+function eqToggleSearch(){
+  EQ_SEARCH_OPEN = !EQ_SEARCH_OPEN;
+  if (!EQ_SEARCH_OPEN) EQ_SEARCH = '';
+  renderEqIndexList();
+  if (EQ_SEARCH_OPEN){ const i = $('eq-search'); if (i && i.focus) i.focus(); }
+}
 function eqSearch(v){ EQ_SEARCH = v; eqRenderResults(); }
-function eqExpand(g){ EQ_EXPANDED[g] = true; eqRenderResults(); }
-function eqFiltered(){
-  const q = (EQ_SEARCH||'').trim().toLowerCase();
+function eqFiltered(qOverride){
+  const q = (qOverride !== undefined ? qOverride : EQ_SEARCH || '').trim().toLowerCase();
   if (!q) return null;
   return eqIndices().filter(x => (x.name||'').toLowerCase().includes(q)
     || (x.code||'').toLowerCase().includes(q));
 }
+/* 组内排序：主流优先 → 温度分位升序 */
+function eqGroupSorted(g){
+  return eqIndices().filter(x => x.group === g)
+    .sort((a,b) => ((b.mainstream?1:0) - (a.mainstream?1:0))
+      || ((a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile)));
+}
 function eqRenderResults(){
   const box = $('eq-results'); if (!box) return;
-  const list = eqIndices();
   const searched = eqFiltered();
   if (searched){
+    /* v1.4：搜索一律跨全部指数（不区分二级分组），行内带分组标注 */
     box.innerHTML = searched.length
       ? `<div class="eq-group"><b>搜索「${EQ_SEARCH}」 · ${searched.length} 个</b>
-         <span class="sub">点击行查看估值详情</span></div>` + searched.map(eqRowHTML).join('')
+         <span class="sub">全库搜索 · 点击行查看估值详情</span></div>`
+        + searched.map(x => eqRowHTML(x, true)).join('')
       : '<div class="empty-tip">没有匹配的指数，换个关键词试试</div>';
     return;
   }
-  const groups = EQ_GROUPS.filter(g => list.some(x => x.group === g));
+  const groups = EQ_GROUPS.filter(g => eqIndices().some(x => x.group === g));
   box.innerHTML = groups.map(g => {
     if (EQ_FILTER !== 'all' && EQ_FILTER !== g) return '';
-    /* v1.3 排序：主流指数优先 → 温度分位从低到高（默认只展示前 hot N 只重要的） */
-    const gs = list.filter(x => x.group === g)
-      .sort((a,b) => ((b.mainstream?1:0) - (a.mainstream?1:0))
-        || ((a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile)));
+    const gs = eqGroupSorted(g);
     if (!gs.length) return '';
-    const hot = eqHotN(), showAll = EQ_EXPANDED[g] || EQ_FILTER === g;
-    const shown = showAll ? gs : gs.slice(0, hot);
+    /* v1.4 重点/全部分工（问题8/9）：主列表只放重点 TopN；「查看更多」进全量页 */
+    const hot = eqHotN(), shown = gs.slice(0, hot);
     return `<div class="eq-group"><b>${g} · ${gs.length} 个</b>
-      <span class="sub">${showAll ? '全部 · 主流优先，越便宜越靠前' : '重点Top' + hot + ' · 主流优先，越便宜越靠前'}</span></div>`
-      + shown.map(eqRowHTML).join('')
-      + (!showAll && gs.length > hot
-        ? `<button class="eq-more" onclick="eqExpand('${g}')">查看更多 ${g}（共 ${gs.length} 个）</button>`
+      <span class="sub">重点Top${Math.min(hot, gs.length)} · 主流优先，越便宜越靠前</span></div>`
+      + shown.map(x => eqRowHTML(x)).join('')
+      + (gs.length > hot
+        ? `<button class="eq-more" onclick="eqOpenFull('${g}')">查看更多 ${g}（共 ${gs.length} 个）</button>`
         : '');
   }).join('');
+}
+/* ============ v1.4 全量页（问题8）：查看更多进入；有效区域更大 + 搜索图标 ============ */
+function eqOpenFull(g){
+  EQ_FULL_GROUP = g || null; EQ_FULL_SEARCH = '';
+  const sb = $('eqfull-searchbar'); if (sb) sb.hidden = true;
+  const si = $('eqfull-search'); if (si) si.value = '';
+  eqRenderFull();
+  const el = $('eqfull'); el.setAttribute('aria-hidden','false');
+  requestAnimationFrame(() => el.classList.add('show'));
+}
+function closeEqFull(){
+  const el = $('eqfull'); el.classList.remove('show'); el.setAttribute('aria-hidden','true');
+}
+function eqFullToggleSearch(){
+  const sb = $('eqfull-searchbar'); if (!sb) return;
+  sb.hidden = !sb.hidden;
+  if (!sb.hidden){ const i = $('eqfull-search'); if (i && i.focus) i.focus(); }
+  else { EQ_FULL_SEARCH = ''; const i = $('eqfull-search'); if (i) i.value = ''; eqRenderFull(); }
+}
+function eqFullSearch(v){ EQ_FULL_SEARCH = v; eqRenderFull(); }
+function eqRenderFull(){
+  const body = $('eqfull-body'); if (!body) return;
+  const q = (EQ_FULL_SEARCH||'').trim();
+  const title = $('eqfull-title'), sub = $('eqfull-sub');
+  if (q){
+    const rows = eqFiltered(EQ_FULL_SEARCH);
+    if (title) title.textContent = '搜索结果';
+    if (sub) sub.textContent = `「${q}」全库匹配 ${rows ? rows.length : 0} 个（不分分组）`;
+    body.innerHTML = (rows && rows.length)
+      ? rows.map(x => eqRowHTML(x, true)).join('')
+      : '<div class="empty-tip">没有匹配的指数，换个关键词试试</div>';
+    return;
+  }
+  const gs = EQ_FULL_GROUP ? eqGroupSorted(EQ_FULL_GROUP) : eqIndices();
+  if (title) title.textContent = EQ_FULL_GROUP ? (EQ_FULL_GROUP + ' · 全部指数') : '全部指数';
+  if (sub) sub.textContent = `${gs.length} 个 · 主流优先，越便宜越靠前`;
+  body.innerHTML = gs.map(x => eqRowHTML(x, !EQ_FULL_GROUP)).join('');
 }
 function renderEqIndexList(){
   const eq = (D && D.eq_index) || {};
   const list = eqIndices();
   const listEl = $('list');
   listEl.classList.add('eq-mode');            /* v1.3 宽屏双列布局开关 */
-  $('meta').innerHTML = `班马日记本 · 数据基准 <b class="asof">${D.asof}</b> · 指数 <b>${list.length}</b> 个（每组默认展示重点）`
-    + ` · 估值日期 ${eq.asof || '—'}`;
+  $('meta').innerHTML = `指数估值 <b>${list.length}</b> 个 · 估值日期 <b class="asof">${eq.asof || '—'}</b>`;
   if (!list.length){
     $('list').innerHTML = '<div class="empty-tip">指数估值数据未生成：先运行 '
       + '<b>python -m fundscorer.eqindex --ingest</b>，再跑管线。</div>';
     return;
   }
   const groups = EQ_GROUPS.filter(g => list.some(x => x.group === g));
-  /* v1.3：不再有「全部」按钮（默认即全组堆叠视图）；再点当前分组可切回 */
-  $('list').innerHTML =
-    '<div class="eq-bar"><input id="eq-search" type="search" placeholder="搜索指数名称或代码…" '
-    + `value="${(EQ_SEARCH||'').replace(/"/g,'&quot;')}" oninput="eqSearch(this.value)"></div>`
+  /* v1.4 搜索图标化（问题7）：图标并入过滤条行；展开时为 输入框+✕ 独占一行 */
+  const searchBar = EQ_SEARCH_OPEN
+    ? '<div class="eq-bar">'
+      + `<input id="eq-search" type="search" placeholder="搜索全部指数名称或代码…" `
+      + `value="${(EQ_SEARCH||'').replace(/"/g,'&quot;')}" oninput="eqSearch(this.value)">`
+      + `<button class="eq-sbtn" onclick="eqToggleSearch()" aria-label="关闭搜索">✕</button></div>`
+    : '';
+  $('list').innerHTML = searchBar
     + '<div class="eq-filter">' + groups.map(g =>
-        `<button class="${EQ_FILTER===g?'on':''}" onclick="setEqFilter('${g}')">${g}</button>`).join('') + '</div>'
+        `<button class="${EQ_FILTER===g?'on':''}" onclick="setEqFilter('${g}')">${g}</button>`).join('')
+      + `<button class="eq-sbtn" style="margin-left:auto" onclick="eqToggleSearch()" `
+      + `aria-label="搜索指数">${EQ_SEARCH_SVG}</button></div>`
     + '<div id="eq-results"></div>';
   eqRenderResults();
 }
@@ -1275,7 +1379,7 @@ function openEqIndexDetail(code){
   $('d-score').style.color = '#fff';
   $('d-code-inline').textContent = x.code;
   $('d-rank').textContent = `${x.history_label||eqWinLabel('10y')}综合温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}`;
-  $('d-code').textContent = `${x.group} · 热度值${x.fund_count||0} · ${x.valuation_date||'—'}`;
+  $('d-code').textContent = `${x.group} · 可选基金${x.fund_count||0}只 · ${x.valuation_date||'—'}`;
   $('d-disc').textContent = D.disclaimer;
   $('d-pick').style.display = 'none';
   $('d-body').innerHTML = eqIndexBodyHTML(x);
@@ -1299,7 +1403,7 @@ let CUR = null, WIN = '1y';
 function openDetail(code){
   CUR = D.funds.find(f=>f.code===code); if(!CUR) return;
   /* v5.22：指数估值详情会改档位标签/颜色，回到基金详情时复位 */
-  $('d-score-label').textContent = '综合心跳值';
+  $('d-score-label').textContent = '综合心动值';
   $('d-score').style.color = '';
   WIN = '1y';
   $('d-name').textContent = CUR.name;
@@ -1444,7 +1548,7 @@ function bodyHTML(f){
 
   <!-- 评分明细：主动 = v5.2 分项贡献分；债指单列（v5.12）= 指数评估卡分项贡献（族内相对）。
        （merged 回退路径的"业绩位置插值"渲染随 display="merged" 再接，docs/17 §8 甲案休眠） -->
-  <div class="sec"><h3>心跳值明细<span class="hint">${f.is_index ? '指数评估卡 · 同尺贡献分+同画像锚定' : 'v5.2 · 分项贡献分'}</span></h3>
+  <div class="sec"><h3>心动值明细<span class="hint">${f.is_index ? '指数评估卡 · 同尺贡献分+同画像锚定' : 'v5.2 · 分项贡献分'}</span></h3>
     ${scoreRows.map(([k,v])=>`
       <div class="bar-row"><div class="bl">${LABELS[k]||k}</div>
         <div class="bar-bg"><div class="bar" style="width:${Math.min(100, v/w*100).toFixed(1)}%"></div></div>
@@ -1460,11 +1564,11 @@ function bodyHTML(f){
 
   <!-- v5.12 债指单列：同指数其他优秀基金（评估卡分 top3；无同指数其他基金 → 隐藏本块） -->
   ${(f.is_index && (f.index_peers||[]).length) ? `
-  <div class="sec"><h3>同指数其他优秀基金<span class="hint">同指数按评估卡心跳值取前 3</span></h3>
+  <div class="sec"><h3>同指数其他优秀基金<span class="hint">同指数按评估卡心动值取前 3</span></h3>
     ${f.index_peers.map(p=>`<div class="kv"><span class="k">${p.name}</span>
-      <span>${p.score==null?'—':p.score} 心跳值 · 费率${fpct(p.fee_total)} · 公司${yi(p.company_scale)}</span></div>`).join('')}
+      <span>${p.score==null?'—':p.score} 心动值 · 费率${fpct(p.fee_total)} · 公司${yi(p.company_scale)}</span></div>`).join('')}
     <div style="margin-top:6px;font-size:11.5px;color:var(--sub)">同一跟踪指数只在榜内展示 1 只（优先费率低、公司非货规模大，其次跟踪偏离小）；
-      此处为同指数心跳值最高的其他基金，供替代选择。池内相对心跳值，与主动榜不可比。</div>
+      此处为同指数心动值最高的其他基金，供替代选择。池内相对心动值，与主动榜不可比。</div>
   </div>` : ''}`;
 }
 
@@ -1663,7 +1767,7 @@ function _drawEqExport(canvas, S, rowsLimit){
     ? [PAD + 8, PAD + 300, PAD + 392, PAD + 486, PAD + 560, PAD + 636, PAD + 726, W - PAD - 8]
     : [PAD + 8, PAD + 220, PAD + 300, PAD + 382, PAD + 452, PAD + 524, PAD + 616, W - PAD - 8];
   /* 列头 */
-  const HEAD = ['指数','温度','温度分位','PE','PB','近1年','热度值','最低费率'];
+  const HEAD = ['指数','温度','温度分位','PE','PB','近1年','可选基金','最低费率'];
   const colX = [cols[0], cols[1] + 8, cols[2], cols[3], cols[4], cols[5], cols[6], cols[7]];
   ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + fData + 'px sans-serif';
   HEAD.forEach((t,i) => { if (i===7) { ctx.textAlign='right'; ctx.fillText(t, cols[7], rowsTop - 2); ctx.textAlign='left'; } else ctx.fillText(t, colX[i], rowsTop - 2); });
@@ -1736,7 +1840,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   /* ---- 页脚（主路径与债指分组路径共用，v5.17 抽取） ---- */
   function _paintFooter(){
     const fy = H - FOOT;
-    const pTxt = '班马日记本每周五 23:00 更新 · 心跳值仅供参考';
+    const pTxt = '班马日记本每周五 23:00 更新 · 心动值仅供参考';
     ctx.font = '700 ' + (wide ? 21 : 23) + 'px sans-serif';
     const pW = ctx.measureText(pTxt).width + 48, pH = wide ? 50 : 54;
     const g2 = ctx.createLinearGradient(PAD, 0, PAD + pW, 0);
@@ -1852,7 +1956,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   const barH = wide ? 42 : 46;
   ctx.fillStyle = '#ff6a00'; rr(PAD, (wide ? 34 : 38), 10, barH, 5); ctx.fill();
   ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 40 : 46) + 'px sans-serif';
-  ctx.fillText(label + '心跳榜', PAD + 24, wide ? 74 : 82);
+  ctx.fillText(label + '心动榜', PAD + 24, wide ? 74 : 82);
   const pillTxt = '数据基准 ' + ((D && D.asof) || '—');
   ctx.font = (wide ? 18 : 20) + 'px sans-serif';
   const pw = ctx.measureText(pillTxt).width + 36, ph = wide ? 36 : 40;
@@ -1862,7 +1966,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   ctx.fillText(pillTxt, px + 18, py + ph * 0.68);
   ctx.fillStyle = '#efe7dc'; ctx.fillRect(PAD, rowsTop - 20, W - PAD * 2, 2);
   ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 16 : 18) + 'px sans-serif';
-  ctx.fillText('本榜为【' + label + '】池内相对心跳值，不同池不可比', PAD, rowsTop - 44);
+  ctx.fillText('本榜为【' + label + '】池内相对心动值，不同池不可比', PAD, rowsTop - 44);
 
   // ---- 榜单白卡：双层行体（主角行 + 数据行），标签内联故无列头 ----
   const FOOT = Math.round(H * (wide ? 0.21 : 0.14));
@@ -1951,7 +2055,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   return {width: W, height: H, rows: funds.length, rowH: rowH};
 }
 function exportDownload(canvas, pool, sizeKey){
-  const name = '班马日记本-' + catLabel(pool) + '心跳榜-' + ((D && D.asof) || '') + '-' + sizeKey + '.png';
+  const name = '班马日记本-' + catLabel(pool) + '心动榜-' + ((D && D.asof) || '') + '-' + sizeKey + '.png';
   const done = (url, revoke) => {
     const a = document.createElement('a'); a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
@@ -2001,7 +2105,7 @@ function initExport(){
   const nameOf = id => (pools.find(p => p.id === id) || {}).name || catLabel(id);
   const draw = () => {
     const info = drawExport(cv, pool, sizeKey, rows);
-    title.textContent = nameOf(pool) + '心跳榜 · 班马日记本导出'
+    title.textContent = nameOf(pool) + '心动榜 · 班马日记本导出'
       + (pools.length > 1 ? '（共 ' + pools.length + ' 个分类，页签切换）' : '');
     hint.textContent = (pool === 'index'
       ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '全量分组')   /* v5.17 债指不分 TOP 截断 */
@@ -2035,9 +2139,21 @@ function initExport(){
 /* 免责声明：优先取 data.js，缺失时用与 cards.DISCLAIMER 同口径的静态兜底 */
 const DISCLAIMER_FALLBACK = '本页数据由程序基于公开历史数据自动生成，仅为数据分析研究结论，'
   + '不构成任何投资建议或基金推介；数据来自公开渠道，可能存在延迟与错误；'
-  + '心跳值仅供参考，靠前只代表在当前口径下占优，并不预示后续表现一定更好；'
-  + '历史业绩与心跳值不代表未来表现，基金有风险，投资须谨慎，据此操作风险自担。';
+  + '心动值仅供参考，靠前只代表在当前口径下占优，并不预示后续表现一定更好；'
+  + '历史业绩与心动值不代表未来表现，基金有风险，投资须谨慎，据此操作风险自担。';
 $('p-disc').textContent = (D && D.disclaimer) || DISCLAIMER_FALLBACK;
+/* v1.4：免责默认折叠，点「免责声明」展开/收起（问题6：把高度还给数据区） */
+function toggleDisc(){
+  const d = $('p-disc'); d.hidden = !d.hidden;
+  $('pf-btn').textContent = d.hidden ? '免责声明' : '收起免责';
+}
+/* v1.4：列表下滚时顶栏收起 meta 行（问题6「上下部分显示逻辑」），上滚恢复 */
+(function(){
+  const sc = document.getElementById('list');
+  sc.addEventListener('scroll', () => {
+    document.getElementById('hdr').classList.toggle('compact', sc.scrollTop > 48);
+  }, {passive: true});
+})();
 if (initExport()){
   /* 隐藏导出模式：海报已渲染，跳过常规榜单渲染 */
 } else if(!D || !D.funds){
