@@ -308,17 +308,22 @@ class TestBuildPayload:
         out = E.build(log=lambda *a, **k: None, refresh=False)
         assert out["catalog_n"] == len(E.CATALOG)
         assert out["version"] == C.EQ_INDEX["version"]
-        assert len(out["indices"]) == 2
+        assert out["hot_per_group"] == C.EQ_INDEX["hot_per_group"]
+        # v1.3：目录全量进 payload（含无匹配基金者，fund_count=0）
+        assert len(out["indices"]) == len(E.CATALOG)
         codes = {x["code"] for x in out["indices"]}
-        assert codes == {"SH000300", "SZ399986"}
+        assert {"SH000300", "SZ399986"} <= codes
         for x in out["indices"]:
             assert x["tier"] in ("极低估", "低估", "合理偏低", "合理偏高", "高估")
             assert 0 <= x["percentile"] <= 100
-            assert 1 <= len(x["funds"]) <= C.EQ_INDEX["fund_list_n"]
-            assert x["action"] in (0, 0.5, 1, 2, 4)
+            assert 0 <= len(x["funds"]) <= C.EQ_INDEX["fund_list_n"]
+            assert isinstance(x["mainstream"], bool)
+            assert "action" not in x      # v1.2 删除定投倍数
             assert isinstance(x["series"], dict) and "pe" in x["series"]
             assert set(x["windows"]) == {"3y", "5y", "10y", "all"}
-        h = [x for x in out["indices"] if x["group"] == "宽基"][0]
+        # 有匹配基金的条目：基金清单非空且 fund_count 一致
+        h = [x for x in out["indices"] if x["code"] == "SH000300"][0]
+        assert h["fund_count"] == 2 and len(h["funds"]) == 2
         assert h["method_label"] and h["history_label"]
 
     def test_no_cache_returns_none(self, monkeypatch):
@@ -326,7 +331,29 @@ class TestBuildPayload:
         assert E.build(log=lambda *a, **k: None, refresh=False) is None
 
 
-# ---------------------------------------------------------------- 兼容：三池配置未被改动
+# ---------------------------------------------------------------- v1.2：目录分流（策略 vs 红利）
+def test_catalog_strategy_vs_dividend():
+    """非红利策略（价值/基本面/低波）上「策略」tab；纯红利/价值留待「红利类」页签。"""
+    strat = {"SH000919", "SH000925", "SZ399701", "SZ399702", "CSI930782", "SPCQVCP"}
+    div = {"SH000922", "SH000015", "SZ399324", "CSIH30269", "CSI931157",
+           "CSI930740", "CSIH30094", "CSPSADRP", "SPACEVCP"}
+    for c in strat:
+        assert E.CATALOG_BY_CODE[c]["mainstream"] is True, c
+        assert E.CATALOG_BY_CODE[c]["defer"] is False, c
+    for c in div:
+        assert E.CATALOG_BY_CODE[c]["defer"] is True, c
+
+
+def test_group_order_has_strategy():
+    assert E.GROUP_ORDER == ["宽基", "行业", "策略", "海外"]
+
+
+def test_strategy_default_metric_is_pb():
+    """价值/低波/基本面策略用 PB 为主（盈利波动大，PB 更贴近资产端）。"""
+    for c in ("SH000919", "SH000925", "CSI930782"):
+        assert E.CATALOG_BY_CODE[c]["default_metric"] == "pb", c
+
+
 def test_bond_pools_untouched():
     assert C.PIPELINE["pools"] == ["short_bond", "long_bond", "fixed_plus"]
     assert "eq_index" not in C.PIPELINE["pools"]

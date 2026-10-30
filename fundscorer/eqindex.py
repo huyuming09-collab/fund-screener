@@ -38,7 +38,7 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 REFERER = "https://danjuanfunds.com/djmodule/value-center"
 BASE = "https://danjuanfunds.com/djapi/index_eva/"
 
-GROUP_ORDER = ["宽基", "行业", "海外"]
+GROUP_ORDER = ["宽基", "行业", "策略", "海外"]
 
 
 # ---------------------------------------------------------------- 1. 指数目录（63）
@@ -52,6 +52,7 @@ _WHY_PE = "成分分散、盈利口径稳定，以 PE-TTM 分位为主口径；P
 _WHY_PB = "盈利周期波动大/资产驱动，PB 比 PE 更贴近资产端估值；PE 分位并列展示。"
 _WHY_GROWTH = "成长/盈利驱动型指数，以 PE-TTM 分位为主口径；PB 并列展示。"
 _WHY_DIV = "红利/价值策略成分偏金融与高分红资产，以 PB 分位为主口径（股息率现值并列），避免 PE 被周期利润扭曲。"
+_WHY_STRAT = "价值/低波/基本面类策略指数，盈利波动大，以 PB 分位为主口径；PE 分位并列校正。"
 _WHY_OVERSEA = "海外/跨境指数，PE-TTM 分位为主口径；净值与估值日期可能滞后一个交易日。"
 
 _BROAD_EXCL = ["价值", "成长", "红利", "低波", "增强", "质量", "等权", "行业中性"]
@@ -178,15 +179,15 @@ CATALOG = [
     _cat("CSI930740", "300红利LV", "策略", "策略", "pb",
          ["沪深300红利低波动指数", "300红利低波动指数", "300红利LV"], _WHY_DIV),
     _cat("SH000919", "300价值", "策略", "策略", "pb",
-         ["沪深300价值指数", "300价值指数", "300价值"], _WHY_DIV),
+         ["沪深300价值指数", "300价值指数", "300价值"], _WHY_STRAT),
     _cat("SH000925", "基本面50", "策略", "策略", "pb",
-         ["中证锐联基本面50指数", "基本面50指数", "基本面50"], _WHY_DIV),
+         ["中证锐联基本面50指数", "基本面50指数", "基本面50"], _WHY_STRAT),
     _cat("SZ399701", "基本面60", "策略", "策略", "pb",
-         ["国证基本面60指数", "基本面60指数", "基本面60"], _WHY_DIV),
+         ["国证基本面60指数", "基本面60指数", "基本面60"], _WHY_STRAT),
     _cat("SZ399702", "基本面120", "策略", "策略", "pb",
-         ["国证基本面120指数", "基本面120指数", "基本面120"], _WHY_DIV),
+         ["国证基本面120指数", "基本面120指数", "基本面120"], _WHY_STRAT),
     _cat("CSI930782", "500低波", "策略", "策略", "pb",
-         ["中证500行业中性低波动指数", "中证500低波动指数", "500低波动指数", "500低波"], _WHY_DIV),
+         ["中证500行业中性低波动指数", "中证500低波动指数", "500低波动指数", "500低波"], _WHY_STRAT),
     # ---- v3 基础版：主流宽基/行业/海外（红利/价值/低波暂不上线，见 _DEFER）----
     _cat("SH000510", "中证A500", "宽基", "宽基", "pe",
          ["中证A500指数", "中证A500"], _WHY_PE),
@@ -214,19 +215,25 @@ CATALOG = [
 
 CATALOG_BY_CODE = {c["code"]: c for c in CATALOG}
 
-# v3 基础版：页面只上“主流指数”，红利/价值/低波/基本面先不上线（后续单列）。
+# v1.2：四分区导航上线。策略类（价值/低波/基本面/质量）留在指数型「策略」tab；
+# 纯红利/价值/红利低波等留给未来的「红利类」页签（占位中），继续 _DEFER。
 _MAINSTREAM = {
+    # 宽基
     "SH000300", "SH000016", "SH000510", "SH000905", "SH000852", "SZ399006",
     "SH000688", "SH899050", "SH000001", "SH000698", "SH000699",
+    # 行业/主题
     "SZ399997", "SH000932", "SH000991", "SZ399989", "SZ399986", "SZ399975",
     "H30184", "CSI931151", "SZ399976", "SZ399967", "CSI930652", "CSI930713",
-    "H30590", "CSI931079", "CSI931087", "SZ399971", "SH000827",
+    "H30590", "CSI931079", "CSI931087", "SZ399971", "SH000827", "SZ399965",
+    # 策略（价值/低波/基本面/质量，非红利）
+    "SH000919", "SH000925", "SZ399701", "SZ399702", "CSI930782", "SPCQVCP",
+    # 海外
     "HKHSTECH", "NDX", "SP500", "HKHSI",
 }
+# 纯红利/价值：留待「红利类」页签，暂不上线
 _DEFER = {
     "SH000922", "SH000015", "SZ399324", "CSIH30269", "CSI931157", "CSI930740",
-    "SH000919", "SH000925", "SZ399701", "SZ399702", "CSI930782", "CSIH30094",
-    "CSPSADRP", "SPACEVCP", "SPCQVCP",
+    "CSIH30094", "CSPSADRP", "SPACEVCP",
 }
 
 
@@ -245,8 +252,8 @@ for _c in CATALOG:
     _c["mainstream"] = _c["code"] in _MAINSTREAM
     _c["defer"] = _c["code"] in _DEFER
     _c["cs"] = _cs_code(_c["code"])
-    # 行业/主题默认展示 PB（金融/周期/消费更稳），宽基/成长默认 PE
-    _c["default_metric"] = "pb" if _c.get("type") == "行业" else "pe"
+    # 行业/策略默认展示 PB（金融/周期/价值更稳），宽基/成长默认 PE
+    _c["default_metric"] = "pb" if _c.get("type") in ("行业", "策略") else "pe"
 CATALOG_BY_CODE = {c["code"]: c for c in CATALOG}
 
 
@@ -647,7 +654,7 @@ def _tier_of(pct: float | None) -> str | None:
     return "高估"
 
 
-_ACTION = {"极低估": 4, "低估": 2, "合理偏低": 1, "合理偏高": 0.5, "高估": 0}
+# 定投倍数（v1.2 删除：用户要求去掉“几倍定投”内容，档位只做展示）
 
 # 无中证点位数据的指数（深交所/海外）：用对应场外基金净值做“点位代理”，只用于画图/近1年
 _CLOSE_PROXY = {"SZ399006": "110026", "HKHSTECH": "012348", "NDX": "006479",
@@ -752,7 +759,6 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
         "method_label": method_label,
         "history_label": history_label,
         "why": why,
-        "action": _ACTION.get(tier, 0), "action_label": f"{_ACTION.get(tier, 0):g} 倍",
         "ret_1y": ret_1y,
         "close_proxy": close_proxy,
         "valuation_date": base.get("pe", {}).get("end") if base.get("pe") else (
@@ -1043,11 +1049,10 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
     indices: list[dict] = []
     missing: list[dict] = []
     for entry in CATALOG:
-        if entry.get("defer") or not entry.get("mainstream"):
-            continue
+        # v1.3：不再按主流/延后名单裁剪——目录全量进 payload（含红利/价值/低波等），
+        # 「重要与否」交给前端默认 Top N + 查看更多（用户 2026-10-30 拍板）
         recs = by_idx.get(entry["code"]) or []
-        if not recs:
-            continue
+        # v1.3：无匹配基金的指数也展示（fund_count=0，详情提示无场外基金）
         if time.time() > deadline:
             missing.append({"code": entry["code"], "name": entry["name"],
                             "reason": "估值抓取预算超时"})
@@ -1058,6 +1063,7 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
                             "reason": "估值数据缺失/样本不足"})
             continue
         val["fund_count"] = len(recs)
+        val["mainstream"] = bool(entry.get("mainstream"))
         val["funds"] = select_funds(recs, status, rets, code2co, co2scale,
                                     cfg["fund_list_n"])
         fees = [f["fee_total"] for f in val["funds"]]
@@ -1071,8 +1077,8 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
     tier_cnt: dict[str, int] = {}
     for x in indices:
         tier_cnt[x["tier"]] = tier_cnt.get(x["tier"], 0) + 1
-    log(f"[7][指数估值] 主流目录 {sum(1 for c in CATALOG if c.get('mainstream') and not c.get('defer'))}"
-        f" / 展示 {len(indices)} / 缺 {len(missing)}；"
+    log(f"[7][指数估值] 目录 {len(CATALOG)} / 展示 {len(indices)} / 缺 {len(missing)}"
+        f"（默认每组前 {cfg['hot_per_group']} 只，其余进「查看更多」）；"
         f"基金 {sum(x['fund_count'] for x in indices)} 只；档位 "
         + "、".join(f"{k}{v}" for k, v in tier_cnt.items())
         + f"；耗时 {time.time() - t0:.1f}s")
@@ -1080,6 +1086,7 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
             "source": "中证指数官网 PE/点位 + 雪球基金 PB（分位为程序自算）",
             "catalog_n": len(CATALOG),
             "mainstream_n": sum(1 for c in CATALOG if c.get("mainstream") and not c.get("defer")),
+            "hot_per_group": cfg["hot_per_group"],
             "funds_n": len(mapped),
             "indices": indices, "missing": missing}
 
