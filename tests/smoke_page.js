@@ -378,7 +378,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     const res = document.getElementById('eq-results').innerHTML;
     chk('指数表渲染（紧凑列表行 eqi）且无勾选对比按钮',
         res.includes('class="eqi"') && !res.includes('class="pick"'));
-    const x0 = eqs[0];
+    const x0 = eqs.find(x=>x.mainstream) || eqs[0];   // v1.5：主列表只渲染主流，取主流做行断言
     const seg = res.split('<div class="eqi"').find(s=>s.includes(x0.name)) || '';
     // v1.4：行=档位+名称+当前温度；热度值小字已删（问题4/10）
     chk('指数行含档位/温度分位/当前温度标签',

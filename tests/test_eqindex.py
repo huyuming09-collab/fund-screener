@@ -84,11 +84,11 @@ class TestMatchCatalog:
         assert got == code, (text, got, alias)
 
     @pytest.mark.parametrize("text", [
-        "中证500质量成长指数",       # 未收录变种 → 基名被 exclude 挡住
+        "国证自由现金流指数",         # 国证/CNI 系，无 PE 历史，未收录
         "创业板50指数",              # 不是创业板指
-        "中证红利低波动100指数",     # 红利低波被 100 排除
+        "国证储能电池指数",          # 国证/CNI 系，未收录
         "中证食品饮料指数",          # 目录只有国证食品/主要消费
-        "中证半导体产业指数",        # 不在 63 目录
+        "恒生生物科技指数",          # 恒生系，未收录
         "",
     ])
     def test_unmatched(self, text):
