@@ -45,13 +45,6 @@ header.compact .meta{max-height:0;opacity:0;margin-top:0;}
 /* v1.4：#tabs 改块级——一级分区行与二级标签行分两行（修手机上叠一块）；
    二级标签改用指数型过滤条同款小胶囊（用户 2026-10-31） */
 .tabs{display:block;margin-top:5px;}
-.nav-groups{display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;
-  scrollbar-width:none;}
-.nav-groups::-webkit-scrollbar{display:none;}
-.nav-group{flex:0 0 auto;min-height:28px;padding:4px 10px;border-radius:9px;border:none;
-           background:rgba(255,255,255,.30);color:#fff;font-size:11.5px;font-weight:600;
-           white-space:nowrap;}
-.nav-group.on{background:#fff;color:var(--accent-ink);box-shadow:0 2px 6px rgba(140,50,0,.25);}
 .nav-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;}
 .nav-tabs .tab{min-height:26px;padding:4px 11px;border-radius:8px;font-size:11.5px;
                background:rgba(255,255,255,.82);color:#7c3a12;border:1px solid rgba(140,50,0,.14);
@@ -248,12 +241,6 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eqfull-tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 .eqfull-sortbar{display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:6px 14px 2px;background:var(--bg);font-size:11px;color:var(--sub);}
-/* 开发中占位 */
-.eq-dev{margin:40px 8px;padding:26px 20px;border-radius:14px;background:#fff;text-align:center;
-  box-shadow:0 1px 4px rgba(20,24,40,.05);}
-.eq-dev-t{font-size:20px;font-weight:700;color:var(--accent-ink);margin-bottom:6px;}
-.eq-dev-s{font-size:13px;color:var(--sub);margin-bottom:14px;}
-.eq-dev-d{font-size:12px;color:var(--sub);line-height:1.7;max-width:420px;margin:0 auto;}
 .eq-note{font-size:11.5px;color:var(--sub);line-height:1.55;}
 .eq-chart{background:#fff;border-radius:10px;padding:4px 2px 0;}
 .cmp-bar[hidden]{display:none;}
@@ -515,51 +502,24 @@ function screenOf(cat){
   return {scale_min_yi:5, comp_pct_min:0.45, yearly_median_min:0.55,
           spike_max_gain: cat==='long_bond' ? 0.02 : 0.01};
 }
-/* v1.2 四分区导航：偏债型（中短债/长债/固收+/债指）｜指数型（测试中）｜红利类/偏股主动型（开发中占位） */
-const NAV_GROUPS = [
-  {id:'bond',     name:'偏债型',   tabs:['short_bond','long_bond','fixed_plus','index']},
-  {id:'index',    name:'指数型',   badge:'测试中', tabs:['eq_index']},
-  {id:'dividend', name:'红利类',   badge:'开发中', tabs:[]},
-  {id:'equity',   name:'偏股主动型', badge:'开发中', tabs:[]},
-];
+/* v1.6 主界面即枢纽（用户 2026-10-31）：删除原「偏债型/指数型/红利类/偏股主动型」四分区切换，
+   index.html 只保留一条平铺内容页签（中短债/长债/固收+/债指/指数估值）。
+   红利/偏股「开发中」占位已移到 home.html 主界面卡片，本页不再需要分区与占位面板。 */
 const navCats = () => ((D && D.categories) || []).filter(c => !(c && c.hidden));
-const navGroups = () => NAV_GROUPS;                 /* 占位分区也要显示 */
-function navGroupOf(id){ return NAV_GROUPS.find(g => g.tabs.includes(id)) || NAV_GROUPS[0]; }
-let ACTIVE_GROUP = (NAV_GROUPS.find(g => g.tabs.includes(ACTIVE)) || NAV_GROUPS[0]).id;
 function renderTabs(active){
   const cats = navCats();
-  const g = NAV_GROUPS.find(x => x.id === ACTIVE_GROUP) || NAV_GROUPS[0];
-  const tabs = g.tabs.map(id => cats.find(c => c.id === id)).filter(Boolean);
-  $('tabs').innerHTML = '<div class="nav-groups">'
-    + NAV_GROUPS.map(x => `<button class="nav-group ${x.id===g.id?'on':''}"
-        onclick="switchGroup('${x.id}')">${x.name}${x.badge?`<span class="soon">（${x.badge}）</span>`:''}</button>`).join('')
-    + '</div>'
-    + (tabs.length ? '<div class="nav-tabs">'
-        + tabs.map(c => `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
-            ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast(\'该分类暂未开放\')"'}>
-            ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`).join('')
-        + '</div>' : '');
-}
-function switchGroup(gid){
-  const g = NAV_GROUPS.find(x => x.id === gid);
-  if (!g) return;
-  ACTIVE_GROUP = gid;
-  if (!g.tabs.length){                              /* 占位分区：无二级 tab */
-    ACTIVE = null; CMP = [];
-    renderTabs(null); renderList(); renderPick();
-    document.getElementById('list').scrollTop = 0;
-    return;
-  }
-  const first = g.tabs.find(id => {
-    const c = (D.categories||[]).find(x => x.id === id); return c && c.enabled;
-  });
-  if (first) switchTab(first); else renderTabs(null);
+  $('tabs').innerHTML = cats.length
+    ? '<div class="nav-tabs">'
+      + cats.map(c => `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
+          ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast(\'该分类暂未开放\')"'}>
+          ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`).join('')
+      + '</div>'
+    : '';
 }
 function switchTab(id){
   const c = (D.categories||[]).find(x=>x.id===id);
   if(!c || !c.enabled) return;
   ACTIVE = id;
-  ACTIVE_GROUP = navGroupOf(id).id;
   renderTabs(ACTIVE); renderList();
   CMP = []; renderPick();                       /* 跨池心动值不可比 → 切池清空对比选择 */
   document.getElementById('list').scrollTop = 0;
@@ -831,7 +791,6 @@ const METRIC_CELLS = f => [
 function renderList(){
   const cat = ACTIVE;
   if (cat !== 'eq_index') $('list').classList.remove('eq-mode');   /* v1.3 宽屏类只属于指数页 */
-  if (cat == null) return renderPlaceholder();          /* 占位分区（红利类/偏股主动型） */
   if (cat === 'eq_index') return renderEqIndexList();   /* v5.22 指数估值页签 */
   const ps = poolStat(cat);
   /* 按 tab 过滤；旧 data.js 的 funds 无 category → 按顶层 category（单池）归类 */
@@ -901,16 +860,6 @@ const numPos = (v, nd) => (v == null || Number(v) <= 0) ? '—' : num(v, nd);  /
 const tierCls = t => EQ_TIER_CLS[t] || 't3';
 const tierColor = t => EQ_TIER_COLOR[t] || '#6b7280';
 
-/* 占位分区（红利类/偏股主动型）：数据未上线，显示开发中面板 */
-function renderPlaceholder(){
-  const g = NAV_GROUPS.find(x => x.id === ACTIVE_GROUP) || {};
-  $('meta').innerHTML = `<b>${g.name || ''}</b> · 即将上线`;
-  $('list').innerHTML = `<div class="eq-dev">
-    <div class="eq-dev-t">${g.name || ''}</div>
-    <div class="eq-dev-s">正在开发中，暂无数据</div>
-    <div class="eq-dev-d">这个分区还在建设中。当前可用：偏债型（中短债 / 长债 / 固收+ / 债指）、指数型（宽基 / 行业 / 策略 / 海外，测试中）。</div>
-  </div>`;
-}
 /* 五段分位条：10/30/50/70 阈值（与 config.EQ_INDEX.tiers 同源，前端只做展示） */
 function eqBandHTML(pct){
   const zones = [[10,'#0f8a5f'],[20,'#4aab7a'],[20,'#b9bec6'],[20,'#e8a33d'],[30,'#d9534f']];
@@ -2204,13 +2153,17 @@ if (initExport()){
 }else{
   ACTIVE = D.category || ACTIVE; renderTabs(ACTIVE); renderList();
   renderPick();
-  /* v1.5 主界面深链（home.html）：?cat=<分类id> 直达页签；?group=<分区id> 直达分区（含开发中占位） */
+  /* v1.6 主界面即枢纽：?cat=<分类id> 直达对应内容页签（?group= 已随四分区删除，兼容映射到首池） */
   (function(){
     try{
       const q = new URLSearchParams(location.search);
-      const cat = q.get('cat'), grp = q.get('group');
+      let cat = q.get('cat');
+      if (!cat){
+        const grp = q.get('group');               /* 旧链接兼容：bond→short_bond，index→eq_index */
+        if (grp === 'bond') cat = 'short_bond';
+        else if (grp === 'index') cat = 'eq_index';
+      }
       if (cat && (D.categories||[]).some(c => c.id === cat && c.enabled)) switchTab(cat);
-      else if (grp && NAV_GROUPS.some(g => g.id === grp)) switchGroup(grp);
     }catch(e){/* 忽略：深链失败仍停默认页签 */}
   })();
 }

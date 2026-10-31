@@ -172,47 +172,34 @@ chk('data.js 契约 n_screened/top_n 字段保留', D.n_screened != null && D.to
 const tabsHTML = document.getElementById('tabs').innerHTML;
 const nEnabled  = D.categories.filter(c=>c.enabled).length;
 const nDisabled = D.categories.filter(c=>!c.enabled).length;
-// hidden 分类不渲染 tab → 只数可见分类；v3 两级导航需切换分组后查
+// v1.6 主界面即枢纽：删除四分区切换，index.html 只保留一条平铺内容页签
   const visCats = D.categories.filter(c=>!(c&&c.hidden));
   let navOK = true;
   for (const c of visCats) {
-    const g = navGroupOf(c.id);
-    if (!g) { navOK = false; continue; }
-    switchGroup(g.id);
+    switchTab(c.id);
     if (!document.getElementById('tabs').innerHTML.includes(c.name)) navOK = false;
   }
   switchTab('short_bond');
   chk('可见分类渲染 tab、hidden 分类不渲染',
       navOK && D.categories.filter(c=>c&&c.hidden)
         .every(c => !document.getElementById('tabs').innerHTML.includes(c.name)));
-/* v1.2 四分区导航：偏债型｜指数型（测试中）｜红利类（开发中）｜偏股主动型（开发中） */
 {
-  const tabsHTML4 = document.getElementById('tabs').innerHTML;
-  chk('一级四分区齐全（偏债型/指数型/红利类/偏股主动型）',
-      ['偏债型','指数型','红利类','偏股主动型'].every(n => tabsHTML4.includes(n)));
-  chk('指数型带「测试中」徽标、另两个带「开发中」徽标（v1.3 括号包裹）',
-      /指数型<span class="soon">（测试中）/.test(tabsHTML4)
-      && /红利类<span class="soon">（开发中）/.test(tabsHTML4)
-      && /偏股主动型<span class="soon">（开发中）/.test(tabsHTML4));
-  switchGroup('bond');
-  const bd = document.getElementById('tabs').innerHTML;
-  chk('偏债型二级含四类（中短债/长债/固收+/债指）',
-      ['short_bond','long_bond','fixed_plus','index'].every(id => bd.includes("switchTab('" + id + "')")));
-  switchGroup('index');
+  const tabsHTML = document.getElementById('tabs').innerHTML;
+  // 平铺单行：所有启用分类的 tab 都在一级（不再有四分区 switchGroup/占位面板）
+  chk('一级平铺所有启用页签（中短债/长债/固收+/债指/指数估值），无四分区切换',
+      D.categories.filter(c=>c.enabled && !(c&&c.hidden))
+        .every(c => tabsHTML.includes("switchTab('" + c.id + "')"))
+      && !tabsHTML.includes('switchGroup'));
+  chk('已删除四分区占位（偏债型/指数型/红利类/偏股主动型字样不再出现）',
+      !tabsHTML.includes('偏债型') && !tabsHTML.includes('红利类') && !tabsHTML.includes('偏股主动型'));
+  chk('无「开发中」占位面板（renderPlaceholder 已移除）',
+      typeof renderPlaceholder === 'undefined');
+  switchTab('eq_index');
   // 过滤条是 #list 内的 <div class="eq-filter">（class 非 id），桩 DOM 断言取 list.innerHTML
   const eqf = document.getElementById('list').innerHTML;
-  chk('指数型二级含四类且不再有「全部」按钮（v1.3）',
+  chk('指数页含四分组筛选且不再有「全部」按钮',
       ['宽基','行业','策略','海外'].every(n => eqf.includes('>'+n+'</button>'))
       && !eqf.includes('>全部</button>'));
-  // 占位分区：点进去显示「开发中」面板、无二级 tab
-  switchGroup('dividend');
-  const dv = document.getElementById('list').innerHTML;
-  chk('红利类点击显示「开发中」占位、无二级 tab',
-      dv.includes('正在开发中') && ACTIVE === null
-      && !document.getElementById('tabs').innerHTML.includes('nav-tabs'));
-  switchGroup('equity');
-  chk('偏股主动型点击显示「开发中」占位',
-      document.getElementById('list').innerHTML.includes('正在开发中'));
   switchTab('short_bond');
 }
 chk('禁用分类不可点击（toast 提示）', (tabsHTML.match(/toast\\('/g)||[]).length === nDisabled);
@@ -261,12 +248,12 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     const segIx = document.getElementById('list').innerHTML
       .split('<div class="fundcard"').find(s=>s.includes(ix.code)) || '';
     chk('指数卡片显示"指数"徽标', segIx.includes('rk idx') && segIx.includes('>指数<'));
-    // 2026-10-22 拍板撤「测试中」徽标；v1.2 四分区后，「测试中」徽标挂在一级分组「指数型」上，
-    // 债指 tab 已并入「偏债型」组，其 tab 本身不带徽标
+    // v1.6 四分区删除后「测试中」徽标随分组按钮一并移除；债指页签本身不带徽标
     const dzTab = document.getElementById('tabs').innerHTML
       .split('<button class="tab').find(s=>s.includes('债指')) || '';
-    chk('债指页签（归入偏债型组）不带"测试中"标识',
-        dzTab !== '' && !dzTab.includes('测试中') && document.getElementById('tabs').innerHTML.includes('测试中'));
+    chk('债指页签不带"测试中"标识（徽标已随四分区删除）',
+        dzTab !== '' && !dzTab.includes('测试中')
+        && !document.getElementById('tabs').innerHTML.includes('测试中'));
     // v5.12 单列债指（docs/17 §9）：卡脚 = 单列榜口径（旧"穿插评估"文案已随结构拍板废弃）
     // v5.18：卡脚口径句「经理块基线」→「同画像锚定」（逐只锚定，docs/17 §13）
     chk('指数卡片不显示经理从业、改显示单列评估口径',
