@@ -62,6 +62,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 .card.dev .badge{position:absolute;top:14px;right:14px;background:#f0eee8;color:var(--sub);
   border-radius:14px;padding:3px 9px;font-size:10.5px;font-weight:600;}
 .card.soon .nm{color:var(--sub);}
+/* v1.8 活跃卡「测试中」徽标（指数温度计；用户 2026-10-31）：柔橙描边、不影响点击 */
+.card .badge.testing{position:absolute;top:14px;right:14px;background:rgba(232,116,59,.12);
+  color:var(--accent-ink);border:1px solid rgba(232,116,59,.30);border-radius:14px;
+  padding:2px 9px;font-size:10.5px;font-weight:700;}
 
 /* ---- 底部 ---- */
 .ft{margin-top:auto;padding-top:24px;text-align:center;}
@@ -82,14 +86,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
   <div class="grid">
     <!-- 偏债心动榜单 -->
     <a class="card c-bond" href="index.html?section=bond">
-      <div class="ic">🛡️</div>
+      <div class="ic">❤️</div>
       <div class="nm">偏债心动榜单</div>
       <div class="ds">每周更新四类偏债心动榜</div>
       <span class="arrow">›</span>
     </a>
 
-    <!-- 指数温度计 -->
+    <!-- 指数温度计（测试中） -->
     <a class="card c-index" href="index.html?section=index">
+      <span class="badge testing">测试中</span>
       <div class="ic">🌡️</div>
       <div class="nm">指数温度计</div>
       <div class="ds">全市场指数估值温度，冷热一目了然</div>

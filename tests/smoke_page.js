@@ -178,11 +178,11 @@ const nDisabled = D.categories.filter(c=>!c.enabled).length;
   chk('默认偏债区只显偏债四页签（中短债/长债/固收+/债指），不含指数估值',
       ['short_bond','long_bond','fixed_plus','index'].every(id => tabsHTML.includes("switchTab('" + id + "')"))
       && !tabsHTML.includes("switchTab('eq_index')"));
-  // 切到指数区：只显指数估值，不显偏债四页签
+  // 切到指数区：只有1个页签（指数估值）→ 不渲染页签条（v1.8 白区铺满），且不含偏债四页签
   SECTION = 'index'; switchTab('eq_index');
   tabsHTML = document.getElementById('tabs').innerHTML;
-  chk('指数区只显指数估值页签，不含偏债四页签',
-      tabsHTML.includes("switchTab('eq_index')")
+  chk('指数区不渲染页签条（仅1页签冗余）且不含偏债四页签',
+      tabsHTML === ''
       && !tabsHTML.includes("switchTab('short_bond')")
       && !tabsHTML.includes("switchTab('long_bond')"));
   // 跨区切断：指数区内 switchTab 到偏债页签应被拦截（ACTIVE 保持 eq_index）

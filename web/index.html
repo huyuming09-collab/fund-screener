@@ -44,20 +44,19 @@ header .meta b.asof{font-size:11.5px;letter-spacing:.2px;text-shadow:0 0 8px rgb
 /* v1.4 下滚收起 meta（问题6：把高度还给数据区） */
 header .meta{transition:max-height .18s,opacity .15s,margin .18s;max-height:32px;overflow:hidden;}
 header.compact .meta{max-height:0;opacity:0;margin-top:0;}
-/* 页签（2026-10-22 对比度重做：非激活 半透白底+深棕字 5.5:1；激活 纯白底+深橙字 4.6:1） */
-.tab{flex:0 0 auto;min-height:36px;display:inline-flex;align-items:center;padding:8px 14px;border-radius:14px;font-size:13px;background:rgba(255,255,255,.55);
-     color:#7c3a12;white-space:nowrap;border:none;}
-.tab.active{background:#fff;color:var(--accent-ink);font-weight:700;box-shadow:0 2px 6px rgba(140,50,0,.25);}
+/* v1.8 页签下移白区（用户 2026-10-31）：顶栏只留标题+数据基准，页签在白色区域顶部。
+   白底胶囊：激活=柔橙填充，非激活=暖灰底。指数区只有1页签→不渲染 tabbar，白区铺满。 */
+.tabbar{flex:0 0 auto;background:var(--card);padding:9px 12px 4px;
+  border-bottom:1px solid var(--line);}
+.tabbar:empty{display:none;}
+.tab{flex:0 0 auto;min-height:34px;display:inline-flex;align-items:center;padding:7px 14px;
+     border-radius:11px;font-size:13px;background:#f2efe9;color:var(--sub);white-space:nowrap;
+     border:none;font-weight:600;}
+.tab.active{background:var(--accent);color:#fff;font-weight:700;box-shadow:0 2px 8px rgba(232,116,59,.28);}
 .tab.disabled{opacity:.45;}
 .tab .soon{font-size:10px;margin-left:3px;}
-/* v1.4：#tabs 改块级——一级分区行与二级标签行分两行（修手机上叠一块）；
-   二级标签改用指数型过滤条同款小胶囊（用户 2026-10-31） */
-.tabs{display:block;margin-top:5px;}
-.nav-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;}
-.nav-tabs .tab{min-height:26px;padding:4px 11px;border-radius:8px;font-size:11.5px;
-               background:rgba(255,255,255,.82);color:#7c3a12;border:1px solid rgba(140,50,0,.14);
-               box-shadow:none;}
-.nav-tabs .tab.active{background:var(--accent);color:#fff;font-weight:650;border-color:var(--accent);}
+.nav-tabs{display:flex;gap:7px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+.nav-tabs::-webkit-scrollbar{display:none;}
 
 /* ---------- 榜单卡 ---------- */
 main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;}
@@ -394,8 +393,10 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
       <h1>班马日记本</h1>
     </div>
     <div class="meta" id="meta">—</div>
-    <div class="tabs" id="tabs"></div>
   </header>
+  <!-- v1.8 页签下移白区（用户 2026-10-31）：顶栏只留标题+数据基准；偏债四页签放白色区域顶部，
+       指数区只有 1 个页签（冗余）→ 不渲染页签条，白区直接铺满，两区顶部统一 -->
+  <div class="tabbar" id="tabs"></div>
 
   <main id="list"></main>
 
@@ -532,13 +533,14 @@ const navCats = () => ((D && D.categories) || [])
   .filter(c => SECTIONS[SECTION].tabs.includes(c.id));   /* 只留本区页签 */
 function renderTabs(active){
   const cats = navCats();
-  $('tabs').innerHTML = cats.length
-    ? '<div class="nav-tabs">'
+  /* v1.8 只有 1 个页签时不渲染页签条（指数区=指数估值，冗余）→ 白区直接铺满，顶栏统一 */
+  if (cats.length <= 1){ $('tabs').innerHTML = ''; return; }
+  $('tabs').innerHTML =
+    '<div class="nav-tabs">'
       + cats.map(c => `<button class="tab ${c.id===active?'active':''} ${c.enabled?'':'disabled'}"
           ${c.enabled ? `onclick="switchTab('${c.id}')"` : 'disabled onclick="toast(\'该分类暂未开放\')"'}>
           ${c.name}${c.enabled?'':'<span class="soon">敬请期待</span>'}</button>`).join('')
-      + '</div>'
-    : '';
+      + '</div>';
 }
 function switchTab(id){
   const c = (D.categories||[]).find(x=>x.id===id);
@@ -2176,6 +2178,13 @@ if (initExport()){
   document.getElementById('list').innerHTML =
     '<div class="empty-tip">数据未加载：请先运行 <b>python -m fundscorer.pipeline</b> 生成 data.js</div>';
 }else{
+  /* v1.8 进入网址默认到主界面（用户 2026-10-31）：无 section/cat/group 参数时跳 home.html。
+     smoke 测试无 location（typeof undefined）→ 不跳，正常渲染。 */
+  let _hasParam = false;
+  try { _hasParam = !!(location.search && /section=|cat=|group=/.test(location.search)); } catch(e){}
+  if (!_hasParam && typeof location !== 'undefined' && location.replace){
+    location.replace('home.html');
+  } else {
   /* v1.7 先定内容区（?section=），再渲染该区首个启用页签；旧 ?cat=/?group= 兼容映射到区 */
   (function(){
     try{
@@ -2201,6 +2210,7 @@ if (initExport()){
     ACTIVE = want || (inSec[0] && inSec[0].id) || D.category || 'short_bond';
     renderTabs(ACTIVE); renderList(); renderPick();
   })();
+  }
 }
 </script>
 </body>
