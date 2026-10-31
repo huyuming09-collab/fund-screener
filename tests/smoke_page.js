@@ -386,16 +386,24 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
         && seg.includes('当前温度'));
     chk('指数行不再有热度值/最低费率小字', !seg.includes('热度值') && !seg.includes('最低费率'));
     chk('指数行不含具体基金代码', (x0.funds||[]).every(f=>!seg.includes(f.code)));
-    // v1.4：每类默认重点 Top N，「查看更多」进全量页
-    const hotN = (D.eq_index && D.eq_index.hot_per_group) || 12;
+    // v1.5：主列表=主流指数全展示（估值升序、不截断）；非主流进全量页
     const groups = ['宽基','行业','策略','海外'].filter(g=>eqs.some(x=>x.group===g));
-    chk('每类默认只展示重点 Top N（其余进全量页）',
+    chk('主列表展示该组全部主流指数（不截断）',
         groups.every(g => {
-          const n = eqs.filter(x=>x.group===g).length;
-          return n <= hotN || res.includes('查看更多');
+          const mainstream = eqs.filter(x=>x.group===g && x.mainstream);
+          return mainstream.every(x => res.includes(x.name));
         }));
-    // v1.4 全量页：查看更多进入，含该组全部指数 + 搜索图标
-    const bigG = groups.find(g => eqs.filter(x=>x.group===g).length > hotN) || groups[0];
+    chk('主列表排序按估值分位升序（非主流优先）',
+        groups.every(g => {
+          const ms = eqs.filter(x=>x.group===g && x.mainstream)
+            .map(x => x.percentile);
+          return ms.every((v,i)=> i===0 || ms[i-1] <= v);
+        }));
+    // 存在非主流时，应有「查看更多」入口进全量页
+    const anyHidden = groups.some(g => eqs.filter(x=>x.group===g && !x.mainstream).length > 0);
+    if (anyHidden) chk('有非主流指数时显示「查看更多」入口', res.includes('查看更多'));
+    // v1.5 全量页：查看更多进入，含该组全部指数（主流+非主流）+ 搜索图标
+    const bigG = groups.find(g => eqs.filter(x=>x.group===g && !x.mainstream).length > 0) || groups[0];
     eqOpenFull(bigG);
     const fullBody = document.getElementById('eqfull-body').innerHTML;
     chk('全量页渲染该组全部指数',

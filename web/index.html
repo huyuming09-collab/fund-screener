@@ -1091,13 +1091,15 @@ const EQ_SEARCH_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="non
    删除 PE/PB/近1年/热度值/最低费率小字（问题4：小字重叠、名称显示不全）。
    「热度值」原义=同指数可选基金数，与估值无关易误读（问题10）→ 行内不再出现 */
 function eqRowHTML(x, withGroup){
+  /* v1.5 温度数字按档位着色（分位决定档位）：低估冷蓝绿 → 高估热红，符合温度规律 */
+  const tcol = tierColor(x.tier);
   return `<div class="eqi" onclick='openEqIndexDetail(${JSON.stringify(x.code)})'>
     <div class="tier ${tierCls(x.tier)}">${x.tier}</div>
     <div class="eqi-name"><b>${x.name}</b>
       <span class="eqi-code">${withGroup ? x.group + ' · ' : ''}${x.code}</span></div>
     <div class="eqi-r">
       <div class="eqi-lab">当前温度</div>
-      <div class="eqi-pct">${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
+      <div class="eqi-pct" style="color:${tcol}">${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
     </div>
   </div>`;
 }
@@ -1116,11 +1118,12 @@ function eqFiltered(qOverride){
   return eqIndices().filter(x => (x.name||'').toLowerCase().includes(q)
     || (x.code||'').toLowerCase().includes(q));
 }
-/* 组内排序：主流优先 → 温度分位升序 */
-function eqGroupSorted(g){
-  return eqIndices().filter(x => x.group === g)
-    .sort((a,b) => ((b.mainstream?1:0) - (a.mainstream?1:0))
-      || ((a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile)));
+/* 组内排序：统一按估值分位从低到高（越便宜越靠前），不搞主流优先。
+   主流/非主流只决定「直接展示 vs 更多里展示」，不决定排序（用户 2026-10-31）。 */
+function eqGroupSorted(g, mainstreamOnly){
+  let a = eqIndices().filter(x => x.group === g);
+  if (mainstreamOnly) a = a.filter(x => x.mainstream);
+  return a.sort((a,b) => (a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile));
 }
 function eqRenderResults(){
   const box = $('eq-results'); if (!box) return;
@@ -1137,15 +1140,16 @@ function eqRenderResults(){
   const groups = EQ_GROUPS.filter(g => eqIndices().some(x => x.group === g));
   box.innerHTML = groups.map(g => {
     if (EQ_FILTER !== 'all' && EQ_FILTER !== g) return '';
-    const gs = eqGroupSorted(g);
+    /* v1.5 主列表=主流指数直接全展示（估值升序）；非主流进「查看更多」全量页 */
+    const gs = eqGroupSorted(g, true);
+    const total = eqIndices().filter(x => x.group === g).length;
     if (!gs.length) return '';
-    /* v1.4 重点/全部分工（问题8/9）：主列表只放重点 TopN；「查看更多」进全量页 */
-    const hot = eqHotN(), shown = gs.slice(0, hot);
-    return `<div class="eq-group"><b>${g} · ${gs.length} 个</b>
-      <span class="sub">重点Top${Math.min(hot, gs.length)} · 主流优先，越便宜越靠前</span></div>`
-      + shown.map(x => eqRowHTML(x)).join('')
-      + (gs.length > hot
-        ? `<button class="eq-more" onclick="eqOpenFull('${g}')">查看更多 ${g}（共 ${gs.length} 个）</button>`
+    const hidden = total - gs.length;
+    return `<div class="eq-group"><b>${g} · ${total} 个</b>
+      <span class="sub">按估值从低到高</span></div>`
+      + gs.map(x => eqRowHTML(x)).join('')
+      + (hidden > 0
+        ? `<button class="eq-more" onclick="eqOpenFull('${g}')">查看更多 ${g}（另有 ${hidden} 个非主流）</button>`
         : '');
   }).join('');
 }
@@ -1183,7 +1187,7 @@ function eqRenderFull(){
   }
   const gs = EQ_FULL_GROUP ? eqGroupSorted(EQ_FULL_GROUP) : eqIndices();
   if (title) title.textContent = EQ_FULL_GROUP ? (EQ_FULL_GROUP + ' · 全部指数') : '全部指数';
-  if (sub) sub.textContent = `${gs.length} 个 · 主流优先，越便宜越靠前`;
+  if (sub) sub.textContent = `${gs.length} 个 · 按估值从低到高（含非主流）`;
   body.innerHTML = gs.map(x => eqRowHTML(x, !EQ_FULL_GROUP)).join('');
 }
 function renderEqIndexList(){
