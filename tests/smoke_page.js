@@ -169,39 +169,48 @@ chk('meta 数据基准加粗标注（排名页数据时间，v5.14）', document
 chk('data.js 契约 n_screened/top_n 字段保留', D.n_screened != null && D.top_n != null);
 
 // 9. 分类 tab：处理器绑定 + 多池切换过滤（单池旧 data.js 只断言处理器与回退）
-const tabsHTML = document.getElementById('tabs').innerHTML;
 const nEnabled  = D.categories.filter(c=>c.enabled).length;
 const nDisabled = D.categories.filter(c=>!c.enabled).length;
-// v1.6 主界面即枢纽：删除四分区切换，index.html 只保留一条平铺内容页签
+// v1.7 四入口=四个独立内容区：按 section 隔离，偏债/指数互不相通（用户 2026-10-31）
   const visCats = D.categories.filter(c=>!(c&&c.hidden));
-  let navOK = true;
-  for (const c of visCats) {
-    switchTab(c.id);
-    if (!document.getElementById('tabs').innerHTML.includes(c.name)) navOK = false;
-  }
+  // 默认偏债区：只渲染偏债四页签，不渲染指数估值
+  let tabsHTML = document.getElementById('tabs').innerHTML;
+  chk('默认偏债区只显偏债四页签（中短债/长债/固收+/债指），不含指数估值',
+      ['short_bond','long_bond','fixed_plus','index'].every(id => tabsHTML.includes("switchTab('" + id + "')"))
+      && !tabsHTML.includes("switchTab('eq_index')"));
+  // 切到指数区：只显指数估值，不显偏债四页签
+  SECTION = 'index'; switchTab('eq_index');
+  tabsHTML = document.getElementById('tabs').innerHTML;
+  chk('指数区只显指数估值页签，不含偏债四页签',
+      tabsHTML.includes("switchTab('eq_index')")
+      && !tabsHTML.includes("switchTab('short_bond')")
+      && !tabsHTML.includes("switchTab('long_bond')"));
+  // 跨区切断：指数区内 switchTab 到偏债页签应被拦截（ACTIVE 保持 eq_index）
   switchTab('short_bond');
-  chk('可见分类渲染 tab、hidden 分类不渲染',
-      navOK && D.categories.filter(c=>c&&c.hidden)
+  chk('跨区切断：指数区内 switchTab(偏债页签) 被拦截、ACTIVE 保持 eq_index',
+      ACTIVE === 'eq_index');
+  // 回偏债区验证
+  SECTION = 'bond'; switchTab('short_bond');
+  chk('回偏债区可正常切到 short_bond', ACTIVE === 'short_bond');
+  // hidden 分类不渲染
+  chk('hidden 分类不渲染',
+      D.categories.filter(c=>c&&c.hidden)
         .every(c => !document.getElementById('tabs').innerHTML.includes(c.name)));
-{
-  const tabsHTML = document.getElementById('tabs').innerHTML;
-  // 平铺单行：所有启用分类的 tab 都在一级（不再有四分区 switchGroup/占位面板）
-  chk('一级平铺所有启用页签（中短债/长债/固收+/债指/指数估值），无四分区切换',
-      D.categories.filter(c=>c.enabled && !(c&&c.hidden))
-        .every(c => tabsHTML.includes("switchTab('" + c.id + "')"))
-      && !tabsHTML.includes('switchGroup'));
-  chk('已删除四分区占位（偏债型/指数型/红利类/偏股主动型字样不再出现）',
-      !tabsHTML.includes('偏债型') && !tabsHTML.includes('红利类') && !tabsHTML.includes('偏股主动型'));
+  chk('无 switchGroup（四分区切换层已删除）',
+      !document.getElementById('tabs').innerHTML.includes('switchGroup'));
   chk('无「开发中」占位面板（renderPlaceholder 已移除）',
       typeof renderPlaceholder === 'undefined');
+  // 指数区：四分组筛选 + 三列表头 + 排序控件（写入 #eq-results，stub 不嵌套解析）
+  SECTION = 'index';
   switchTab('eq_index');
-  // 过滤条是 #list 内的 <div class="eq-filter">（class 非 id），桩 DOM 断言取 list.innerHTML
   const eqf = document.getElementById('list').innerHTML;
   chk('指数页含四分组筛选且不再有「全部」按钮',
       ['宽基','行业','策略','海外'].every(n => eqf.includes('>'+n+'</button>'))
       && !eqf.includes('>全部</button>'));
-  switchTab('short_bond');
-}
+  const eqres = document.getElementById('eq-results').innerHTML;
+  chk('指数页有三列表头（指数名称/近一周涨跌幅/当前温度）',
+      eqres.includes('指数名称') && eqres.includes('近一周涨跌幅') && eqres.includes('当前温度'));
+  SECTION = 'bond'; switchTab('short_bond');
 chk('禁用分类不可点击（toast 提示）', (tabsHTML.match(/toast\\('/g)||[]).length === nDisabled);
 if (D.pools && D.pools.long_bond && longFunds.length) {
   // 池显示名从 data.js 派生（2026-10-19 改名 中短债/长债/固收+），不再写死
@@ -348,7 +357,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
   // 12. 指数估值（v5.22 债指之外的指数型基金）：卡片=指数（不含基金）、详情=估值+低费率基金
   if (D.eq_index && (D.eq_index.indices||[]).length) {
     const eqs = D.eq_index.indices;
-    switchTab('eq_index');
+    SECTION = 'index'; switchTab('eq_index');   /* v1.7 切到指数区 */
     const le = document.getElementById('list').innerHTML;
     chk('指数估值页签可切换、meta 统一「数据基准」格式（Bug3）',
         ACTIVE==='eq_index' && document.getElementById('meta').innerHTML.includes('数据基准'));
@@ -449,7 +458,7 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('回到基金详情恢复「综合心动值」标签',
         document.getElementById('d-score-label').textContent==='综合心动值');
     closeDetail();
-    switchTab('short_bond');
+    SECTION = 'bond'; switchTab('short_bond');   /* v1.7 回偏债区 */
   } else {
     console.log('· 无指数估值数据（旧 data.js / 未建库）');
   }
