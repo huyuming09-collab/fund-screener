@@ -995,6 +995,15 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
             ret_1y = round(float(close_s.iloc[-1] / close_s.iloc[-53] - 1), 4)
         except Exception:                          # noqa: BLE001
             ret_1y = None
+    # 近1周涨跌幅（close_s 已按周频 W-FRI 重采样；末两点≈一周跨度）。前端红涨绿跌。
+    ret_1w = None
+    if len(close_s) >= 2:
+        try:
+            _prev = float(close_s.iloc[-2])
+            if _prev > 0:
+                ret_1w = round(float(close_s.iloc[-1]) / _prev - 1, 4)
+        except Exception:                          # noqa: BLE001
+            ret_1w = None
     return {
         "code": entry["code"], "name": entry["name"], "type": entry["type"],
         "group": entry["group"], "cs": entry.get("cs"),
@@ -1007,6 +1016,7 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
         "history_label": history_label,
         "why": why,
         "ret_1y": ret_1y,
+        "ret_1w": ret_1w,
         "close_proxy": close_proxy,
         "valuation_date": base.get("pe", {}).get("end") if base.get("pe") else (
             base.get("pb", {}).get("end") if base.get("pb") else None),

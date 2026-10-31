@@ -56,11 +56,11 @@ chk('列表页免责底栏有文案且来自 data.js', pd.length>30 && pd===D.di
 closeDetail();
 chk('详情关闭正常', !document.getElementById('detail').classList.contains('show'));
 
-// 3. 响应式/口径 CSS 与架构断言
+// 3. 响应式/口径 CSS 与架构断言（v1.5 移动端统一：删除 640/1024 断点，桌面也按手机宽度居中）
 const cssOK = /#phone\\{[^}]*width:100%[^}]*max-width:480px/.test(${JSON.stringify(html)})
-  && /@media \\(min-width:640px\\)/.test(${JSON.stringify(html)})
+  && !/@media \\(min-width:1024px\\)/.test(${JSON.stringify(html)})
   && /100dvh/.test(${JSON.stringify(html)});
-chk('内容列：满宽、max-width 480px、640px 断点投影、dvh 高度', cssOK);
+chk('内容列：满宽、max-width 480px、无桌面断点（移动端统一）、dvh 高度', cssOK);
 chk('滚动架构保留（main/detail 各自内部滚动）',
   /main\\{[^}]*overflow-y:auto/.test(${JSON.stringify(html)}) && /#detail\\{[^}]*overflow-y:auto/.test(${JSON.stringify(html)}));
 chk('viewport 已放开缩放（无 user-scalable=no）',
@@ -363,8 +363,8 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     const eqs = D.eq_index.indices;
     switchTab('eq_index');
     const le = document.getElementById('list').innerHTML;
-    chk('指数估值页签可切换、meta 显示估值日期',
-        ACTIVE==='eq_index' && document.getElementById('meta').innerHTML.includes('估值日期'));
+    chk('指数估值页签可切换、meta 统一「数据基准」格式（Bug3）',
+        ACTIVE==='eq_index' && document.getElementById('meta').innerHTML.includes('数据基准'));
     chk('指数页含搜索图标（默认不占位）+ 分类筛选 + 结果容器',
         le.includes('eqToggleSearch()') && !le.includes('id="eq-search"')
         && le.includes('eq-filter') && le.includes('id="eq-results"'));
@@ -380,10 +380,11 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
         res.includes('class="eqi"') && !res.includes('class="pick"'));
     const x0 = eqs.find(x=>x.mainstream) || eqs[0];   // v1.5：主列表只渲染主流，取主流做行断言
     const seg = res.split('<div class="eqi"').find(s=>s.includes(x0.name)) || '';
-    // v1.4：行=档位+名称+当前温度；热度值小字已删（问题4/10）
-    chk('指数行含档位/温度分位/当前温度标签',
-        seg.includes(x0.tier) && seg.includes(x0.percentile.toFixed(1)+'%')
-        && seg.includes('当前温度'));
+    // v1.5：三列表头（Bug4）+ 行=档位+名称+近一周涨跌幅+温度值（行内不再重复列名）
+    chk('指数列表有三列表头（指数名称/近一周涨跌幅/当前温度）',
+        res.includes('指数名称') && res.includes('近一周涨跌幅') && res.includes('当前温度'));
+    chk('指数行含档位/温度分位值',
+        seg.includes(x0.tier) && seg.includes(x0.percentile.toFixed(1)+'%'));
     chk('指数行不再有热度值/最低费率小字', !seg.includes('热度值') && !seg.includes('最低费率'));
     chk('指数行不含具体基金代码', (x0.funds||[]).every(f=>!seg.includes(f.code)));
     // v1.5：主列表=主流指数全展示（估值升序、不截断）；非主流进全量页
@@ -473,12 +474,11 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
       document.getElementById('list').innerHTML.includes(shortFunds[0].code));
 }
 
-// 10. 桌面适配（≥1024px）+ 隐藏导出模式（?export=，页面无入口）
-chk('桌面断点 ≥1024px：宽容器 + 榜单双列 + 详情居中面板',
-  /@media \\(min-width:1024px\\)/.test(${JSON.stringify(html)})
-  && /#phone\\{max-width:1180px/.test(${JSON.stringify(html)})
-  && /#list\\{display:grid;grid-template-columns:1fr 1fr/.test(${JSON.stringify(html)})
-  && /#detail\\{left:50%;right:auto;width:min\\(880px,92vw\\)/.test(${JSON.stringify(html)}));
+// 10. 移动端统一（v1.5：删除桌面断点）+ 隐藏导出模式（?export=，页面无入口）
+chk('移动端统一：已删除 ≥640px/≥1024px 桌面断点（桌面也按手机宽度居中）',
+  !/@media \\(min-width:1024px\\)/.test(${JSON.stringify(html)})
+  && !/@media \\(min-width:640px\\)/.test(${JSON.stringify(html)})
+  && /max-width:480px/.test(${JSON.stringify(html)}));
 const bodyOnly = ${JSON.stringify(html)}.replace(/<script>[\\s\\S]*?<\\/script>/g,'')
   .replace(/<style>[\\s\\S]*?<\\/style>/g,'').replace(/<!--([\\s\\S]*?)-->/g,'');
 chk('导出模式在页面上无可见入口（无 ?export 链接/按钮）',

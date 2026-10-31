@@ -23,22 +23,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 /* 内容列：手机满宽；电脑（≥640px）居中限宽 480px + 投影（窄栏居中单列，用户确认口径） */
 #phone{width:100%;max-width:480px;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);position:relative;overflow:hidden;
        display:flex;flex-direction:column;}
-@media (min-width:640px){ #phone{box-shadow:0 0 24px rgba(0,0,0,.12);} }
-/* 桌面（≥1024px）：宽版布局——容器放宽、榜单双列卡片、详情居中面板（不再整屏滑入） */
-@media (min-width:1024px){
-  body{background:#e4e7ec;}
-  #phone{max-width:1180px;box-shadow:0 0 30px rgba(0,0,0,.10);}
-  main{padding:18px 22px 40px;}
-  #list{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;}
-  #list .fundcard{margin-bottom:0;}
-  #list .fundcard:hover{box-shadow:0 4px 14px rgba(20,24,40,.10);transform:translateY(-1px);}
-  .fc-name{font-size:16px;}
-  .m .v{font-size:15px;}
-  /* 详情：居中面板（宽 880px），保留内部滚动 */
-  #detail{left:50%;right:auto;width:min(880px,92vw);transform:translate(-50%,100%);
-          box-shadow:0 0 40px rgba(0,0,0,.18);}
-  #detail.show{transform:translate(-50%,0);}
-}
+/* v1.5 移动端统一（用户 2026-10-31）：不再适配电脑端宽版布局——桌面也按手机宽度居中显示，
+   删除原 ≥640px 阴影 / ≥1024px 双列宽版 media query */
 #phone>header{flex:0 0 auto;}
 
 /* ---------- 顶部（v1.4 压缩：让数据区占更多有效高度） ---------- */
@@ -196,17 +182,24 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
                   color:var(--sub);font-size:11.5px;}
 .eq-toggle button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 /* v1.2 紧凑列表行（非卡片）· v1.4 简化：名称手机可两行、右侧「当前温度」 */
-.eqi{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid #edeff2;
-     cursor:pointer;transition:background .1s;}
+/* v1.5 指数列表改三列表格（用户 2026-10-31）：指数名称 | 近一周涨跌幅 | 当前温度 */
+.eqi{display:grid;grid-template-columns:1fr 78px 62px;gap:7px;align-items:center;
+     padding:9px 2px;border-bottom:1px solid #edeff2;cursor:pointer;transition:background .1s;}
 .eqi:active{background:#f6f7f9;}
-.eqi .tier{flex:0 0 auto;}
-.eqi-name{flex:1;min-width:0;}
-.eqi-name b{display:block;font-size:14.5px;font-weight:650;line-height:1.3;
+.eqi-head{display:grid;grid-template-columns:1fr 78px 62px;gap:7px;align-items:center;
+     padding:5px 2px 6px;border-bottom:2px solid var(--line);font-size:10.5px;
+     color:var(--sub);font-weight:650;letter-spacing:.2px;}
+.eqi-head .r{text-align:right;}
+.eqi-l{display:flex;align-items:center;gap:7px;min-width:0;}
+.eqi-l .tier{flex:0 0 auto;min-width:0;padding:4px 6px;font-size:11px;}
+.eqi-name{min-width:0;}
+.eqi-name b{display:block;font-size:13.5px;font-weight:650;line-height:1.3;
             word-break:break-word;}
 .eqi-code{font-size:9.5px;color:var(--sub);font-weight:500;}
-.eqi-r{flex:0 0 auto;text-align:right;min-width:58px;}
-.eqi-lab{font-size:9px;color:var(--sub);line-height:1.2;}
-.eqi-pct{font-size:17px;font-weight:700;color:var(--accent-ink);line-height:1.2;}
+.eqi-chg{text-align:right;font-size:13px;font-weight:650;line-height:1.2;
+         font-variant-numeric:tabular-nums;color:var(--sub);}
+.eqi-pct{text-align:right;font-size:15.5px;font-weight:700;line-height:1.2;
+         font-variant-numeric:tabular-nums;}
 /* v1.3 走势图左侧图例：每条线的图示说明（用户 2026-10-30） */
 /* v1.4 搜索图标化 + 全量页（问题7/8/9） */
 .eq-bar{display:flex;gap:6px;margin:2px 0 8px;align-items:center;}
@@ -235,14 +228,6 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eq-legend .ln.light{border-top:1.5px dashed #c9cdd4;}
 .eq-legend .band{flex:0 0 16px;height:10px;border-radius:2px;
   background:linear-gradient(90deg,#e3f5ec,#eef0f3,#fdecea);}
-/* v1.3 指数列表宽屏适配：≥1024px 双列行布局（一行两指数），分组头/按钮通栏 */
-@media (min-width:1024px){
-  #list.eq-mode #eq-results{display:grid;grid-template-columns:1fr 1fr;
-    column-gap:28px;align-items:start;}
-  #list.eq-mode .eq-group,#list.eq-mode .eq-more,#list.eq-mode .empty-tip{grid-column:1/-1;}
-  #list.eq-mode .eqi{padding:10px 4px;}
-  #list.eq-mode .eq-bar,#list.eq-mode .eq-filter{max-width:720px;}
-}
 /* 搜索框 + 查看更多 */
 .eq-bar{margin:2px 0 8px;}
 .eq-bar input{width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--line);
@@ -251,6 +236,18 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eq-more{display:block;width:100%;margin:8px 0 4px;padding:9px;border-radius:10px;border:1px dashed var(--line);
   background:#fff;color:var(--accent-ink);font-size:12.5px;font-weight:600;cursor:pointer;}
 .eq-more:active{background:#fff6ef;}
+/* v1.5 当前温度排序控件（"当前温度" + 切换图标 + 方向） */
+.eq-sort{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:#fff;
+  border-radius:9px;padding:5px 10px;font-size:11.5px;color:var(--sub);font-weight:600;cursor:pointer;flex:0 0 auto;}
+.eq-sort svg{color:var(--accent-ink);}
+.eq-sort-dir{color:var(--accent-ink);font-variant-numeric:tabular-nums;}
+/* v1.5 全量页顶部：四分组 tab 条 */
+.eqfull-tabs{display:flex;gap:6px;padding:8px 14px 2px;background:var(--bg);}
+.eqfull-tabs button{flex:1;min-height:32px;border-radius:9px;border:1px solid var(--line);background:#fff;
+  font-size:12.5px;color:var(--sub);font-weight:600;cursor:pointer;}
+.eqfull-tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+.eqfull-sortbar{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:6px 14px 2px;background:var(--bg);font-size:11px;color:var(--sub);}
 /* 开发中占位 */
 .eq-dev{margin:40px 8px;padding:26px 20px;border-radius:14px;background:#fff;text-align:center;
   box-shadow:0 1px 4px rgba(20,24,40,.05);}
@@ -357,16 +354,15 @@ table.yr tr:last-child td{border-bottom:none;}
 .mgr-cards .mc .v{font-size:15px;font-weight:650;color:var(--accent-ink);}
 .mgr-cards .mc .l{font-size:10.5px;color:var(--sub);margin-top:2px;}
 .disclaimer{font-size:11px;color:#69707e;line-height:1.7;padding:6px 16px 26px;}
-/* v1.4 底部单行化（问题6：数据区太小）——账号 + 免责开关一行；免责全文默认折叠点击展开。
-   底部留白 ≥ 对比浮条高度（~57px）：手机上勾选对比后 cmp-bar 浮底（2026-10-22 修复，保留） */
-.page-foot{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
-  padding:5px 12px calc(58px + env(safe-area-inset-bottom));background:var(--bg);
+/* v1.5 免责常显（用户 2026-10-31）：免责声明不再折叠、免点击直接显示，紧贴底部留白上方；
+   底部 58px 留白仍为对比浮条预留（cmp-bar 浮底时会盖住免责尾部——只有用对比功能才遮挡）。
+   账号行与免责之间无大留白，消除旧版"空白上移"问题。 */
+.page-foot{flex:0 0 auto;display:flex;align-items:center;
+  padding:5px 12px 3px;background:var(--bg);
   border-top:1px solid var(--line);font-size:11px;color:var(--sub);}
 .page-foot b{color:var(--accent-ink);font-weight:650;}
-.pf-btn{border:1px solid var(--line);background:#fff;border-radius:8px;font-size:10.5px;
-  color:var(--sub);padding:3px 9px;flex:0 0 auto;}
-.page-disc{flex:0 0 auto;font-size:10.5px;color:#69707e;line-height:1.65;text-align:left;
-  padding:8px 14px;background:var(--bg);border-top:1px dashed var(--line);}
+.page-disc{flex:0 0 auto;font-size:10.5px;color:#69707e;line-height:1.6;text-align:left;
+  padding:3px 14px calc(58px + env(safe-area-inset-bottom));background:var(--bg);}
 .redline-tag{display:inline-block;background:#fff0f0;color:var(--up);border-radius:6px;
              font-size:11px;padding:1px 6px;margin-left:6px;}
 /* ---------- 隐藏导出模式：?export=<pool>（仅 URL 触发，页面无入口） ----------
@@ -400,12 +396,11 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
 
   <main id="list"></main>
 
-  <!-- 底部单行（v1.4）：账号 + 免责开关；免责全文默认折叠 -->
+  <!-- v1.5 底部：账号行 + 免责常显（免点击）；底部58px留白仅对比浮条用 -->
   <div class="page-foot">
     <span><b>@班马成长日记</b> · 班马日记本每周更新</span>
-    <button class="pf-btn" id="pf-btn" onclick="toggleDisc()">免责声明</button>
   </div>
-  <div class="page-disc" id="p-disc" hidden></div>
+  <div class="page-disc" id="p-disc"></div>
 
   <!-- 详情页 -->
   <div id="detail" aria-hidden="true">
@@ -441,6 +436,9 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
       <input id="eqfull-search" type="search" placeholder="搜索全部指数名称或代码…"
         oninput="eqFullSearch(this.value)">
     </div>
+    <!-- v1.5 全量页：四分组 tab（宽基/行业/策略/海外）+ 当前温度排序切换（用户 2026-10-31） -->
+    <div class="eqfull-tabs" id="eqfull-tabs"></div>
+    <div class="eqfull-sortbar" id="eqfull-sortbar"></div>
     <div id="eqfull-body"></div>
   </div>
 
@@ -1076,6 +1074,7 @@ function openEqIndexDetail(code){
 const EQ_GROUPS = ['宽基','行业','策略','海外'];
 let EQ_FILTER = 'all', EQ_SEARCH = '', EQ_SEARCH_OPEN = false;
 let EQ_FULL_GROUP = null, EQ_FULL_SEARCH = '';
+let EQ_SORT_ASC = true;   /* v1.5 当前温度排序方向：true=从低到高（越便宜越前），false=从高到低 */
 let EQ_CUR = null, EQ_WIN = '10y', EQ_METRIC = 'pe';
 const eqHotN = () => (D.eq_index && D.eq_index.hot_per_group) || 12;
 const eqWinLabel = w => ({'3y':'近3年','5y':'近5年','10y':'近10年','all':'上市以来'}[w] || '近10年');
@@ -1087,22 +1086,27 @@ function eqPctLabel(x){
 const EQ_SEARCH_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'
   + ' stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/>'
   + '<path d="M15.5 15.5L21 21"/></svg>';
-/* 紧凑列表行（v1.4）：档位 + 名称（手机可两行不截断）+ 右侧「当前温度」；
-   删除 PE/PB/近1年/热度值/最低费率小字（问题4：小字重叠、名称显示不全）。
-   「热度值」原义=同指数可选基金数，与估值无关易误读（问题10）→ 行内不再出现 */
+/* v1.5 三列表格行（用户 2026-10-31）：指数名称 | 近一周涨跌幅 | 当前温度。
+   行内只显示数字（不重复列名，列名由 .eqi-head 表头统一给）；温度按档位着色（冷→热），
+   近一周涨跌幅红涨绿跌（ret_1w 来自 build 周频 close 末两点）。 */
 function eqRowHTML(x, withGroup){
-  /* v1.5 温度数字按档位着色（分位决定档位）：低估冷蓝绿 → 高估热红，符合温度规律 */
   const tcol = tierColor(x.tier);
+  const w = x.ret_1w;
+  const wTxt = (w==null) ? '—' : (w>=0?'+':'') + (w*100).toFixed(2) + '%';
+  const wCol = (w==null) ? 'var(--sub)' : (w>=0 ? 'var(--up)' : 'var(--down)');
   return `<div class="eqi" onclick='openEqIndexDetail(${JSON.stringify(x.code)})'>
-    <div class="tier ${tierCls(x.tier)}">${x.tier}</div>
-    <div class="eqi-name"><b>${x.name}</b>
-      <span class="eqi-code">${withGroup ? x.group + ' · ' : ''}${x.code}</span></div>
-    <div class="eqi-r">
-      <div class="eqi-lab">当前温度</div>
-      <div class="eqi-pct" style="color:${tcol}">${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
+    <div class="eqi-l">
+      <div class="tier ${tierCls(x.tier)}">${x.tier}</div>
+      <div class="eqi-name"><b>${x.name}</b>
+        <span class="eqi-code">${withGroup ? x.group + ' · ' : ''}${x.code}</span></div>
     </div>
+    <div class="eqi-chg" style="color:${wCol}">${wTxt}</div>
+    <div class="eqi-pct" style="color:${tcol}">${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
   </div>`;
 }
+/* v1.5 三列表头（用户要求：指数名称 近一周涨跌幅 当前温度） */
+const EQ_TABLE_HEAD = `<div class="eqi-head"><span>指数名称</span>
+  <span class="r">近一周涨跌幅</span><span class="r">当前温度</span></div>`;
 function setEqFilter(g){ EQ_FILTER = (EQ_FILTER === g ? 'all' : g); renderEqIndexList(); }
 /* v1.4 搜索图标化（问题7）：默认只有放大镜；点开弹出输入框，再点✕收起 */
 function eqToggleSearch(){
@@ -1123,33 +1127,49 @@ function eqFiltered(qOverride){
 function eqGroupSorted(g, mainstreamOnly){
   let a = eqIndices().filter(x => x.group === g);
   if (mainstreamOnly) a = a.filter(x => x.mainstream);
-  return a.sort((a,b) => (a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile));
+  const dir = EQ_SORT_ASC ? 1 : -1;
+  return a.sort((a,b) => dir * ((a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile)));
+}
+/* v1.5 当前温度排序切换（用户：把"从低到高"做成可选项 + 图标） */
+function eqToggleSort(){
+  EQ_SORT_ASC = !EQ_SORT_ASC;
+  if ($('eq-results')) eqRenderResults();
+  if ($('eqfull') && !$('eqfull').getAttribute('aria-hidden').includes('true')) eqRenderFull();
+}
+const EQ_SORT_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor"'
+  + ' stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M7 4v16M7 20l-3-3M7 20l3-3"/><path d="M17 20V4M17 4l-3 3M17 4l3 3"/></svg>';
+/* v1.5 排序控件（显示"当前温度" + 切换图标；方向由 EQ_SORT_ASC 决定） */
+function eqSortCtl(){
+  return `<button class="eq-sort" onclick="eqToggleSort()" title="切换排序方向">
+    <span>当前温度</span>${EQ_SORT_SVG}
+    <span class="eq-sort-dir">${EQ_SORT_ASC ? '低→高' : '高→低'}</span></button>`;
 }
 function eqRenderResults(){
   const box = $('eq-results'); if (!box) return;
   const searched = eqFiltered();
   if (searched){
-    /* v1.4：搜索一律跨全部指数（不区分二级分组），行内带分组标注 */
+    /* v1.4：搜索一律跨全部指数；v1.5：带三列表头 */
     box.innerHTML = searched.length
       ? `<div class="eq-group"><b>搜索「${EQ_SEARCH}」 · ${searched.length} 个</b>
          <span class="sub">全库搜索 · 点击行查看估值详情</span></div>`
-        + searched.map(x => eqRowHTML(x, true)).join('')
+        + EQ_TABLE_HEAD + searched.map(x => eqRowHTML(x, true)).join('')
       : '<div class="empty-tip">没有匹配的指数，换个关键词试试</div>';
     return;
   }
   const groups = EQ_GROUPS.filter(g => eqIndices().some(x => x.group === g));
   box.innerHTML = groups.map(g => {
     if (EQ_FILTER !== 'all' && EQ_FILTER !== g) return '';
-    /* v1.5 主列表=主流指数直接全展示（估值升序）；非主流进「查看更多」全量页 */
+    /* v1.5 主列表=主流指数直接全展示（当前温度排序，可用图标切换方向） */
     const gs = eqGroupSorted(g, true);
     const total = eqIndices().filter(x => x.group === g).length;
     if (!gs.length) return '';
     const hidden = total - gs.length;
-    return `<div class="eq-group"><b>${g} · ${total} 个</b>
-      <span class="sub">按估值从低到高</span></div>`
+    return `<div class="eq-group"><b>${g} · ${total} 个</b>${eqSortCtl()}</div>`
+      + EQ_TABLE_HEAD
       + gs.map(x => eqRowHTML(x)).join('')
       + (hidden > 0
-        ? `<button class="eq-more" onclick="eqOpenFull('${g}')">查看更多 ${g}（另有 ${hidden} 个非主流）</button>`
+        ? `<button class="eq-more" onclick="eqOpenFull('${g}')">查看更多</button>`
         : '');
   }).join('');
 }
@@ -1172,30 +1192,52 @@ function eqFullToggleSearch(){
   else { EQ_FULL_SEARCH = ''; const i = $('eqfull-search'); if (i) i.value = ''; eqRenderFull(); }
 }
 function eqFullSearch(v){ EQ_FULL_SEARCH = v; eqRenderFull(); }
+/* v1.5 全量页分组 tab 切换（宽基/行业/策略/海外） */
+function eqFullSetGroup(g){ EQ_FULL_GROUP = g; EQ_FULL_SEARCH = '';
+  const si = $('eqfull-search'); if (si) si.value = '';
+  const sb = $('eqfull-searchbar'); if (sb) sb.hidden = true;
+  eqRenderFull(); }
 function eqRenderFull(){
   const body = $('eqfull-body'); if (!body) return;
+  const tabsEl = $('eqfull-tabs'), sortEl = $('eqfull-sortbar');
   const q = (EQ_FULL_SEARCH||'').trim();
   const title = $('eqfull-title'), sub = $('eqfull-sub');
+  /* 搜索态：隐藏分组 tab/排序条 */
+  const showChrome = !q;
+  if (tabsEl) tabsEl.hidden = !showChrome;
+  if (sortEl) sortEl.hidden = !showChrome;
   if (q){
     const rows = eqFiltered(EQ_FULL_SEARCH);
     if (title) title.textContent = '搜索结果';
-    if (sub) sub.textContent = `「${q}」全库匹配 ${rows ? rows.length : 0} 个（不分分组）`;
+    if (sub) sub.textContent = `「${q}」全库匹配 ${rows ? rows.length : 0} 个`;
     body.innerHTML = (rows && rows.length)
-      ? rows.map(x => eqRowHTML(x, true)).join('')
+      ? EQ_TABLE_HEAD + rows.map(x => eqRowHTML(x, true)).join('')
       : '<div class="empty-tip">没有匹配的指数，换个关键词试试</div>';
     return;
   }
-  const gs = EQ_FULL_GROUP ? eqGroupSorted(EQ_FULL_GROUP) : eqIndices();
-  if (title) title.textContent = EQ_FULL_GROUP ? (EQ_FULL_GROUP + ' · 全部指数') : '全部指数';
-  if (sub) sub.textContent = `${gs.length} 个 · 按估值从低到高（含非主流）`;
-  body.innerHTML = gs.map(x => eqRowHTML(x, !EQ_FULL_GROUP)).join('');
+  /* 分组 tab 条：宽基/行业/策略/海外 */
+  const present = EQ_GROUPS.filter(g => eqIndices().some(x => x.group === g));
+  if (tabsEl){
+    tabsEl.innerHTML = present.map(g =>
+      `<button class="${EQ_FULL_GROUP===g?'on':''}" onclick="eqFullSetGroup('${g}')">${g}</button>`
+    ).join('');
+  }
+  /* 排序条：左侧说明 + 右侧"当前温度"切换图标 */
+  const gs = eqGroupSorted(EQ_FULL_GROUP, false);
+  if (sortEl){
+    sortEl.innerHTML = `<span>${EQ_FULL_GROUP} · 全部 ${gs.length} 个（含非主流）</span>${eqSortCtl()}`;
+  }
+  if (title) title.textContent = '指数全量';
+  if (sub) sub.textContent = '';
+  body.innerHTML = EQ_TABLE_HEAD + gs.map(x => eqRowHTML(x, true)).join('');
 }
 function renderEqIndexList(){
   const eq = (D && D.eq_index) || {};
   const list = eqIndices();
   const listEl = $('list');
   listEl.classList.add('eq-mode');            /* v1.3 宽屏双列布局开关 */
-  $('meta').innerHTML = `指数估值 <b>${list.length}</b> 个 · 估值日期 <b class="asof">${eq.asof || '—'}</b>`;
+  /* v1.5 统一数据基准行格式（用户 2026-10-31）：偏债/指数都以「数据基准 YYYY-MM-DD · …」开头 */
+  $('meta').innerHTML = `数据基准 <b class="asof">${eq.asof || '—'}</b> · 指数估值 <b>${list.length}</b> 个`;
   if (!list.length){
     $('list').innerHTML = '<div class="empty-tip">指数估值数据未生成：先运行 '
       + '<b>python -m fundscorer.eqindex --ingest</b>，再跑管线。</div>';
@@ -2146,11 +2188,7 @@ const DISCLAIMER_FALLBACK = '本页数据由程序基于公开历史数据自动
   + '心动值仅供参考，靠前只代表在当前口径下占优，并不预示后续表现一定更好；'
   + '历史业绩与心动值不代表未来表现，基金有风险，投资须谨慎，据此操作风险自担。';
 $('p-disc').textContent = (D && D.disclaimer) || DISCLAIMER_FALLBACK;
-/* v1.4：免责默认折叠，点「免责声明」展开/收起（问题6：把高度还给数据区） */
-function toggleDisc(){
-  const d = $('p-disc'); d.hidden = !d.hidden;
-  $('pf-btn').textContent = d.hidden ? '免责声明' : '收起免责';
-}
+/* v1.5 免责常显：不再折叠、无需点击（toggleDisc 已移除） */
 /* v1.4：列表下滚时顶栏收起 meta 行（问题6「上下部分显示逻辑」），上滚恢复 */
 (function(){
   const sc = document.getElementById('list');
@@ -2166,6 +2204,15 @@ if (initExport()){
 }else{
   ACTIVE = D.category || ACTIVE; renderTabs(ACTIVE); renderList();
   renderPick();
+  /* v1.5 主界面深链（home.html）：?cat=<分类id> 直达页签；?group=<分区id> 直达分区（含开发中占位） */
+  (function(){
+    try{
+      const q = new URLSearchParams(location.search);
+      const cat = q.get('cat'), grp = q.get('group');
+      if (cat && (D.categories||[]).some(c => c.id === cat && c.enabled)) switchTab(cat);
+      else if (grp && NAV_GROUPS.some(g => g.id === grp)) switchGroup(grp);
+    }catch(e){/* 忽略：深链失败仍停默认页签 */}
+  })();
 }
 </script>
 </body>

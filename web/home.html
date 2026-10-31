@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>班马日记本</title>
+<style>
+:root{
+  --bg:#f6f5f2;            /* 柔和暖底（App 风，低饱和） */
+  --card:#fffefb;
+  --ink:#2a2622;
+  --sub:#8a8378;
+  --line:#eceae4;
+  --accent:#e8743b;        /* 柔化橙（比 #ff6a00 低饱和，App 质感） */
+  --accent-ink:#c05a28;
+  --radius:20px;
+  --shadow:0 6px 22px rgba(90,70,50,.07);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+  background:#e9e6df;}
+#home{width:100%;max-width:480px;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);
+  position:relative;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  display:flex;flex-direction:column;padding:0 20px calc(28px + env(safe-area-inset-bottom));}
+
+/* ---- 顶部 ---- */
+.hd{padding:34px 4px 8px;}
+.hd .hi{font-size:14px;color:var(--sub);letter-spacing:.3px;}
+.hd h1{margin:6px 0 0;font-size:30px;font-weight:750;color:var(--ink);letter-spacing:.5px;}
+.hd .sub{margin-top:8px;font-size:12.5px;color:var(--sub);line-height:1.6;}
+.hd .brand{display:inline-flex;align-items:center;gap:6px;margin-top:14px;
+  background:rgba(232,116,59,.10);color:var(--accent-ink);border-radius:20px;
+  padding:5px 12px;font-size:11.5px;font-weight:600;}
+.hd .brand b{font-weight:750;}
+
+/* ---- 卡片栅格 ---- */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px;}
+.card{position:relative;border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow);
+  padding:18px 16px 16px;min-height:150px;display:flex;flex-direction:column;justify-content:space-between;
+  cursor:pointer;border:1px solid rgba(0,0,0,.02);transition:transform .15s ease, box-shadow .15s ease;
+  text-decoration:none;color:inherit;overflow:hidden;}
+.card:active{transform:scale(.975);box-shadow:0 3px 12px rgba(90,70,50,.10);}
+.card.wide{grid-column:1 / -1;min-height:120px;flex-direction:row;align-items:center;gap:16px;}
+.card .ic{width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  font-size:23px;margin-bottom:auto;}
+.card .nm{font-size:17px;font-weight:700;color:var(--ink);margin-top:14px;line-height:1.3;}
+.card .ds{font-size:11.5px;color:var(--sub);margin-top:5px;line-height:1.5;}
+.card.wide .txt{flex:1;}
+.card.wide .nm{margin-top:0;}
+.card .arrow{position:absolute;right:16px;bottom:16px;color:var(--sub);opacity:.5;font-size:15px;}
+
+/* 各卡主题色（柔和） */
+.c-bond .ic{background:rgba(70,130,180,.12);}
+.c-index .ic{background:rgba(232,116,59,.13);}
+.c-div .ic{background:rgba(190,90,110,.12);}
+.c-eq .ic{background:rgba(120,110,180,.12);}
+
+/* 开发中卡 */
+.card.dev{cursor:default;opacity:.72;}
+.card.dev:active{transform:none;box-shadow:var(--shadow);}
+.card.dev .badge{position:absolute;top:14px;right:14px;background:#f0eee8;color:var(--sub);
+  border-radius:14px;padding:3px 9px;font-size:10.5px;font-weight:600;}
+.card.soon .nm{color:var(--sub);}
+
+/* ---- 底部 ---- */
+.ft{margin-top:auto;padding-top:24px;text-align:center;}
+.ft .acc{font-size:11.5px;color:var(--sub);}
+.ft .acc b{color:var(--accent-ink);font-weight:700;}
+.ft .disc{margin-top:8px;font-size:10px;color:#a9a294;line-height:1.6;padding:0 6px;}
+</style>
+</head>
+<body>
+<div id="home">
+  <div class="hd">
+    <div class="hi">你好，欢迎回来</div>
+    <h1>班马日记本</h1>
+    <div class="sub">用心动值，帮你把基金池里的机会<br>按温度排好序。每周更新。</div>
+    <div class="brand"><b>＠班马成长日记</b> · 每周更新</div>
+  </div>
+
+  <div class="grid">
+    <!-- 偏债心动榜单 -->
+    <a class="card c-bond" href="index.html?group=bond">
+      <div class="ic">🛡️</div>
+      <div class="nm">偏债心动榜单</div>
+      <div class="ds">每周更新四类偏债心动榜</div>
+      <span class="arrow">›</span>
+    </a>
+
+    <!-- 指数温度计 -->
+    <a class="card c-index" href="index.html?cat=eq_index">
+      <div class="ic">🌡️</div>
+      <div class="nm">指数温度计</div>
+      <div class="ds">全市场指数估值温度，冷热一目了然</div>
+      <span class="arrow">›</span>
+    </a>
+
+    <!-- 红利天气（开发中） -->
+    <div class="card c-div dev">
+      <span class="badge">开发中</span>
+      <div class="ic">🌤️</div>
+      <div class="nm">红利天气</div>
+      <div class="ds">红利指数温度观察，即将上线</div>
+    </div>
+
+    <!-- 偏股（留位，暂不命名） -->
+    <div class="card c-eq dev soon">
+      <span class="badge">敬请期待</span>
+      <div class="ic">📈</div>
+      <div class="nm">偏股主动</div>
+      <div class="ds">主动基金心动榜，开发中</div>
+    </div>
+  </div>
+
+  <div class="ft">
+    <div class="acc"><b>＠班马成长日记</b> · 班马日记本每周更新</div>
+    <div class="disc">本页数据由程序基于公开历史数据自动生成，仅为数据分析研究结论，不构成任何投资建议或基金推介；心动值为池内相对评分，靠前不预示后续表现一定更好。基金有风险，投资须谨慎。</div>
+  </div>
+</div>
+</body>
+</html>
