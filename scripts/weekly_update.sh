@@ -14,7 +14,34 @@ echo "[$(date '+%F %T')] === 周更推送脚本开始 ===" >> "$LOG"
 PY=.venv/bin/python
 [ -x "$PY" ] || PY=.venv/Scripts/python
 
-"$PY" -m fundscorer.pipeline >> "$LOG" 2>&1
+# 净值新鲜度基线：记录运行前 nav_full 最新 mtime（epoch 秒），跑完比对——
+# 2026-10-31 修：周五那次周更 1.5s 静默失败、净值全停在 10-29，但页面照标"今天"。
+# 现在显式校验「这次到底有没有真的抓到新净值」，没有就大声报警。
+NAV_DIR=data/nav_full
+nav_latest_mtime() { find "$NAV_DIR" -name '*.pkl' -printf '%T@\n' 2>/dev/null | sort -n | tail -1; }
+NAV_BEFORE=$(nav_latest_mtime)
+NAV_BEFORE=${NAV_BEFORE:-0}
+echo "[$(date '+%F %T')] [体检] 运行前 nav_full 最新 mtime epoch=$NAV_BEFORE ($(date -d @${NAV_BEFORE%.*} '+%F %T' 2>/dev/null || echo '?'))" >> "$LOG"
+
+echo "[$(date '+%F %T')] [步骤] 启动管线 pipeline（含净值抓取）…" >> "$LOG"
+PIPE_RC=0
+"$PY" -m fundscorer.pipeline >> "$LOG" 2>&1 || PIPE_RC=$?
+echo "[$(date '+%F %T')] [步骤] 管线退出码=$PIPE_RC" >> "$LOG"
+if [ "$PIPE_RC" -ne 0 ]; then
+  echo "[$(date '+%F %T')] [错误] 管线失败(rc=$PIPE_RC)，不提交不推送，线上保持上一期" >> "$LOG"
+  exit "$PIPE_RC"
+fi
+
+# 净值是否真的更新了（防静默用旧数据）
+NAV_AFTER=$(nav_latest_mtime)
+NAV_AFTER=${NAV_AFTER:-0}
+echo "[$(date '+%F %T')] [体检] 运行后 nav_full 最新 mtime epoch=$NAV_AFTER ($(date -d @${NAV_AFTER%.*} '+%F %T' 2>/dev/null || echo '?'))" >> "$LOG"
+if [ "${NAV_AFTER%.*}" = "${NAV_BEFORE%.*}" ]; then
+  echo "[$(date '+%F %T')] [警报] ⚠ nav_full 净值 mtime 未变化——本次可能未抓到新净值（用的旧缓存）！" >> "$LOG"
+  echo "[$(date '+%F %T')] [警报] ⚠ 页面「数据基准」将如实显示旧净值日期（见 cards._true_asof），不会谎称今天。" >> "$LOG"
+else
+  echo "[$(date '+%F %T')] [体检] ✓ 净值已刷新（$NAV_BEFORE → $NAV_AFTER）" >> "$LOG"
+fi
 
 # 运营素材包（小红书/公众号取材）：写进 gitignore 的 运营/ 下；失败只记警告
 "$PY" scripts/content_digest.py >> "$LOG" 2>&1 \

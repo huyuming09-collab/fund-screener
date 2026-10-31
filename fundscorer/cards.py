@@ -30,6 +30,30 @@ from . import config as C
 from . import data as D
 from . import metrics
 
+
+def _true_asof(navs: dict | None) -> str | None:
+    """全部净值 DataFrame 的最大日期（YYYY-MM-DD）；navs 缺失/无有效日期 → None。
+
+    2026-10-31 修：payload.asof 此前取 dt.date.today()——净值滞后时页面仍标"今天"，
+    误导读者以为是最新数据。改取真实净值最大日期，标签才诚实。取 max 而非中位：
+    任何一只基金到了最新日即认为数据边界到此（抓取成功即全体同步更新）。
+    """
+    if not navs:
+        return None
+    latest = None
+    for n in navs.values():
+        if n is None or not hasattr(n, "empty") or n.empty or "date" not in n.columns:
+            continue
+        try:
+            d = n["date"].max()
+        except Exception:                              # noqa: BLE001
+            continue
+        if d is None or pd.isna(d):
+            continue
+        if latest is None or d > latest:
+            latest = d
+    return str(latest)[:10] if latest is not None else None
+
 DISCLAIMER = ("本页数据由程序基于公开历史数据自动生成，仅为数据分析研究结论，"
               "不构成任何投资建议或基金推介；数据来自公开渠道，可能存在延迟与错误；"
               "心动值仅供参考，靠前只代表在当前口径下占优，并不预示后续表现一定更好；"
@@ -317,7 +341,10 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         "model_version": C.MODEL_VERSION,
         "pool_versions": C.POOL_VERSIONS,
         "generated_at": str(dt.datetime.now()),
-        "asof": asof or str(dt.date.today()),
+        # asof = 真实净值最大日期（取自 navs），而非今天。2026-10-31 修：
+        # 此前误用 dt.date.today()，净值滞后（如只到周二）时页面仍标"今天"，
+        # 误导读者以为是最新数据。navs 缺失/空时才回退今天。
+        "asof": asof or _true_asof(navs) or str(dt.date.today()),
         "category": primary or "short_bond",
         "top_n": ps.get("top_n", C.TOP_N),
         "n": ps.get("n", len(funds)),

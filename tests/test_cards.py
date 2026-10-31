@@ -100,6 +100,54 @@ class TestIsIndexConcatSafety:
         assert by_code["000001"]["is_index"] is False   # 关键：缺列池不得被误标
 
 
+class TestAsofIsTrueNavDate:
+    """回归：payload.asof 必须取真实净值最大日期，不得取「今天」。
+
+    2026-10-31 实跑发现：周五周更静默失败、净值停在周二(10-27)，但页面
+    照标「数据基准=今天(10-31)」，误导读者以为是最新数据。改 cards._true_asof
+    后锁死三行为：① 默认取 navs 最大日期 ② 显式传 asof 优先 ③ navs 缺失才回退今天。
+    """
+
+    def _nav_ending(self, end):
+        dates = pd.bdate_range(end=end, periods=30)
+        return pd.DataFrame({"date": dates, "nav": np.linspace(1.0, 1.1, 30)})
+
+    def test_asof_takes_true_nav_max_date_not_today(self):
+        nav = self._nav_ending("2026-10-27")     # 净值只到周二
+        res = pd.DataFrame([_row()])
+        p = cards.build_payload(res, {"002438": _rec()}, {"002438": nav})
+        assert p["asof"] == "2026-10-27"         # 诚实显示净值日期
+        assert p["asof"] != str(__import__("datetime").date.today())  # 不是今天
+
+    def test_explicit_asof_wins(self):
+        nav = self._nav_ending("2026-10-27")
+        res = pd.DataFrame([_row()])
+        p = cards.build_payload(res, {"002438": _rec()}, {"002438": nav},
+                                asof="2026-01-01")
+        assert p["asof"] == "2026-01-01"         # 显式传入优先
+
+    def test_asof_max_across_multiple_funds(self):
+        navs = {"a": self._nav_ending("2026-10-25"),
+                "b": self._nav_ending("2026-10-27"),   # 最晚
+                "c": self._nav_ending("2026-10-20")}
+        res = pd.DataFrame([_row()])
+        p = cards.build_payload(res, {"002438": _rec()}, navs)
+        assert p["asof"] == "2026-10-27"         # 取全体最大
+
+    def test_asof_fallback_when_navs_empty(self):
+        res = pd.DataFrame([_row()])
+        # navs 全 None / 空 → 回退今天（不崩）
+        p = cards.build_payload(res, {"002438": _rec()}, {"002438": None})
+        import datetime as _dt
+        assert p["asof"] == str(_dt.date.today())
+
+    def test_true_asof_helper_direct(self):
+        assert cards._true_asof(None) is None
+        assert cards._true_asof({}) is None
+        nav = self._nav_ending("2026-10-27")
+        assert cards._true_asof({"x": nav}) == "2026-10-27"
+
+
 class TestContract:
     def test_payload_top_keys(self):
         p = _payload(n_screened=25)
