@@ -108,7 +108,7 @@ def fetch_nav(code: str) -> pd.DataFrame:
     df = pd.DataFrame(arr)
     if df.empty or "equityReturn" not in df.columns:
         raise ValueError(f"{code} 净值序列为空")
-    df["date"] = pd.to_datetime(df["x"], unit="ms")
+    df["date"] = pd.to_datetime(df["x"], unit="ms", utc=True).dt.tz_convert("Asia/Shanghai").dt.tz_localize(None)
     df["nav"] = (1 + df["equityReturn"] / 100).cumprod()   # 复权净值
     df = df[["date", "nav"]].dropna().sort_values("date").reset_index(drop=True)
     df = _neutralize_glitches(df, code)
