@@ -565,6 +565,21 @@ if (shortFunds.length >= 2) {
   chk('榜内样本 <2 只：对比断言跳过（合法）', true);
 }
 
+// 13. 市场情绪（v2.0，用户 2026-11-01）：四指标 + 综合温度 + 回测（嵌入 data.js.market）
+if (D.market && D.market.indicators) {
+  const mk = D.market;
+  chk('市场情绪含四指标（erp/pe/m1m2/margin）且各有热度',
+      ['erp','pe','m1m2','margin'].every(k => mk.indicators[k] && ('heat' in mk.indicators[k])));
+  chk('综合温度 0-100 且有等级（寒冷/偏冷/中性/偏热/过热）',
+      mk.score >= 0 && mk.score <= 100
+      && ['寒冷','偏冷','中性','偏热','过热'].includes(mk.level));
+  chk('回测序列有历史月份（≥12 月）', (mk.backtest||[]).length >= 12);
+  chk('回测月度点含 score 与 pe（可视化叠加）',
+      (mk.backtest||[]).filter(b=>b.score!=null).every(b => 'pe' in b));
+} else {
+  chk('市场情绪块（home 用）存在', false);
+}
+
 console.log(fail ? 'SMOKE FAIL: '+fail : 'SMOKE PASS');
 process.exit(fail);
 `);

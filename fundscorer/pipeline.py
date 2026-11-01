@@ -586,6 +586,14 @@ def run(skip_refresh: bool = False, top: int | None = None,
                     "（跳过本模块，主动三池与债指不受影响）")
         payload = cards.build_payload(cards_df, merged_snap, merged_navs,
                                       pool_stats=stats, eq_index=eq_payload)
+        # 市场情绪（v2.0）：嵌入 data.js（周更随 data.js 自动提交；失败只跳过不影响基金）
+        try:
+            from . import market as MK
+            mkt = MK.build_market(log=log)
+            if mkt:
+                payload["market"] = mkt
+        except Exception as e:                      # noqa: BLE001
+            log(f"[8][市场情绪] 构建失败：{type(e).__name__}: {e}（跳过本模块）")
         cards.write_payload(payload, JSON_PATH, JS_PATH)
         for pool in pools:                   # 导出成功后才写历史（失败不污染基准）
             save_history(out[pool]["res"], pool=pool)
