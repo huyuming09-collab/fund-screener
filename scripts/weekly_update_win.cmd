@@ -17,6 +17,8 @@ if "!RC!"=="0" (
   echo [%DATE% %TIME%] weekly done rc=!RC! >> "%LOG%"
 ) else (
   echo [%DATE% %TIME%] 周更失败 rc=!RC!，未存基准 >> "%LOG%"
+  REM 2026-11-01 失败通知：弹 toast 气泡提示（用户要求更新不成功要提示）
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0notify_fail.ps1" -Msg "基金周更失败 rc=!RC!，请查 data\pipeline_cron.log" >> "%LOG%" 2>&1
 )
 echo [%DATE% %TIME%] weekly_update_win.cmd exit=!RC! >> "%LOG%"
 exit /b !RC!

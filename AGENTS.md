@@ -75,7 +75,7 @@ node tests/smoke_page.js                  # 现基线：SMOKE PASS
 
 - Python 虚拟环境：`.venv/`（**不要**用系统 python；本机曾出现 conda 污染导致缺依赖）
 - 数据抓取仅在**运行日**做：平时跑管线一律 `--skip-refresh`，避免触发基金公司限频
-- 周更由 Windows 计划任务 `FundScreener-Weekly` **每周日 20:00**（Asia/Shanghai）调 `scripts/weekly_update.sh`：管线 → 素材包（本地）→ 守卫 → 提交推送。**为何周日不是周五**：净值源天天基金复权净值 T+1/T+2（债基为主），实测周五晚/周六上午只有到周四的净值，周日才齐；见 STATUS §6（2026-10-31）
+- 周更由 Windows 计划任务 `FundScreener-Weekly` **每周日 19:00**（Asia/Shanghai）调 `scripts/weekly_update_win.cmd` → `weekly_update.sh`：管线 → 素材包（本地）→ 守卫 → 提交推送；**失败弹 toast 通知**（`scripts/notify_fail.ps1`，用户 2026-11-01 定「更新不成功要提示」）。**为何周日不是周五**：净值源天天基金复权净值 T+1/T+2（债基为主），实测周五晚/周六上午只有到周四的净值，周日 14:15 后才齐（2026-11-01 实测）；见 STATUS §6（2026-10-31 / 2026-11-01）。**不自算复权净值**：分红日自算会漏分红算出幻影亏损（110017 单位净值跌1.1%实为+0.22%），污染评分，故只用官方复权。
 
 ## 9. Token 效率纪律（2026-10-27 用户定，长期有效）
 
