@@ -626,18 +626,14 @@ def percentile_of(values: list[float], dates: list, current: float | None = None
 
 
 def tier_of(pct: float | None) -> str | None:
-    """分位 → 五档（分位越低越便宜）。阈值语义：<= 上界。"""
+    """分位 → 六档（v2.0，分位越低越便宜）。阈值取自 config，返回首个 pct<=上界 的档，
+    否则最高档「高估」。与 _tier_of 同逻辑（此为公开别名，测试/外部引用）。"""
     if pct is None:
         return None
     t = C.EQ_INDEX["tiers"]
-    if pct <= t["极低估"]:
-        return "极低估"
-    if pct <= t["低估"]:
-        return "低估"
-    if pct <= t["合理偏低"]:
-        return "合理偏低"
-    if pct <= t["合理偏高"]:
-        return "合理偏高"
+    for name, ub in sorted(t.items(), key=lambda kv: kv[1]):
+        if pct <= ub:
+            return name
     return "高估"
 
 
@@ -859,7 +855,8 @@ def _win_stats(s: pd.Series, cur: float | None, years: float | None) -> dict | N
     w = s if years is None else s[s.index >= end - pd.DateOffset(years=int(years))]
     if len(w) < 8:
         return None
-    q = w.quantile([0.2, 0.4, 0.5, 0.6, 0.8]).tolist()
+    # v2.0 六档对齐：分位点取 10/30/45/50(中位)/55/70，与 tiers 阈值一致
+    q = w.quantile([0.1, 0.3, 0.45, 0.5, 0.55, 0.7]).tolist()
     mean, std = float(w.mean()), float(w.std(ddof=0) or 0)
     return {
         "pct": round(float((w <= cur).mean() * 100), 2),
@@ -867,9 +864,12 @@ def _win_stats(s: pd.Series, cur: float | None, years: float | None) -> dict | N
         "min": round(float(w.min()), 4), "max": round(float(w.max()), 4),
         "mean": round(mean, 4), "std": round(std, 4),
         "z": round((cur - mean) / std, 2) if std else None,
-        "q20": round(q[0], 4), "q40": round(q[1], 4), "q50": round(q[2], 4),
-        "q60": round(q[3], 4), "q80": round(q[4], 4),
-        "danger": round(q[4], 4), "median": round(q[2], 4), "opportunity": round(q[0], 4),
+        "q10": round(q[0], 4), "q30": round(q[1], 4), "q45": round(q[2], 4),
+        "q55": round(q[4], 4), "q70": round(q[5], 4),
+        # 兼容旧键名（q50=中位数；danger/opp 对齐新档位边界 70/10）
+        "q20": round(q[0], 4), "q40": round(q[1], 4), "q50": round(q[3], 4),
+        "q60": round(q[4], 4), "q80": round(q[5], 4),
+        "danger": round(q[5], 4), "median": round(q[3], 4), "opportunity": round(q[0], 4),
         "start": w.index.min().strftime("%Y-%m-%d"),
         "end": w.index.max().strftime("%Y-%m-%d"),
     }
@@ -886,19 +886,78 @@ def _monthly_pairs(s: pd.Series, points: int = 132) -> list:
 
 
 def _tier_of(pct: float | None) -> str | None:
-    """五档（20/40/60/80；估值分位越低越便宜）。"""
+    """六档（v2.0，阈值取自 config；估值分位越低越便宜）。
+    tiers dict 按阈值升序，返回第一个 pct<=阈值 的档，否则最高档「高估」。"""
     if pct is None:
         return None
     t = C.EQ_INDEX["tiers"]
-    if pct <= t["极低估"]:
-        return "极低估"
-    if pct <= t["低估"]:
-        return "低估"
-    if pct <= t["合理偏低"]:
-        return "合理偏低"
-    if pct <= t["合理偏高"]:
-        return "合理偏高"
+    for name, ub in sorted(t.items(), key=lambda kv: kv[1]):
+        if pct <= ub:
+            return name
     return "高估"
+
+
+# ---------------------------------------------------------------- v2.0 按指数特点选估值主口径
+# 用户 2026-11-01 拍板：不同指数用不同主指标，不再一律 PE+PB 平均。
+#   周期型 → PB（PE 在周期顶部失真：盈利最高→PE 最低→看似便宜实则最贵；PB 跨周期更稳）
+#   成长型 → PE（盈利驱动，看未来现金流）
+#   红利型 → PB（本应股息率，但无股息率历史序列 → 退 PB，红利股多为价值/周期，PB 合理）
+#   宽基/均衡 → PE+PB 平均（两维度互补）
+_CYCLICAL_KW = ("银行", "煤炭", "钢铁", "有色", "稀有金属", "稀土", "证券", "券商",
+                "保险", "地产", "房地产", "基建", "建筑", "石油", "石化", "天然气",
+                "工程机械", "机械", "农业", "养殖", "畜牧", "猪", "资源", "矿业",
+                "水泥", "玻璃", "船舶", "港口", "物流", "航运", "钢铁")
+_GROWTH_KW = ("科技", "人工智能", "芯片", "半导体", "计算机", "软件", "电子", "通信",
+              "医药", "生物", "创新药", "医疗", "新能源", "光伏", "风电", "锂电",
+              "电池", "消费", "白酒", "食品", "零售", "家电", "传媒", "游戏",
+              "云计算", "大数据", "物联网", "机器人", "军工", "航天", "智能")
+
+
+def _valuation_style(entry: dict) -> str:
+    """按指数名字/分组判估值主口径：cyclical/growth/broad/dividend。"""
+    name = entry.get("name", "")
+    group = entry.get("group", "")
+    if group == "宽基":
+        return "broad"
+    if group == "海外":
+        return "growth"
+    if group == "策略":
+        if any(k in name for k in ("红利", "股息", "价值", "低波", "高股息", "央企红利")):
+            return "dividend"
+        return "growth"
+    # 行业：先判周期（更具体的排除性判断），否则成长
+    if any(k in name for k in _CYCLICAL_KW):
+        return "cyclical"
+    return "growth"
+
+
+# 折叠「指标说明」文案：口径 / 怎么算 / 为什么 / 科学吗（用户要求标注并折叠展示）
+_METHODOLOGY = {
+    "cyclical": {
+        "caliber": "PB（市净率）分位为主",
+        "how": "取该指数 PB 的历史分位（当前 PB 在近 N 年历史中所处百分位，越低越便宜）。",
+        "why": "周期型指数（银行/资源/地产/证券等）盈利随周期大幅波动，PE 在周期顶部反而最低（盈利最高→PE 最低→看似便宜实则最贵），失真严重；PB 跨周期更稳定，是业内公认的周期股估值锚。",
+        "scientific": "是。PB 用于周期股估值是投资领域广泛认可的方法（且慢、乌龟量化、中证指数估值中心等均采用），避免了 PE 的周期陷阱。",
+    },
+    "growth": {
+        "caliber": "PE-TTM（市盈率）分位为主",
+        "how": "取该指数 PE-TTM 的历史分位（当前 PE 在近 N 年历史中所处百分位，越低越便宜）。",
+        "why": "成长型指数（科技/医药/新能源/消费等）盈利是核心驱动，看的是未来现金流，PE 直接反映市场对盈利的定价，是最贴合的估值锚。",
+        "scientific": "是。PE 分位是指数估值最通用、认知度最高的口径，被绝大多数基金研究平台采用。",
+    },
+    "dividend": {
+        "caliber": "PB（市净率）分位为主",
+        "how": "取该指数 PB 的历史分位（越低越便宜）。",
+        "why": "红利/价值型本应用股息率估值（看现金回报），但本模块暂无股息率历史序列，退用 PB；红利股多为价值/周期属性，PB 相对稳定合理。",
+        "scientific": "基本合理。股息率是红利策略首选口径（更贴合），本模块退 PB 是数据可得性折衷；后续若接入股息率历史将升级。",
+    },
+    "broad": {
+        "caliber": "PE+PB 综合分位（各 50%）",
+        "how": "取 PE 分位与 PB 分位的算术平均（越低越便宜）。",
+        "why": "宽基指数行业构成均衡，单一指标易失真；PE 反映盈利定价、PB 反映资产端，双维度互补更稳健。",
+        "scientific": "是。PE+PB 双维度综合是宽基估值的主流做法（如中证指数、且慢等），避免单一 PE 在周期底部失真。",
+    },
+}
 
 
 # 定投倍数（v1.2 删除：用户要求去掉“几倍定投”内容，档位只做展示）
@@ -957,12 +1016,29 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
         return None
     cur_pe = float(pe_s.iloc[-1]) if not pe_s.empty else None
     cur_pb = float(pb_s.iloc[-1]) if not pb_s.empty else None
+    # v2.0 按指数特点选主口径（用户 2026-11-01）：不再一律 PE+PB 平均。
+    vstyle = _valuation_style(entry)
+    def _comp_of(pe_w, pb_w):
+        pe_p = pe_w["pct"] if pe_w else None
+        pb_p = pb_w["pct"] if pb_w else None
+        if vstyle in ("cyclical", "dividend"):
+            # 周期/红利：PB 优先（PE 周期失真；红利无股息历史退 PB）；PB 缺则退 PE
+            if pb_p is not None:
+                return round(pb_p, 2)
+            return round(pe_p, 2) if pe_p is not None else None
+        if vstyle == "growth":
+            # 成长：PE 优先；PE 缺则退 PB
+            if pe_p is not None:
+                return round(pe_p, 2)
+            return round(pb_p, 2) if pb_p is not None else None
+        # broad：PE+PB 各50% 平均
+        pcts = [p for p in (pe_p, pb_p) if p is not None]
+        return round(sum(pcts) / len(pcts), 2) if pcts else None
     windows = {}
     for label, years in (("3y", 3), ("5y", 5), ("10y", 10), ("all", None)):
         pe_w = _win_stats(pe_s, cur_pe, years)
         pb_w = _win_stats(pb_s, cur_pb, years)
-        pcts = [x["pct"] for x in (pe_w, pb_w) if x and x["pct"] is not None]
-        comp = round(sum(pcts) / len(pcts), 2) if pcts else None
+        comp = _comp_of(pe_w, pb_w)
         windows[label] = {"label": {"3y": "近3年", "5y": "近5年",
                                     "10y": "近10年", "all": "上市以来"}[label],
                           "comp_pct": comp, "tier": _tier_of(comp),
@@ -978,17 +1054,18 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
         default_metric = "pe"
     if default_metric == "pe" and windows["10y"]["pe"] is None:
         default_metric = "pb"
-    method_label = ("PE+PB" if (not pe_s.empty and not pb_s.empty) else "PE") + " · 分位"
+    method_label = _METHODOLOGY[vstyle]["caliber"]
     weeks10 = max((windows["10y"][m] or {}).get("weeks", 0)
                   for m in ("pe", "pb") if windows["10y"].get(m))
     history_label = ("近10年" if weeks10 >= 468 else "近5年" if weeks10 >= 260
                      else "近3年" if weeks10 >= 156 else "上市以来")
-    if entry["group"] == "宽基":
-        why = "宽基指数用 PE/PB 综合分位（越低越便宜），PE 反映盈利定价、PB 反映资产端。"
-    elif entry["group"] == "行业":
-        why = "行业指数用 PE/PB 综合分位：PB 对盈利波动更稳，PE 并列校正；只作历史位置参考。"
+    if entry["group"] == "海外":
+        why = "海外/跨境指数用 " + method_label + "；净值与估值日期可能滞后，汇率折算会带来偏差。"
     else:
-        why = "海外/跨境指数用 PE/PB 分位；净值与估值日期可能滞后，汇率折算会带来偏差。"
+        why = "该指数属" + ("周期型" if vstyle == "cyclical" else
+                           "成长型" if vstyle == "growth" else
+                           "红利/价值型" if vstyle == "dividend" else "宽基/均衡") \
+              + "，采用" + method_label + "（越低越便宜）。详见「指标说明」。"
     ret_1y = None
     if len(close_s) > 53:
         try:
@@ -1015,6 +1092,9 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
         "method_label": method_label,
         "history_label": history_label,
         "why": why,
+        # v2.0 折叠「指标说明」：按指数特点的估值口径 + 计算方式 + 为什么 + 是否科学
+        "valuation_style": vstyle,
+        "methodology": _METHODOLOGY[vstyle],
         "ret_1y": ret_1y,
         "ret_1w": ret_1w,
         "close_proxy": close_proxy,

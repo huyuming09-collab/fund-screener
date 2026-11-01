@@ -438,9 +438,14 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('指数详情含估值结论/走势/方法口径/场外基金',
         de.includes('估值结论') && de.includes('估值走势')
         && de.includes('方法口径') && de.includes('场外基金') && de.includes('<svg'));
-    chk('指数详情头部为「体感温度」且显示档位',
+    // v2.0 折叠「指标说明」：口径/怎么算/为什么/科学吗（按指数特点选主指标）
+    chk('指数详情含折叠「指标说明」（口径/怎么算/为什么/科学吗）',
+        de.includes('指标说明') && de.includes('eq-meth')
+        && de.includes('怎么算') && de.includes('为什么') && de.includes('科学吗'));
+    chk('指数详情头部为「体感温度」且显示温度措辞（v2.0 冰封/微凉/…）',
         document.getElementById('d-score-label').textContent==='体感温度'
-        && document.getElementById('d-score').textContent===x0.tier);
+        && document.getElementById('d-score').textContent===tierTemp(x0.tier)
+        && ['冰封','微凉','清爽','常温','微暖','燥热'].includes(document.getElementById('d-score').textContent));
     chk('指数详情无 NaN/undefined',
         !/NaN|undefined/.test(de + document.getElementById('d-rank').textContent));
     if ((x0.funds||[]).length) {

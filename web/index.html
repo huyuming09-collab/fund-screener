@@ -115,11 +115,12 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eqcard{box-shadow:inset 3px 0 0 #0b6b46,0 1px 4px rgba(20,24,40,.05);cursor:pointer;}
 .tier{flex:0 0 auto;min-width:60px;text-align:center;border-radius:9px;padding:5px 7px;
       font-size:12.5px;font-weight:700;line-height:1.25;}
-.tier.t1{background:#e3f5ec;color:#0b6b46;}   /* 极低估 */
-.tier.t2{background:#e9f6ee;color:#1a7f37;}   /* 低估 */
-.tier.t3{background:#eef0f3;color:#4b5563;}   /* 合理偏低 */
-.tier.t4{background:#fff3e3;color:#a85100;}   /* 合理偏高 */
-.tier.t5{background:#fdecea;color:#b3261e;}   /* 高估 */
+.tier.t1{background:#dff0fb;color:#1a6fa8;}   /* 极低估·冰封（最冷·蓝） */
+.tier.t2{background:#e3f5ec;color:#0b6b46;}   /* 低估·微凉（冷·绿） */
+.tier.t3{background:#e9f6ee;color:#1a7f37;}   /* 合理偏低·清爽（凉·浅绿） */
+.tier.t4{background:#eef0f3;color:#4b5563;}   /* 正常·常温（中性·灰） */
+.tier.t5{background:#fff3e3;color:#a85100;}   /* 合理偏高·微暖（暖·橙） */
+.tier.t6{background:#fdecea;color:#b3261e;}   /* 高估·燥热（热·红） */
 .tier.big{display:inline-block;font-size:16px;padding:7px 14px;border-radius:11px;margin:2px 0 8px;}
 .eq-pct{text-align:right;flex:0 0 auto;}
 .eq-pct b{display:block;font-size:18px;color:var(--accent-ink);line-height:1.1;}
@@ -249,6 +250,20 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eqfull-sortbar{display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:6px 14px 2px;background:var(--bg);font-size:11px;color:var(--sub);}
 .eq-note{font-size:11.5px;color:var(--sub);line-height:1.55;}
+/* v2.0 折叠「指标说明」 */
+.eq-meth{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:#faf8f4;
+  padding:0;overflow:hidden;}
+.eq-meth summary{cursor:pointer;padding:9px 12px;font-size:12px;font-weight:650;
+  color:var(--accent-ink);list-style:none;display:flex;align-items:center;gap:5px;}
+.eq-meth summary::-webkit-details-marker{display:none;}
+.eq-meth summary::before{content:'▸';font-size:11px;transition:transform .15s;}
+.eq-meth[open] summary::before{transform:rotate(90deg);}
+.eq-meth-body{padding:2px 12px 10px;border-top:1px solid var(--line);}
+.eq-meth-row{display:flex;gap:8px;padding:5px 0;font-size:11.5px;line-height:1.6;
+  border-bottom:1px dashed var(--line);}
+.eq-meth-row:last-child{border-bottom:none;}
+.eq-meth-row .k{flex:0 0 44px;color:var(--sub);font-weight:650;}
+.eq-meth-row .v{flex:1;color:var(--ink);}
 .eq-chart{background:#fff;border-radius:10px;padding:4px 2px 0;}
 .cmp-bar[hidden]{display:none;}
 .empty-tip{color:var(--sub);text-align:center;font-size:13px;padding:30px 0;}
@@ -878,18 +893,26 @@ document.getElementById('list').addEventListener('click', function(e){
 }, true);
 
 /* ============ 指数估值（v5.22，债指之外的指数型基金：卡片=指数，不含基金） ============ */
-const EQ_TIER_CLS = {'极低估':'t1','低估':'t2','合理偏低':'t3','合理偏高':'t4','高估':'t5'};
-const EQ_TIER_COLOR = {'极低估':'#0b6b46','低估':'#1a7f37','合理偏低':'#6b7280',
-                       '合理偏高':'#a85100','高估':'#b3261e'};
+/* v2.0 六档 + 体感温度措辞（用户 2026-11-01）：极低估/低估/合理偏低/正常/合理偏高/高估
+   → 冰封/微凉/清爽/常温/微暖/燥热。温度色带=冷蓝→冷绿→凉绿→中性灰→暖橙→热红。 */
+const EQ_TIER_CLS = {'极低估':'t1','低估':'t2','合理偏低':'t3','正常':'t4',
+                     '合理偏高':'t5','高估':'t6'};
+const EQ_TIER_COLOR = {'极低估':'#1a6fa8','低估':'#0b6b46','合理偏低':'#1a7f37',
+                       '正常':'#4b5563','合理偏高':'#a85100','高估':'#b3261e'};
+/* 档位 → 详情页「体感温度」措辞（与 config.EQ_INDEX.tier_temp 同源） */
+const EQ_TIER_TEMP = {'极低估':'冰封','低估':'微凉','合理偏低':'清爽',
+                      '正常':'常温','合理偏高':'微暖','高估':'燥热'};
 const EQ_GROUP_ORDER = ['宽基','行业','策略','海外'];
 const eqIndices = () => ((D && D.eq_index && D.eq_index.indices) || []);
 const numPos = (v, nd) => (v == null || Number(v) <= 0) ? '—' : num(v, nd);  /* PE≤0/缺失显示破折号 */
-const tierCls = t => EQ_TIER_CLS[t] || 't3';
-const tierColor = t => EQ_TIER_COLOR[t] || '#6b7280';
+const tierCls = t => EQ_TIER_CLS[t] || 't4';
+const tierColor = t => EQ_TIER_COLOR[t] || '#4b5563';
+const tierTemp = t => EQ_TIER_TEMP[t] || '常温';
 
-/* 五段分位条：10/30/50/70 阈值（与 config.EQ_INDEX.tiers 同源，前端只做展示） */
+/* v2.0 六段分位条：10/30/45/55/70 阈值（与 config.EQ_INDEX.tiers 同源，前端只做展示）
+   极低估≤10 / 低估≤30 / 合理偏低≤45 / 正常≤55 / 合理偏高≤70 / 高估>70 */
 function eqBandHTML(pct){
-  const zones = [[10,'#0f8a5f'],[20,'#4aab7a'],[20,'#b9bec6'],[20,'#e8a33d'],[30,'#d9534f']];
+  const zones = [[10,'#1a6fa8'],[20,'#0b6b46'],[15,'#1a7f37'],[10,'#b9bec6'],[15,'#e8a33d'],[30,'#d9534f']];
   const x = Math.max(0, Math.min(100, Number(pct) || 0));
   return '<div class="pctbands">'
     + zones.map(z => `<span style="width:${z[0]}%;background:${z[1]}"></span>`).join('')
@@ -1013,7 +1036,7 @@ function eqIndexBodyHTML(x){
     <div class="mgr-sub">
       1. 估值数据来自雪球基金·指数估值（PE/PB/股息率/ROE），历史分位由本工具按该指数自身近
       ${x.window_years} 年周频历史自算，未直接采用第三方分位口径；估值日期 ${x.valuation_date || '—'}。<br>
-      2. 档位阈值：极低估 ≤10% / 低估 ≤30% / 合理偏低 ≤50% / 合理偏高 ≤70% / 高估 &gt;70%（分位越低越便宜）。<br>
+      2. 档位阈值（v2.0 六档）：极低估 ≤10% / 低估 ≤30% / 合理偏低 ≤45% / 正常 ≤55% / 合理偏高 ≤70% / 高估 &gt;70%（分位越低越便宜）。<br>
       3. 估值分位只说明「相对自身历史的位置」，不代表未来收益，也不构成买卖信号；指数基金仍承担市场风险。<br>
       4. 海外/QDII 指数的净值与估值日期可能滞后一个交易日，汇率折算也会带来偏差。<br>
       5. 本页只覆盖有 PE/PB 历史数据的 ${(D.eq_index && D.eq_index.catalog_n) || '—'} 个主流指数；
@@ -1263,7 +1286,7 @@ function eqChartSVG(x, win, metric){
   const X = i => Xd(mpts[i][0]);
   const Y = v => T + (H - T - B) * (1 - (v - mn) / (mx - mn));
   const st = eqWindowStats(x, win, metric) || {};
-  const bands = [st.q20, st.q40, st.q60, st.q80].map(v => v==null?null:+v);
+  const bands = [st.q10, st.q30, st.q45, st.q55, st.q70].map(v => v==null?null:+v);
   const yOf = v => v==null?null:Y(v);
   const zone = (v0,v1,color) => {
     const y0 = yOf(v0), y1 = yOf(v1);
@@ -1273,9 +1296,10 @@ function eqChartSVG(x, win, metric){
   };
   let bg = '';
   if (bands.every(v => v!=null)){
-    bg += zone(mn, bands[0], '#e3f5ec') + zone(bands[0], bands[1], '#e9f6ee')
-      + zone(bands[1], bands[2], '#eef0f3') + zone(bands[2], bands[3], '#fff3e3')
-      + zone(bands[3], mx, '#fdecea');
+    /* v2.0 六档色带（冷蓝→冷绿→凉绿→中性灰→暖橙→热红），与 tiers 10/30/45/55/70 对齐 */
+    bg += zone(mn, bands[0], '#dff0fb') + zone(bands[0], bands[1], '#e3f5ec')
+      + zone(bands[1], bands[2], '#e9f6ee') + zone(bands[2], bands[3], '#eef0f3')
+      + zone(bands[3], bands[4], '#fff3e3') + zone(bands[4], mx, '#fdecea');
   }
   const path = mpts.map((p,i) => (i?'L':'M') + X(i).toFixed(1) + ' ' + Y(+p[1]).toFixed(1)).join(' ');
   const line = (v,color,dash) => {
@@ -1323,6 +1347,20 @@ function eqChartSVG(x, win, metric){
   return svg;
 }
 function eqStat(l, v){ return `<div class="eq-stat"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
+/* v2.0 折叠「指标说明」：按指数特点的估值口径 + 怎么算 + 为什么 + 是否科学（用户要求折叠展示） */
+function eqMethodologyHTML(x){
+  const m = x.methodology;
+  if (!m) return '';
+  return `<details class="eq-meth">
+    <summary>指标说明：为什么用「${m.caliber}」？</summary>
+    <div class="eq-meth-body">
+      <div class="eq-meth-row"><span class="k">口径</span><span class="v">${m.caliber}</span></div>
+      <div class="eq-meth-row"><span class="k">怎么算</span><span class="v">${m.how}</span></div>
+      <div class="eq-meth-row"><span class="k">为什么</span><span class="v">${m.why}</span></div>
+      <div class="eq-meth-row"><span class="k">科学吗</span><span class="v">${m.scientific}</span></div>
+    </div>
+  </details>`;
+}
 function eqIndexBodyHTML(x){
   const metric = EQ_METRIC, win = EQ_WIN;
   const st = eqWindowStats(x, win, metric) || {};
@@ -1340,8 +1378,8 @@ function eqIndexBodyHTML(x){
   return `
   <div class="sec"><h3>估值结论<span class="hint">${x.history_label||eqWinLabel(win)} · ${x.method_label||'PE+PB'}</span></h3>
     <div class="eq-summary">
-      <div class="tier big ${tierCls(tier)}">${tier}</div>
-      <div class="eq-note">体感温度 = 该指数在历史区间中的冷热位置，越「低估」越冷、越「高估」越热；仅作估值参考，不构成建议。</div>
+      <div class="tier big ${tierCls(tier)}">${tierTemp(tier)}</div>
+      <div class="eq-note">体感温度 = 该指数在历史区间中的冷热位置，越冷越便宜、越热越贵；仅作估值参考，不构成建议。</div>
     </div>
     <div class="eq-stats">
       ${eqStat('综合温度分位', x.percentile==null?'—':x.percentile.toFixed(1)+'%')}
@@ -1354,9 +1392,10 @@ function eqIndexBodyHTML(x){
       ${eqStat('z 分数', st.z==null?'—':st.z.toFixed(2))}
       ${eqStat('指数点位', num(closeLast,2))}
     </div>
-    <div class="eq-line">综合温度分位 = ${x.pb!=null?'PE 与 PB 温度分位均值':'PE 温度分位'}；
+    <div class="eq-line">综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见下方「指标说明」）；
       ${x.pb==null?'PB 历史暂无，按 PE 单一指标；':'PE 与 PB 同时参与；'}
-      档位阈值 20/40/60/80；样本 ${st.weeks?st.weeks+' 周':'—'}；估值日期 ${x.valuation_date||'—'}。</div>
+      样本 ${st.weeks?st.weeks+' 周':'—'}；估值日期 ${x.valuation_date||'—'}。</div>
+    ${eqMethodologyHTML(x)}
   </div>
   <div class="sec"><h3>估值走势<span class="hint">${metric==='pb'?'市净率 PB':'市盈率 PE'} · 点位${x.close_proxy?'（基金净值代理）':''}</span></h3>    <div class="eq-toggle">${winBtn('3y')}${winBtn('5y')}${winBtn('10y')}${winBtn('all')}
       <span style="width:8px"></span>${metricBtn('pe')}${metricBtn('pb')}</div>
@@ -1364,16 +1403,16 @@ function eqIndexBodyHTML(x){
       <div class="eq-legend">
         <div class="lg"><i class="ln"></i>${metric==='pb'?'PB 估值':'PE 估值'}</div>
         ${(closePts&&closePts.length>=2)?'<div class="lg"><i class="ln blue"></i>指数点位</div>':''}
-        <div class="lg"><i class="ln red"></i>危险值(80)</div>
+        <div class="lg"><i class="ln red"></i>危险值(70)</div>
         <div class="lg"><i class="ln gray"></i>中位数(50)</div>
-        <div class="lg"><i class="ln green"></i>机会值(20)</div>
+        <div class="lg"><i class="ln green"></i>机会值(10)</div>
         <div class="lg"><i class="ln light"></i>均值±1σ</div>
-        <div class="lg"><i class="band"></i>五档区间</div>
+        <div class="lg"><i class="band"></i>六档区间</div>
       </div>
       <div class="eq-chart" style="flex:1;min-width:0;">${eqChartSVG(x, win, metric)}</div>
     </div>
     <div class="eq-line">左侧为各线图示：实线=当前估值口径，蓝虚线=指数点位（右轴），
-      红/灰/绿虚线=危险(80分位)/中位(50)/机会(20)参考线，浅灰虚线=均值±1σ，色带=五档区间。</div>
+      红/灰/绿虚线=危险(70分位)/中位(50)/机会(10)参考线，浅灰虚线=均值±1σ，色带=六档区间。</div>
   </div>
   <div class="sec"><h3>方法口径</h3>
     <div class="mgr-sub">${x.why||''}<br>
@@ -1397,7 +1436,7 @@ function openEqIndexDetail(code){
   EQ_METRIC = (x.default_metric === 'pb' && (x.series||{}).pb && (x.series.pb||[]).length > 1) ? 'pb' : 'pe';
   $('d-name').textContent = x.name;
   $('d-score-label').textContent = '体感温度';
-  $('d-score').textContent = x.tier;
+  $('d-score').textContent = tierTemp(x.tier);
   $('d-score').style.color = '#fff';
   $('d-code-inline').textContent = x.code;
   $('d-rank').textContent = `${x.history_label||eqWinLabel('10y')}综合温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}`;
