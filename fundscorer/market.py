@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
-"""市场情绪模块（v2.0，用户 2026-11-01）。
+"""市场情绪模块（v2.1，用户 2026-11-01）。
 
-四指标 → 综合市场温度（0-100，越高越热）+ 历史回测可视化。
-  1. 股债利差 ERP = 1/PE(中证全指) − 10Y国债收益率（大类资产性价比）
-  2. 估值分位 PE  = 中证全指 PE-TTM 历史分位（绝对估值标尺）
-  3. M1-M2 剪刀差 = M1同比 − M2同比（中期信用周期风向标，月更）
-  4. 两融余额分位 = 沪市融资融券余额历史分位（杠杆/情绪温度计；替代成交额，
-     因东财成交额接口限流不可用，两融更深历史且更直接反映风险偏好）
+8 指标 → 综合市场温度（0-100，越高越热）+ 历史走势图 + 牛熊对照回测。
+核心4（进综合）：股债利差ERP / 估值分位PE / 两融余额(沪深) / M1-M2剪刀差。
+进阶/新增4（独立参考）：iVIX波指 / 新发基金规模 / 巴菲特指数 / 全市场破净率。
 
-数据源：中证官网 PE(load_cs) / 东方财富 10Y国债 / 央行货币供应量 / 沪市两融。
-输出 web/market.js（window.MARKET_DATA），供 home.html 渲染。
+数据源（均已实测）：中证官网PE+收盘(load_cs) / 东方财富10Y国债 / 央行货币供应量 /
+沪深两融 / 50ETF期权iVIX / 天天基金新发 / 统计局GDP+总市值 / 全市场破净统计。
+输出 web/market.js（window.MARKET_DATA），供 market.html / home.html 渲染。
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import time
 from pathlib import Path
 
@@ -26,10 +25,54 @@ from . import eqindex as E
 ROOT = Path(__file__).resolve().parent.parent
 OUT_JS = ROOT / "web" / "market.js"
 
-# 综合温度权重（用户参考豆包方案：ERP/估值/情绪/流动性）
-WEIGHTS = {"erp": 0.30, "pe": 0.30, "m1m2": 0.20, "margin": 0.20}
+# 核心4指标权重（进综合温度；进阶4项作独立参考不进综合）
+WEIGHTS = {"erp": 0.30, "pe": 0.30, "margin": 0.25, "m1m2": 0.15}
 # 温度等级（0-100，越高越热）
 TEMP_LEVELS = [(20, "寒冷"), (40, "偏冷"), (60, "中性"), (80, "偏热"), (100, "过热")]
+# 指标元信息（label/单位/一句话/怎么算/常见范围/数据源；供详情页帮小白理解）
+IND_META = {
+    "erp": {"label": "股债利差 ERP", "unit": "%", "invert": True,
+            "desc": "盈利收益率 − 10年国债，衡量买股 vs 买债谁更划算",
+            "how": "ERP = 1/PE(中证全指) − 10Y国债收益率。正值越大 = 股票相对债券越有吸引力。",
+            "range": "经验值：ERP>6% 股票性价比高；3~6% 中性；<3% 性价比低。",
+            "source": "中证官网 PE + 东方财富 10Y国债"},
+    "pe": {"label": "中证全指 PE", "unit": "倍", "invert": False,
+           "desc": "市盈率 TTM 的历史分位，最通用的「市场贵不贵」标尺",
+           "how": "当前 PE 在近5年历史中的百分位（越低越便宜）。",
+           "range": "分位 <30% 偏便宜；30~70% 适中；>70% 偏贵。",
+           "source": "中证官网"},
+    "margin": {"label": "全市场两融余额", "unit": "万亿", "invert": False,
+               "desc": "沪深融资融券余额，杠杆/风险偏好温度计",
+               "how": "沪市 + 深市融资融券余额合计，历史分位越高 = 场内杠杆情绪越热。",
+               "range": "分位 >80% 杠杆过热；<20% 情绪冰点。",
+               "source": "上海证券交易所 + 深圳证券交易所"},
+    "m1m2": {"label": "M1-M2 剪刀差", "unit": "%", "invert": False,
+             "desc": "M1同比 − M2同比，中期信用周期风向标（月更）",
+             "how": "剪刀差为正且持续上行 = 信用扩张（常对应大行情）；持续为负 = 信用收缩。",
+             "range": ">0 扩张；<0 收缩。看方向比看绝对值更重要。",
+             "source": "中国人民银行（月更）"},
+    "ivix": {"label": "iVIX 波指", "unit": "点", "invert": True,
+             "desc": "50ETF期权隐含波动率，A股版恐慌指数",
+             "how": "iVIX 越高 = 市场越恐慌（常对应底部）；越低 = 越平静（可能过热）。与两融互补：两融看杠杆、iVIX 看恐慌。",
+             "range": ">30 恐慌；20~30 正常；<20 平静。",
+             "source": "上交所 50ETF 期权"},
+    "newfund": {"label": "新发基金规模", "unit": "亿", "invert": False,
+                "desc": "基金发行募集热度，经典反向情绪指标",
+                "how": "单月新发基金募集规模。发行火爆 = 散户入场 = 情绪顶部；发行冰点 = 底部。",
+                "range": "分位 >80% 发行过热（顶部信号）；<20% 冰点（底部信号）。",
+                "source": "天天基金"},
+    "buffett": {"label": "巴菲特指数", "unit": "%", "invert": False,
+                "desc": "证券化率 = A股总市值 / GDP，超长周期牛熊锚",
+                "how": "总市值 ÷ 过去4季度滚动GDP。巴菲特经典阈值。",
+                "range": ">100% 高估；70~100% 适中；<70% 低估。",
+                "source": "统计局 GDP + 沪深总市值"},
+    "breaknet": {"label": "全市场破净率", "unit": "%", "invert": True,
+                 "desc": "PB<1 个股占比，底部验证强信号",
+                 "how": "破净个股数 ÷ 全市场上市公司总数。越高 = 越多股票跌破净资产（常对应大底）。",
+                 "range": ">10% 通常对应历史大底；<5% 偏高（顶部区域）。",
+                 "source": "全市场每日"},
+}
+CORE_KEYS = ["erp", "pe", "margin", "m1m2"]   # 进综合温度的4个
 
 
 def _temp_level(score: float | None) -> str | None:
@@ -42,7 +85,7 @@ def _temp_level(score: float | None) -> str | None:
 
 
 def _pct_rank(s: pd.Series, window_years: int = 5) -> float | None:
-    """当前值在近 N 年历史中的分位（0-100，越低越便宜）。"""
+    """当前值在近 N 年历史中的分位（0-100）。"""
     if s is None or s.empty or len(s) < 26:
         return None
     s = s.dropna().sort_index()
@@ -54,98 +97,20 @@ def _pct_rank(s: pd.Series, window_years: int = 5) -> float | None:
     return round(float((w <= cur).mean() * 100), 2)
 
 
-# ---------------------------------------------------------------- 数据获取（带缓存）
-def _fetch_pe() -> pd.Series:
-    """中证全指 PE-TTM 日/周频序列。"""
-    raw = E.load_cs("000985", refresh=True) or {}
-    pairs = raw.get("pe") or []
-    return E._pairs_series(pairs)
-
-
-def _fetch_bond10() -> pd.Series:
-    """10 年期国债到期收益率日频序列。"""
-    key = "bond10_yield"
-    cached = D._load_cache(key, 24)
-    if cached is not None:
-        return cached
-    import akshare as ak
-    df = ak.bond_zh_us_rate(start_date="20150101")
-    col = [c for c in df.columns if "中国国债收益率10年" in str(c)][0]
-    s = pd.Series(df[col].astype(float).values,
-                  index=pd.to_datetime(df["日期"])).dropna().sort_index()
-    D._save_cache(key, s)
-    return s
-
-
-def _fetch_m1m2() -> pd.DataFrame:
-    """M1/M2 同比增速（月度）。返回 DataFrame[M1同比, M2同比, 剪刀差]。"""
-    key = "m1m2"
-    cached = D._load_cache(key, 24)
-    if cached is not None:
-        return cached
-    import akshare as ak
-    df = ak.macro_china_money_supply()
-    m1c = [c for c in df.columns if "货币(M1)-同比增长" in str(c)][0]
-    m2c = [c for c in df.columns if "货币和准货币(M2)-同比增长" in str(c)][0]
-    # 月份格式为中文「2026年09月」→ 解析为日期
-    def _parse_month(v):
-        s = str(v)
-        try:
-            import re
-            m = re.match(r"(\d{4})\D+(\d{1,2})", s)
-            if m:
-                return pd.Timestamp(f"{m.group(1)}-{int(m.group(2)):02d}-01")
-        except Exception:                          # noqa: BLE001
-            pass
-        return pd.NaT
-    out = pd.DataFrame({
-        "m1": pd.to_numeric(df[m1c], errors="coerce").values,
-        "m2": pd.to_numeric(df[m2c], errors="coerce").values,
-    }, index=[_parse_month(v) for v in df["月份"]]).dropna()
-    out = out[~out.index.isna()]
-    out["scissor"] = out["m1"] - out["m2"]
-    out = out.sort_index()
-    D._save_cache(key, out)
-    return out
-
-
-def _fetch_margin() -> pd.Series:
-    """沪市融资融券余额日频序列（两融=情绪/杠杆温度计）。"""
-    key = "margin_sh"
-    cached = D._load_cache(key, 24)
-    if cached is not None:
-        return cached
-    import akshare as ak
-    df = ak.macro_china_market_margin_sh()
-    col = "融资融券余额" if "融资融券余额" in df.columns else "融资余额"
-    s = pd.Series(pd.to_numeric(df[col], errors="coerce").values,
-                  index=pd.to_datetime(df["日期"])).dropna().sort_index()
-    D._save_cache(key, s)
-    return s
-
-
-# ---------------------------------------------------------------- 指标计算
-def _erp_series(pe: pd.Series, bond: pd.Series) -> pd.Series:
-    """股债利差 ERP = 1/PE − 10Y国债收益率（对齐到 PE 的日期；bond 取当日最近值）。"""
-    if pe is None or pe.empty:
-        return pd.Series(dtype=float)
-    ey = 1.0 / pe.replace(0, pd.NA)          # 盈利收益率
-    b = bond.reindex(pe.index, method="ffill")
-    return (ey - b / 100.0).dropna()          # bond 是百分数（如 2.17 = 2.17%）
-
-
-def _m1m2_at(mm: pd.DataFrame, when) -> float | None:
-    """取 ≤ when 的最新 M1-M2 剪刀差。"""
-    if mm is None or mm.empty:
-        return None
-    sub = mm[mm.index <= when]
-    if sub.empty:
-        return None
-    return float(sub["scissor"].iloc[-1])
+def _sample(s: pd.Series, freq: str = "W-FRI", points: int = 520) -> list:
+    """重采样到周频并限点数（供走势图，更平滑不粗）。"""
+    if s is None or s.empty:
+        return []
+    s = s.dropna().sort_index()
+    r = s.resample(freq).last().dropna()
+    if len(r) > points:
+        step = len(r) / points
+        r = r.iloc[[min(len(r) - 1, int(i * step)) for i in range(points)]]
+    return [[d.strftime("%Y-%m-%d"), round(float(v), 4)] for d, v in r.items()]
 
 
 def _heat_of(pct: float | None, invert: bool = False) -> float | None:
-    """把分位(0-100,越低越便宜)映射为热度(0-100,越高越热)。invert=True 用于「越低越热」指标。"""
+    """分位(0-100) → 热度(0-100,越高越热)。invert=True 用于「越高越便宜/越恐慌」指标。"""
     if pct is None:
         return None
     return round(100.0 - pct, 2) if invert else round(pct, 2)
@@ -177,68 +142,295 @@ def _interp_pct(s: pd.Series, when, window_years: int = 5) -> float | None:
     return round(float((w <= cur).mean() * 100), 2)
 
 
+def _bullbear(close: pd.Series, thresh: float = 0.20) -> list:
+    """从收盘价用 20% 标准推导牛熊区间（客观，不硬编码观点）。
+    状态机：熊（自峰值回撤≥20%）/ 牛（自谷底反弹≥20%），保证交替、无相邻同类段。"""
+    if close is None or close.empty or len(close) < 60:
+        return []
+    s = close.dropna().sort_index()
+    segs = []
+    peak = float(s.iloc[0]); peak_d = s.index[0]
+    trough = float(s.iloc[0]); trough_d = s.index[0]
+    state = None                                     # None/‘bear’/‘bull’
+    for d, v in s.items():
+        v = float(v)
+        if v > peak:
+            peak, peak_d = v, d
+        if v < trough:
+            trough, trough_d = v, d
+        if state != "bear" and peak > 0 and (peak - v) / peak >= thresh:
+            if state == "bull" and segs:
+                segs[-1]["end"] = peak_d            # 收口上一段牛市
+            state = "bear"
+            trough, trough_d = v, d
+            segs.append({"start": peak_d, "end": None, "type": "bear"})
+        elif state == "bear" and trough > 0 and (v - trough) / trough >= thresh:
+            segs[-1]["end"] = trough_d              # 收口熊市
+            state = "bull"
+            peak, peak_d = v, d
+            segs.append({"start": trough_d, "end": None, "type": "bull"})
+    if segs and segs[-1]["end"] is None:
+        segs[-1]["end"] = s.index[-1]
+    # 过滤过短段（<60天）避免噪音
+    out = []
+    for x in segs:
+        if x["end"] is None:
+            continue
+        if (x["end"] - x["start"]).days >= 60:
+            out.append({"start": str(x["start"])[:10], "end": str(x["end"])[:10], "type": x["type"]})
+    return out
+
+
+# ---------------------------------------------------------------- 数据获取（带缓存）
+def _pm(v) -> pd.Timestamp:
+    """中文月份「2026年09月」→ Timestamp。"""
+    m = re.match(r"(\d{4})\D+(\d{1,2})", str(v))
+    return pd.Timestamp(f"{m.group(1)}-{int(m.group(2)):02d}-01") if m else pd.NaT
+
+
+def _fetch_pe_close() -> tuple:
+    """中证全指 PE + 收盘点位（一次 load_cs，省一次请求）。"""
+    raw = E.load_cs("000985", refresh=True) or {}
+    pe = E._pairs_series(raw.get("pe") or [])
+    close = E._pairs_series(raw.get("close") or [])
+    return pe, close
+
+
+def _fetch_bond10() -> pd.Series:
+    key = "bond10_yield"
+    cached = D._load_cache(key, 24)
+    if cached is not None:
+        return cached
+    import akshare as ak
+    df = ak.bond_zh_us_rate(start_date="20150101")
+    col = [c for c in df.columns if "中国国债收益率10年" in str(c)][0]
+    s = pd.Series(df[col].astype(float).values,
+                  index=pd.to_datetime(df["日期"])).dropna().sort_index()
+    D._save_cache(key, s)
+    return s
+
+
+def _fetch_m1m2() -> pd.DataFrame:
+    key = "m1m2"
+    cached = D._load_cache(key, 24)
+    if cached is not None:
+        return cached
+    import akshare as ak
+    df = ak.macro_china_money_supply()
+    m1c = [c for c in df.columns if "货币(M1)-同比增长" in str(c)][0]
+    m2c = [c for c in df.columns if "货币和准货币(M2)-同比增长" in str(c)][0]
+    out = pd.DataFrame({
+        "m1": pd.to_numeric(df[m1c], errors="coerce").values,
+        "m2": pd.to_numeric(df[m2c], errors="coerce").values,
+    }, index=[_pm(v) for v in df["月份"]]).dropna()
+    out = out[~out.index.isna()]
+    out["scissor"] = out["m1"] - out["m2"]
+    out = out.sort_index()
+    D._save_cache(key, out)
+    return out
+
+
+def _fetch_margin() -> pd.Series:
+    """全市场两融余额 = 沪市 + 深市（用户 2026-11-01 升级，比单沪市更准）。"""
+    key = "margin_all"
+    cached = D._load_cache(key, 24)
+    if cached is not None:
+        return cached
+    import akshare as ak
+    parts = []
+    for fn in ("macro_china_market_margin_sh", "macro_china_market_margin_sz"):
+        df = getattr(ak, fn)()
+        col = "融资融券余额" if "融资融券余额" in df.columns else "融资余额"
+        parts.append(pd.Series(pd.to_numeric(df[col], errors="coerce").values,
+                               index=pd.to_datetime(df["日期"])))
+    # 对齐到共同日期求和（浅对齐 outer，缺值 ffill 后相加）
+    m = pd.concat(parts, axis=1, keys=["sh", "sz"]).sort_index()
+    m = m.ffill()
+    s = (m["sh"] + m["sz"]).dropna()
+    D._save_cache(key, s)
+    return s
+
+
+def _fetch_ivix() -> pd.Series:
+    """iVIX 波指（50ETF期权隐含波动率，日频）。"""
+    key = "ivix"
+    cached = D._load_cache(key, 24)
+    if cached is not None:
+        return cached
+    import akshare as ak
+    df = ak.index_option_50etf_qvix()
+    s = pd.Series(pd.to_numeric(df["close"], errors="coerce").values,
+                  index=pd.to_datetime(df["date"])).dropna().sort_index()
+    D._save_cache(key, s)
+    return s
+
+
+def _fetch_newfund() -> pd.Series:
+    """新发基金募集规模（月度，亿元）。"""
+    key = "newfund"
+    cached = D._load_cache(key, 24)
+    if cached is not None:
+        return cached
+    import akshare as ak
+    df = ak.fund_new_found_em().copy()
+    df["d"] = pd.to_datetime(df["成立日期"], errors="coerce")
+    df["amt"] = pd.to_numeric(df["募集份额"], errors="coerce")
+    df = df.dropna(subset=["d"])
+    s = df.groupby(df["d"].dt.to_period("M").dt.to_timestamp())["amt"].sum().sort_index()
+    D._save_cache(key, s)
+    return s
+
+
+def _fetch_buffett() -> pd.Series:
+    """巴菲特指数 = A股总市值 / 过去4季度滚动GDP（%）。"""
+    key = "buffett"
+    cached = D._load_cache(key, 24)
+    if cached is not None:
+        return cached
+    import akshare as ak
+    cap = ak.macro_china_stock_market_cap()
+    sh = [c for c in cap.columns if "市价总值" in str(c) and "上海" in str(c)][0]
+    sz = [c for c in cap.columns if "市价总值" in str(c) and "深圳" in str(c)][0]
+    cap_s = pd.Series((pd.to_numeric(cap[sh], errors="coerce")
+                       + pd.to_numeric(cap[sz], errors="coerce")).values,
+                      index=[_pm(v) for v in cap["数据日期"]]).dropna().sort_index()
+    # GDP 为累计值（如「2026年第1-3季度」= Q1~Q3 累计）→ 差分得单季 → 滚动4季
+    gdp = ak.macro_china_gdp()
+    # 健壮取列：第一个「国内生产总值」且非同比/累计的列（如「国内生产总值-当季值」）
+    gc = None
+    for c in gdp.columns:
+        cs = str(c)
+        if "国内生产总值" in cs and "同比" not in cs and "累计" not in cs:
+            gc = c
+            if "当季" in cs or "值" in cs:
+                break
+    if gc is None:
+        raise ValueError(f"GDP 当季值列未找到: {list(gdp.columns)}")
+    rows = []
+    for _, r in gdp.iterrows():
+        s = str(r["季度"])
+        m = re.match(r"(\d{4})年第1-(\d)季度", s) or re.match(r"(\d{4})年第(\d)季度", s)
+        if not m:
+            continue
+        y, q = int(m.group(1)), int(m.group(2))
+        rows.append({"y": y, "q": q, "cum": pd.to_numeric(r[gc], errors="coerce")})
+    gdf = pd.DataFrame(rows).dropna().sort_values(["y", "q"])
+    # 单季 = 本年累计 − 上一累计（Q1 直接取累计）；季末日期直接算
+    qend = {1: "03-31", 2: "06-30", 3: "09-30", 4: "12-31"}
+    prev = None
+    singles = []
+    for _, r in gdf.iterrows():
+        v = r["cum"] if r["q"] == 1 else (r["cum"] - prev if prev is not None else None)
+        singles.append({"y": r["y"], "q": r["q"], "v": v,
+                        "end": pd.Timestamp(f"{int(r['y'])}-{qend[int(r['q'])]}")})
+        prev = r["cum"]
+    sdf = pd.DataFrame(singles).dropna(subset=["v"])
+    # 滚动4季 TTM，映射到季末日期
+    sdf["ttm"] = sdf["v"].rolling(4).sum()
+    gdp_ttm = sdf.dropna(subset=["ttm"]).set_index("end")["ttm"].sort_index()
+    # 对齐到总市值月份（ffill）
+    gdp_m = gdp_ttm.reindex(cap_s.index.union(gdp_ttm.index), method="ffill").reindex(cap_s.index)
+    ratio = (cap_s / gdp_m * 100).dropna()
+    D._save_cache(key, ratio)
+    return ratio
+
+
+def _fetch_breaknet() -> pd.Series:
+    """全市场破净率（%，日频）。"""
+    key = "breaknet"
+    cached = D._load_cache(key, 24)
+    if cached is not None:
+        return cached
+    import akshare as ak
+    df = ak.stock_a_below_net_asset_statistics()
+    s = pd.Series(pd.to_numeric(df["below_net_asset_ratio"], errors="coerce").values * 100,
+                  index=pd.to_datetime(df["date"])).dropna().sort_index()
+    D._save_cache(key, s)
+    return s
+
+
+# ---------------------------------------------------------------- 组装
+def _ind(key: str, series: pd.Series, unit_scale: float = 1.0, window: int = 5) -> dict:
+    """单指标：当前值 + 分位 + 热度 + 历史序列（走势图）。"""
+    meta = IND_META[key]
+    s = series.dropna().sort_index() if series is not None else pd.Series(dtype=float)
+    if s.empty:
+        return {"label": meta["label"], "unit": meta["unit"], "value": None,
+                "pct": None, "heat": None, "series": [], **{
+                    k: meta[k] for k in ("desc", "how", "range", "source")}}
+    pct = _pct_rank(s, window)
+    val = float(s.iloc[-1]) * unit_scale
+    return {"label": meta["label"], "unit": meta["unit"],
+            "value": round(val, 2), "pct": pct,
+            "heat": _heat_of(pct, invert=meta["invert"]),
+            "series": _sample(s),
+            "desc": meta["desc"], "how": meta["how"],
+            "range": meta["range"], "source": meta["source"]}
+
+
 def build_market(log=print) -> dict | None:
-    """组装 market.js payload：当前四指标 + 综合温度 + 回测序列。任何异常降级。"""
+    """组装 market.js：8 指标（含序列）+ 综合温度 + 牛熊对照回测。任何异常降级。"""
     t0 = time.time()
     try:
-        pe = _fetch_pe()
+        pe, close = _fetch_pe_close()
         bond = _fetch_bond10()
         mm = _fetch_m1m2()
         margin = _fetch_margin()
     except Exception as e:                          # noqa: BLE001
-        log(f"[市场情绪] 数据获取失败：{type(e).__name__}: {e}")
+        log(f"[市场情绪] 核心数据获取失败：{type(e).__name__}: {e}")
         return None
     if pe is None or pe.empty:
         log("[市场情绪] PE 数据缺失，跳过")
         return None
 
-    # ---- 当前指标 ----
-    erp = _erp_series(pe, bond)
-    cur = {}
-    # ERP：越高越便宜 → 热度取反（分位低=股票贵=热）
-    erp_pct = _pct_rank(erp, 5) if not erp.empty else None
-    cur["erp"] = {"value": round(float(erp.iloc[-1]) * 100, 2) if not erp.empty else None,
-                  "pct": erp_pct, "heat": _heat_of(erp_pct, invert=True),
-                  "unit": "%", "label": "股债利差 ERP"}
-    # PE 估值分位：越高越贵 → 热度=分位
-    pe_pct = _pct_rank(pe, 5)
-    cur["pe"] = {"value": round(float(pe.iloc[-1]), 2),
-                 "pct": pe_pct, "heat": _heat_of(pe_pct),
-                 "unit": "倍", "label": "中证全指 PE"}
-    # M1-M2：剪刀差（同比%差）；热度用其历史分位（越高越热=信用扩张）
-    cur_m1m2 = _m1m2_at(mm, pe.index.max())
-    m1m2_pct = _pct_rank(mm["scissor"], 5) if (mm is not None and "scissor" in mm) else None
-    cur["m1m2"] = {"value": round(cur_m1m2, 2) if cur_m1m2 is not None else None,
-                   "pct": m1m2_pct, "heat": _heat_of(m1m2_pct),
-                   "unit": "%", "label": "M1-M2 剪刀差"}
-    # 两融：越高越热 → 热度=分位
-    margin_pct = _pct_rank(margin, 5) if margin is not None and not margin.empty else None
-    cur["margin"] = {"value": round(float(margin.iloc[-1]) / 1e12, 2) if (margin is not None and not margin.empty) else None,
-                     "pct": margin_pct, "heat": _heat_of(margin_pct),
-                     "unit": "万亿", "label": "沪市两融余额"}
+    # ---- 核心4（进综合）----
+    erp = (1.0 / pe.replace(0, pd.NA) - bond.reindex(pe.index, method="ffill") / 100.0).dropna() \
+        if not pe.empty else pd.Series(dtype=float)
+    core_series = {
+        "erp": erp, "pe": pe, "margin": margin,
+        "m1m2": mm["scissor"] if (mm is not None and "scissor" in mm) else pd.Series(dtype=float),
+    }
+    # 单位换算：ERP 小数→%（×100）、两融原始值→万亿（×1e-12）
+    ind = {
+        "erp": _ind("erp", core_series["erp"], unit_scale=100),
+        "pe": _ind("pe", core_series["pe"]),
+        "margin": _ind("margin", core_series["margin"], unit_scale=1e-12),
+        "m1m2": _ind("m1m2", core_series["m1m2"]),
+    }
+    # ---- 进阶/新增4（独立参考，失败不影响核心）----
+    for k, fn in (("ivix", _fetch_ivix), ("newfund", _fetch_newfund),
+                  ("buffett", _fetch_buffett), ("breaknet", _fetch_breaknet)):
+        try:
+            ind[k] = _ind(k, fn())
+        except Exception as e:                      # noqa: BLE001
+            log(f"[市场情绪] {k} 获取失败：{type(e).__name__}: {str(e)[:40]}（跳过该指标）")
+            ind[k] = {"label": IND_META[k]["label"], "unit": IND_META[k]["unit"],
+                      "value": None, "pct": None, "heat": None, "series": [],
+                      **{x: IND_META[k][x] for x in ("desc", "how", "range", "source")}}
 
-    heats = {k: cur[k]["heat"] for k in ("erp", "pe", "m1m2", "margin")}
+    # ---- 综合温度（仅核心4）----
+    heats = {k: ind[k]["heat"] for k in CORE_KEYS}
     score = _composite(heats)
     level = _temp_level(score)
 
-    # ---- 回测序列（月度；用截至各时点的历史分位，避免前视）----
+    # ---- 对照回测（月度；综合温度 vs 中证全指点位；牛熊区间自动推导）----
     idx = pe.resample("ME").last().dropna().index
     bt = []
     for when in idx:
-        h_erp = _heat_of(_interp_pct(erp, when, 5), invert=True) if not erp.empty else None
-        h_pe = _heat_of(_interp_pct(pe, when, 5))
-        h_mm = _heat_of(_interp_pct(mm["scissor"], when, 5)) if (mm is not None and "scissor" in mm) else None
-        h_mg = _heat_of(_interp_pct(margin, when, 5)) if (margin is not None and not margin.empty) else None
-        sc = _composite({"erp": h_erp, "pe": h_pe, "m1m2": h_mm, "margin": h_mg})
-        # 同步取该月 PE 点位做对照（回测叠加图）
+        h = {k: _heat_of(_interp_pct(s, when, 5), invert=IND_META[k]["invert"])
+             for k, s in core_series.items()}
+        sc = _composite(h)
         pe_v = round(float(pe[pe.index <= when].iloc[-1]), 2) if not pe[pe.index <= when].empty else None
         bt.append({"d": when.strftime("%Y-%m"), "score": sc, "pe": pe_v})
+    bullbear = _bullbear(close)
 
     out = {"asof": str(pe.index.max())[:10], "weights": WEIGHTS,
-           "indicators": cur, "score": score, "level": level,
-           "levels": TEMP_LEVELS, "backtest": bt,
+           "core_keys": CORE_KEYS, "levels": TEMP_LEVELS,
+           "indicators": ind, "score": score, "level": level,
+           "backtest": bt, "bullbear": bullbear,
+           "close": _sample(close),
            "generated_at": str(dt.datetime.now())}
-    log(f"[市场情绪] 综合温度 {score}（{level}）· 回测 {len(bt)} 个月 · 耗时 {(time.time()-t0):.1f}s")
+    log(f"[市场情绪] 综合温度 {score}（{level}）· {len(ind)}指标 · 牛熊{len(bullbear)}段 · 耗时 {(time.time()-t0):.1f}s")
     return out
 
 
@@ -258,7 +450,8 @@ def main(argv=None) -> int:
     payload = build_market(log=print)
     ok = write_market(payload)
     print(json.dumps({"ok": ok, "score": payload.get("score") if payload else None,
-                      "level": payload.get("level") if payload else None},
+                      "level": payload.get("level") if payload else None,
+                      "n": len(payload.get("indicators") or {}) if payload else 0},
                      ensure_ascii=False))
     return 0 if ok else 1
 

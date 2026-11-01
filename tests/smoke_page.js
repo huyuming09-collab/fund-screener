@@ -565,19 +565,27 @@ if (shortFunds.length >= 2) {
   chk('榜内样本 <2 只：对比断言跳过（合法）', true);
 }
 
-// 13. 市场情绪（v2.0，用户 2026-11-01）：四指标 + 综合温度 + 回测（嵌入 data.js.market）
+// 13. 市场情绪（v2.1，用户 2026-11-01）：8指标 + 综合温度 + 牛熊对照回测（嵌入 data.js.market）
 if (D.market && D.market.indicators) {
   const mk = D.market;
-  chk('市场情绪含四指标（erp/pe/m1m2/margin）且各有热度',
-      ['erp','pe','m1m2','margin'].every(k => mk.indicators[k] && ('heat' in mk.indicators[k])));
+  const ALL8 = ['erp','pe','margin','m1m2','ivix','newfund','buffett','breaknet'];
+  chk('市场情绪含8指标（核心4+进阶4）且各有热度',
+      ALL8.every(k => mk.indicators[k] && ('heat' in mk.indicators[k])));
+  chk('核心4（erp/pe/margin/m1m2）在 core_keys（进综合）',
+      ['erp','pe','margin','m1m2'].every(k => (mk.core_keys||[]).includes(k)));
+  chk('每指标含走势序列与说明（desc/how/range，帮小白理解）',
+      ALL8.every(k => 'series' in mk.indicators[k] && mk.indicators[k].how && mk.indicators[k].range));
   chk('综合温度 0-100 且有等级（寒冷/偏冷/中性/偏热/过热）',
       mk.score >= 0 && mk.score <= 100
       && ['寒冷','偏冷','中性','偏热','过热'].includes(mk.level));
-  chk('回测序列有历史月份（≥12 月）', (mk.backtest||[]).length >= 12);
-  chk('回测月度点含 score 与 pe（可视化叠加）',
-      (mk.backtest||[]).filter(b=>b.score!=null).every(b => 'pe' in b));
+  chk('回测序列有历史月份（≥12 月）且含 score/pe',
+      (mk.backtest||[]).length >= 12
+      && (mk.backtest||[]).filter(b=>b.score!=null).every(b => 'pe' in b));
+  chk('牛熊区间自动推导（≥4 段，含 type/start/end，交替标注）',
+      (mk.bullbear||[]).length >= 4
+      && (mk.bullbear||[]).every(b => ['bear','bull'].includes(b.type) && b.start && b.end));
 } else {
-  chk('市场情绪块（home 用）存在', false);
+  chk('市场情绪（8指标）存在', false);
 }
 
 console.log(fail ? 'SMOKE FAIL: '+fail : 'SMOKE PASS');

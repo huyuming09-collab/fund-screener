@@ -875,14 +875,16 @@ def _win_stats(s: pd.Series, cur: float | None, years: float | None) -> dict | N
     }
 
 
-def _monthly_pairs(s: pd.Series, points: int = 132) -> list:
+def _monthly_pairs(s: pd.Series, points: int = 240) -> list:
+    """周频降采样（v2.1 用户：线要细不粗 → 从月频132点提到周频~240点，走势更平滑；
+    折中控制 data.js 体积，避免移动端加载过重）。"""
     if s is None or s.empty:
         return []
-    g = s.groupby([s.index.year, s.index.month]).last()
-    items = list(g.items())
-    if len(items) > points:
-        items = items[-points:]
-    return [[f"{y}-{m:02d}-01", round(float(v), 4)] for (y, m), v in items]
+    s = s.dropna().sort_index()
+    if len(s) > points:
+        step = len(s) / points
+        s = s.iloc[[min(len(s) - 1, int(i * step)) for i in range(points)]]
+    return [[d.strftime("%Y-%m-%d"), round(float(v), 4)] for d, v in s.items()]
 
 
 def _tier_of(pct: float | None) -> str | None:

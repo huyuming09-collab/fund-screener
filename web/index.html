@@ -1315,7 +1315,7 @@ function eqChartSVG(x, win, metric){
     ${bg}${refs}
     ${sig(st.mean==null?null:st.mean - (st.std||0),'#c9cdd4')}
     ${sig(st.mean==null?null:st.mean + (st.std||0),'#c9cdd4')}
-    <path d="${path}" fill="none" stroke="#c54300" stroke-width="2" stroke-linejoin="round"/>`;
+    <path d="${path}" fill="none" stroke="#c54300" stroke-width="1.3" stroke-linejoin="round"/>`;
   // 指数点位（右轴）——按日期对齐 X（序列长度可与估值序列不同）
   if (cpts.length >= 2){
     const cv = cpts.map(p => +p[1]);
@@ -1323,8 +1323,8 @@ function eqChartSVG(x, win, metric){
     const cpad = (cmax - cmin || 1) * 0.06; cmin -= cpad; cmax += cpad;
     const CY = v => T + (H - T - B) * (1 - (v - cmin) / (cmax - cmin));
     const cpath = cpts.map((p,i) => (i?'L':'M') + Xd(p[0]).toFixed(1) + ' ' + CY(+p[1]).toFixed(1)).join(' ');
-    svg += `<path d="${cpath}" fill="none" stroke="#2456b8" stroke-width="1.3"
-      stroke-dasharray="5 4" opacity=".85"/>`;
+    svg += `<path d="${cpath}" fill="none" stroke="#2456b8" stroke-width="0.9"
+      stroke-dasharray="4 3" opacity=".8"/>`;
     svg += `<text x="${W-R+4}" y="${T+10}" font-size="10" fill="#2456b8">指数点位</text>`;
   }
   svg += `<circle cx="${X(mpts.length-1).toFixed(1)}" cy="${Y(+mpts[mpts.length-1][1]).toFixed(1)}"

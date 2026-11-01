@@ -55,6 +55,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 .c-index .ic{background:rgba(232,116,59,.13);}
 .c-div .ic{background:rgba(190,90,110,.12);}
 .c-eq .ic{background:rgba(120,110,180,.12);}
+.c-mkt .ic{background:rgba(70,140,130,.13);}
+/* 市场情绪卡：右上角迷你温度分数预览 */
+.mkt-mini{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;
+  align-items:flex-end;line-height:1;}
+.mkt-mini .t{font-size:22px;font-weight:750;}
+.mkt-mini .l{font-size:10px;font-weight:600;margin-top:1px;}
 
 /* 开发中卡 */
 .card.dev{cursor:default;opacity:.72;}
@@ -142,6 +148,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
       <span class="arrow">›</span>
     </a>
 
+    <!-- 市场情绪（v2.1，与偏债/指数同级卡片 → market.html） -->
+    <a class="card c-mkt" href="market.html" id="mkt-card">
+      <div class="ic">📊</div>
+      <div class="nm">市场情绪</div>
+      <div class="ds" id="mkt-card-ds">股债性价比、估值、情绪、周期多维温度</div>
+      <div class="mkt-mini" id="mkt-mini" hidden></div>
+      <span class="arrow">›</span>
+    </a>
+
     <!-- 红利天气（开发中） -->
     <div class="card c-div dev">
       <span class="badge">开发中</span>
@@ -159,34 +174,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
     </div>
   </div>
 
-  <!-- v2.0 市场情绪（用户 2026-11-01）：综合温度 + 四指标 + 回测 -->
-  <section class="mkt" id="mkt" hidden>
-    <div class="mkt-hd"><h2>市场情绪</h2><span class="asof" id="mkt-asof"></span></div>
-    <div class="mkt-score">
-      <div class="mkt-gauge" id="mkt-gauge"></div>
-      <div class="txt">
-        <div class="t1" id="mkt-title">—</div>
-        <div class="t2" id="mkt-desc">综合股债性价比、估值、信用周期与杠杆情绪，0-100 越高越热。</div>
-      </div>
-    </div>
-    <div class="mkt-grid" id="mkt-grid"></div>
-    <details class="mkt-fold">
-      <summary>回测验证：历史温度 vs 中证全指</summary>
-      <div class="mkt-fold-body">
-        <div class="mkt-legend">
-          <span class="lg"><i class="sw" style="background:#e8743b"></i>综合温度</span>
-          <span class="lg"><i class="sw" style="background:#8a93a3"></i>中证全指点位（右轴）</span>
-        </div>
-        <div id="mkt-chart"></div>
-        <div class="mkt-desc" id="mkt-btdesc"></div>
-      </div>
-    </details>
-    <details class="mkt-fold">
-      <summary>指标说明：口径与参考阈值</summary>
-      <div class="mkt-fold-body" id="mkt-method"></div>
-    </details>
-  </section>
-
   <div class="ft">
     <div class="acc"><b>＠班马成长日记</b> · 班马日记本每周更新</div>
     <div class="disc">本页数据由程序基于公开历史数据自动生成，仅为数据分析研究结论，不构成任何投资建议或基金推介；心动值为池内相对评分，靠前不预示后续表现一定更好。基金有风险，投资须谨慎。</div>
@@ -195,101 +182,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 
 <script src="data.js"></script>
 <script>
-/* v2.0 市场情绪渲染（数据来自 data.js → window.CARD_DATA.market，随周更自动更新） */
+/* v2.1 主界面市场情绪卡：只填预览（温度分数+等级），详情在 market.html */
 (function(){
   var M = window.CARD_DATA && window.CARD_DATA.market;
-  var sec = document.getElementById('mkt');
-  if (!M || !M.indicators){ if(sec) sec.hidden = true; return; }
-  sec.hidden = false;
-
+  var card = document.getElementById('mkt-card');
+  if (!M || !M.indicators || M.score == null){ if(card) card.removeAttribute('href'); return; }
   var LV_COLOR = {'寒冷':'#1a6fa8','偏冷':'#0b6b46','中性':'#4b5563','偏热':'#a85100','过热':'#b3261e'};
-
-  /* 1. 综合温度仪表盘（SVG 环形） */
-  var score = M.score, level = M.level, col = LV_COLOR[level] || '#4b5563';
-  var r = 34, C = 2 * Math.PI * r, fill = Math.max(0, Math.min(100, score)) / 100 * C;
-  document.getElementById('mkt-gauge').innerHTML =
-    '<svg viewBox="0 0 80 80">'
-    + '<circle cx="40" cy="40" r="'+r+'" fill="none" stroke="#eee9e2" stroke-width="9"/>'
-    + '<circle cx="40" cy="40" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="9"'
-    + ' stroke-linecap="round" stroke-dasharray="'+fill.toFixed(1)+' '+C.toFixed(1)+'"/>'
-    + '</svg>'
-    + '<div class="val"><span class="num" style="color:'+col+'">'+score+'</span>'
-    + '<span class="lv" style="color:'+col+'">'+level+'</span></div>';
-  document.getElementById('mkt-title').textContent =
-    '当前市场温度 ' + score + ' · ' + level + '（' + M.asof + '）';
-
-  /* 2. 四指标卡片 */
-  function concl(k, v){
-    var p = v.pct;
-    if (p == null) return '数据暂缺';
-    if (k === 'erp')   return p >= 70 ? '利差阔 → 股票性价比高' : (p <= 30 ? '利差窄 → 股票性价比低' : '性价比中等');
-    if (k === 'pe')    return p >= 70 ? '估值偏贵' : (p <= 30 ? '估值偏低' : '估值适中');
-    if (k === 'm1m2')  return (v.value > 0 ? '剪刀差为正 → 信用扩张' : '剪刀差为负 → 信用收缩') + (p >= 60 ? '（偏热）' : p <= 40 ? '（偏冷）' : '');
-    if (k === 'margin')return p >= 70 ? '杠杆情绪高涨 → 偏热' : (p <= 30 ? '杠杆情绪低迷 → 偏冷' : '杠杆情绪中等');
-    return '';
-  }
-  function heatColor(h){
-    if (h == null) return '#8a93a3';
-    if (h < 20) return '#1a6fa8'; if (h < 40) return '#0b6b46';
-    if (h < 55) return '#4b5563'; if (h < 70) return '#a85100'; return '#b3261e';
-  }
-  var order = ['erp','pe','m1m2','margin'];
-  document.getElementById('mkt-grid').innerHTML = order.map(function(k){
-    var v = M.indicators[k]; if (!v) return '';
-    var pct = v.pct == null ? '—' : v.pct.toFixed(0) + '%';
-    return '<div class="mkt-card">'
-      + '<div class="lab"><i class="dot" style="background:'+heatColor(v.heat)+'"></i>'+v.label+'</div>'
-      + '<div class="val">'+(v.value==null?'—':v.value)+'<span class="u">'+(v.unit||'')+'</span></div>'
-      + '<div class="pct" style="color:'+heatColor(v.heat)+'">热度分位 '+pct+'</div>'
-      + '<div class="sub">'+concl(k, v)+'</div>'
-      + '</div>';
-  }).join('');
-
-  /* 3. 回测图（SVG 折线：综合温度 + 中证全指点位） */
-  var bt = (M.backtest||[]).filter(function(b){ return b.score != null && b.pe != null; });
-  if (bt.length >= 2){
-    var W = 340, H = 150, L = 6, R = 6, T = 12, B = 18;
-    var n = bt.length;
-    var X = function(i){ return L + (W-L-R) * (i/(n-1)); };
-    var Ys = function(v){ return T + (H-T-B) * (1 - v/100); };               /* 温度 0-100 */
-    var pes = bt.map(function(b){return b.pe;});
-    var pmin = Math.min.apply(null, pes), pmax = Math.max.apply(null, pes);
-    var Yp = function(v){ return T + (H-T-B) * (1 - (v-pmin)/((pmax-pmin)||1)); };
-    var pathS = bt.map(function(b,i){ return (i?'L':'M')+X(i).toFixed(1)+' '+Ys(b.score).toFixed(1); }).join(' ');
-    var pathP = bt.map(function(b,i){ return (i?'L':'M')+X(i).toFixed(1)+' '+Yp(b.pe).toFixed(1); }).join(' ');
-    var svg = '<svg viewBox="0 0 '+W+' '+H+'" class="mkt-chart">';
-    /* 分档背景带 */
-    [[0,20,'#dff0fb'],[20,40,'#e3f5ec'],[40,60,'#eef0f3'],[60,80,'#fff3e3'],[80,100,'#fdecea']].forEach(function(z){
-      var y0 = Ys(z[1]), y1 = Ys(z[0]);
-      svg += '<rect x="'+L+'" y="'+y0.toFixed(1)+'" width="'+(W-L-R)+'" height="'+(y1-y0).toFixed(1)+'" fill="'+z[2]+'" opacity=".5"/>';
-    });
-    svg += '<path d="'+pathP+'" fill="none" stroke="#8a93a3" stroke-width="1.3" opacity=".8"/>';
-    svg += '<path d="'+pathS+'" fill="none" stroke="#e8743b" stroke-width="2"/>';
-    /* 首尾日期标签 */
-    svg += '<text x="'+L+'" y="'+(H-4)+'" font-size="9" fill="#a9a294">'+bt[0].d+'</text>';
-    svg += '<text x="'+(W-R)+'" y="'+(H-4)+'" font-size="9" fill="#a9a294" text-anchor="end">'+bt[n-1].d+'</text>';
-    svg += '</svg>';
-    document.getElementById('mkt-chart').innerHTML = svg;
-    /* 回测结论：高温段是否对应点位高位 */
-    var hi = bt.filter(function(b){return b.score>=70;});
-    document.getElementById('mkt-btdesc').innerHTML =
-      '回测 '+bt.length+' 个月（'+bt[0].d+' ~ '+bt[n-1].d+'）：综合温度≥70（偏热/过热）共 '+hi.length+' 个月，'
-      + '多对应中证全指阶段性高位；温度越低越接近底部区域。仅作历史规律示意，不构成预测。';
-  } else {
-    document.getElementById('mkt-chart').innerHTML = '<div class="mkt-desc">历史数据不足，暂无法回测。</div>';
-  }
-
-  /* 4. 指标说明（折叠） */
-  var METH = {
-    erp:  ['股债利差 ERP', '1/PE(中证全指) − 10年期国债收益率。直接回答「现在买股票还是债券更划算」，是股债配置的核心锚。参考：分位≥70 股票性价比高（利差阔），≤30 性价比低。'],
-    pe:   ['全市场估值分位', '中证全指 PE-TTM 在近5年历史中的百分位。最通用的「市场贵不贵」标尺。参考：≥70 偏贵，≤30 偏低。'],
-    m1m2: ['M1-M2 剪刀差', '当月 M1 同比 − M2 同比。剪刀差由负转正、持续上行通常对应信用扩张与大级别行情；持续为负为信用收缩。月更，央行每月公布。'],
-    margin:['两融余额分位', '沪市融资融券余额在近5年历史中的百分位。杠杆/风险偏好温度计，越高说明场内杠杆情绪越热。日更。']
-  };
-  document.getElementById('mkt-method').innerHTML = order.map(function(k){
-    var d = METH[k]; if (!d) return '';
-    return '<div class="mkt-desc"><b>'+d[0]+'</b><br>'+d[1]+'</div>';
-  }).join('') + '<div class="mkt-desc" style="opacity:.75">数据来源：中证指数官网 / 东方财富 / 中国人民银行 / 沪深交易所；分位按近5年历史自算。以上为数据分析，不构成投资建议。</div>';
+  var col = LV_COLOR[M.level] || '#4b5563';
+  var mini = document.getElementById('mkt-mini');
+  mini.hidden = false;
+  mini.innerHTML = '<span class="t" style="color:'+col+'">'+M.score+'</span>'
+    + '<span class="l" style="color:'+col+'">'+M.level+'</span>';
+  document.getElementById('mkt-card-ds').textContent = '市场温度 '+M.score+' · '+M.level+'，8 指标多维观察';
 })();
 </script>
 </body>
