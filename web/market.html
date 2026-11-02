@@ -203,6 +203,12 @@ if (!M || !M.indicators){
       if (M.weight_coverage != null) bits.push('权重覆盖 '+(M.weight_coverage*100).toFixed(0)+'%');
       if (M.heat_std != null) bits.push('指标分歧 ±'+M.heat_std);
       if (M.bb_note) bits.push('牛熊('+((M.bb_thresholds&&M.bb_thresholds.default*100)||30)+'%) '+M.bb_note);
+      if (M.multiwindow){
+        var mw = Object.keys(M.multiwindow).map(function(k){
+          var v=M.multiwindow[k]; return v && v.score!=null ? k+'='+v.score+'('+(v.level||'')+')' : null;
+        }).filter(Boolean).join(' ');
+        if (mw) bits.push('多窗口 '+mw);
+      }
       diag.innerHTML = '<div class="dg">'+bits.join(' · ')+'</div>'
         + (M.level_note ? '<div class="dg" style="opacity:.72">'+M.level_note+'</div>' : '');
       diag.style.display = bits.length ? 'block' : 'none';
@@ -357,6 +363,10 @@ if (!M || !M.indicators){
       + '</table>'
       + (M.level_note ? '<br><span style="color:#a85100">'+M.level_note+'</span>' : '')
       + '</div>';
+  }
+  /* Phase4 已知缺口与决策（诚实标注） */
+  if (M.gaps_note){
+    html += '<div class="mdesc"><b>已知缺口与取舍</b><br><span style="color:#a85100">'+M.gaps_note+'</span></div>';
   }
   document.getElementById('method').innerHTML = html;
 }

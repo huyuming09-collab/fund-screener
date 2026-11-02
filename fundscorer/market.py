@@ -239,7 +239,8 @@ def _fetch_m1m2() -> pd.DataFrame:
 
 
 def _fetch_margin() -> pd.Series:
-    """全市场两融余额 = 沪市 + 深市（用户 2026-11-01 升级，比单沪市更准）。"""
+    """全市场两融余额 = 沪市 + 深市（Phase3 2026-11-02：改 inner join，
+    仅两市均有观测日求和，消除 ffill 人工填充误差；审计C4实测分位差3.94不显著）。"""
     key = "margin_all"
     cached = D._load_cache(key, 24)
     if cached is not None:
@@ -251,10 +252,9 @@ def _fetch_margin() -> pd.Series:
         col = "融资融券余额" if "融资融券余额" in df.columns else "融资余额"
         parts.append(pd.Series(pd.to_numeric(df[col], errors="coerce").values,
                                index=pd.to_datetime(df["日期"])))
-    # 对齐到共同日期求和（浅对齐 outer，缺值 ffill 后相加）
-    m = pd.concat(parts, axis=1, keys=["sh", "sz"]).sort_index()
-    m = m.ffill()
-    s = (m["sh"] + m["sz"]).dropna()
+    # inner join：仅两市均有观测的日期求和（Phase3，替代原 outer+ffill）
+    m = pd.concat(parts, axis=1, keys=["sh", "sz"], sort=True)
+    s = (m["sh"] + m["sz"]).dropna().sort_index()
     D._save_cache(key, s)
     return s
 
@@ -274,7 +274,12 @@ def _fetch_ivix() -> pd.Series:
 
 
 def _fetch_newfund() -> pd.Series:
-    """新发基金募集规模（月度，亿元）。"""
+    """新发基金募集规模（月度，亿份）。
+
+    Phase3 2026-11-02：仅保留股票型+混合型（偏股）——债基发行大年会污染
+    「发行热度」信号（审计C1：当前分位差0.00不显著，但逻辑上权益发行才反映
+    权益情绪，避免未来失真）。
+    """
     key = "newfund"
     cached = D._load_cache(key, 24)
     if cached is not None:
@@ -283,7 +288,10 @@ def _fetch_newfund() -> pd.Series:
     df = ak.fund_new_found_em().copy()
     df["d"] = pd.to_datetime(df["成立日期"], errors="coerce")
     df["amt"] = pd.to_numeric(df["募集份额"], errors="coerce")
-    df = df.dropna(subset=["d"])
+    df = df.dropna(subset=["d", "amt"])
+    # 类型过滤：仅股票/混合（含指数型-股票、QDII-股票等权益类）
+    if "基金类型" in df.columns:
+        df = df[df["基金类型"].astype(str).str.contains("股票|混合", na=False)]
     s = df.groupby(df["d"].dt.to_period("M").dt.to_timestamp())["amt"].sum().sort_index()
     D._save_cache(key, s)
     return s
@@ -432,6 +440,14 @@ def build_market(log=print) -> dict | None:
     n_valid_core = len(valid)
     w_cov = round(sum(WEIGHTS.get(k, 0) for k in valid) / sum(WEIGHTS.values()), 3) if WEIGHTS else 0.0
     heat_std = round(pd.Series(list(valid.values())).std(ddof=0), 2) if len(valid) > 1 else None
+    # 多窗口温度（Phase4 2026-11-02：3y/5y/10y，避免单一窗口偏差）
+    multiwin = {}
+    for wy in (3, 5, 10):
+        h = {k: _heat_of(_pct_rank(core_series[k], wy), invert=IND_META[k]["invert"])
+             for k in CORE_KEYS}
+        s = _composite(h)
+        multiwin[f"{wy}y"] = {"score": round(s, 1) if s is not None else None,
+                              "level": _temp_level(s)}
 
     # ---- 对照回测（月度；综合温度 vs 中证全指点位；牛熊区间自动推导）----
     idx = pe.resample("ME").last().dropna().index
@@ -506,6 +522,12 @@ def build_market(log=print) -> dict | None:
            "heat_std": heat_std, "bb_note": bb_note,
            "band_stats": band_stats,
            "level_note": level_note,
+           "multiwindow": multiwin,
+           # Phase4 已知缺口与决策（诚实标注，2026-11-02）
+           "gaps_note": ("成交额源现可用（中证全指日频amount，3702行）但与两融热度ρ=0.673"
+                         "（活动度维度已重复），加核反增冗余故不加——两融已覆盖；"
+                         "PB仍仅PE单维度（中证全指PB接口不可得）；"
+                         "权重为判断值未用PCA定权（核心仅4项，PCA不稳定故不采用）。"),
            "backtest": bt, "bullbear": bullbear,
            "close": _sample(close),
            "generated_at": str(dt.datetime.now())}
