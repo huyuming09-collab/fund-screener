@@ -25,9 +25,13 @@ from . import eqindex as E
 ROOT = Path(__file__).resolve().parent.parent
 OUT_JS = ROOT / "web" / "market.js"
 
-# 核心4指标权重（进综合温度；进阶4项作独立参考不进综合）
-WEIGHTS = {"erp": 0.30, "pe": 0.30, "margin": 0.25, "m1m2": 0.15}
-# 温度等级（0-100，越高越热）
+# 核心4指标权重（进综合温度；pe/破净/巴菲特/新发为独立参考不进综合）
+# 2026-11-02 数据定权：8指标热度相关矩阵129月对齐，iVIX与两融ρ=-0.092近正交，
+# 4核+iVIX平均|ρ|=0.304 优于3核0.519、含pe现状0.631（pe与erp ρ=0.825双计）。
+# ERP最大=估值优先；两融+iVIX拆分情绪；M1M2最低(月更滞后+2025口径调整)。
+WEIGHTS = {"erp": 0.40, "margin": 0.25, "ivix": 0.20, "m1m2": 0.15}
+# 温度等级（0-100，越高越热）——保留5级（用户2026-11-02定；D2显示>80档12月-12.47%
+# 与60-80档-1.93%差6倍，5级保住热端分级；文案标注冷端弱/热端强）
 TEMP_LEVELS = [(20, "寒冷"), (40, "偏冷"), (60, "中性"), (80, "偏热"), (100, "过热")]
 # 指标元信息（label/单位/一句话/怎么算/常见范围/数据源；供详情页帮小白理解）
 IND_META = {
@@ -40,17 +44,20 @@ IND_META = {
            "desc": "市盈率 TTM 的历史分位，最通用的「市场贵不贵」标尺",
            "how": "当前 PE 在近5年历史中的百分位（越低越便宜）。",
            "range": "分位 <30% 偏便宜；30~70% 适中；>70% 偏贵。",
-           "source": "中证官网"},
+           "source": "中证官网",
+           "caveat": "仅PE单维度——PB历史数据不可得（雪球未覆盖中证全指）；且PE与ERP高度同源（ρ=0.83），故降为独立参考、不进综合。"},
     "margin": {"label": "全市场两融余额", "unit": "万亿", "invert": False,
                "desc": "沪深融资融券余额，杠杆/风险偏好温度计",
                "how": "沪市 + 深市融资融券余额合计，历史分位越高 = 场内杠杆情绪越热。",
                "range": "分位 >80% 杠杆过热；<20% 情绪冰点。",
-               "source": "上海证券交易所 + 深圳证券交易所"},
+               "source": "上海证券交易所 + 深圳证券交易所",
+               "caveat": "用绝对余额分位、未剔除市场扩容影响；近5年窗口下与「两融/总市值」口径分位差约3分（实测3.28，不显著）。"},
     "m1m2": {"label": "M1-M2 剪刀差", "unit": "%", "invert": False,
              "desc": "M1同比 − M2同比，中期信用周期风向标（月更）",
              "how": "剪刀差为正且持续上行 = 信用扩张（常对应大行情）；持续为负 = 信用收缩。",
              "range": ">0 扩张；<0 收缩。看方向比看绝对值更重要。",
-             "source": "中国人民银行（月更）"},
+             "source": "中国人民银行（月更）",
+             "caveat": "M1统计口径2025年1月有调整（纳入个人活期存款等），历史序列存在新旧口径拼接；且月更滞后约2周。"},
     "ivix": {"label": "iVIX 波指", "unit": "点", "invert": True,
              "desc": "50ETF期权隐含波动率，A股版恐慌指数",
              "how": "iVIX 越高 = 市场越恐慌（常对应底部）；越低 = 越平静（可能过热）。与两融互补：两融看杠杆、iVIX 看恐慌。",
@@ -65,14 +72,15 @@ IND_META = {
                 "desc": "证券化率 = A股总市值 / GDP，超长周期牛熊锚",
                 "how": "总市值 ÷ 过去4季度滚动GDP。巴菲特经典阈值。",
                 "range": ">100% 高估；70~100% 适中；<70% 低估。",
-                "source": "统计局 GDP + 沪深总市值"},
+                "source": "统计局 GDP + 沪深总市值",
+                "caveat": "总市值仅含沪深两市、不含北交所（接口无北交所列）；GDP季度滞后1-2季，为慢变量。"},
     "breaknet": {"label": "全市场破净率", "unit": "%", "invert": True,
                  "desc": "PB<1 个股占比，底部验证强信号",
                  "how": "破净个股数 ÷ 全市场上市公司总数。越高 = 越多股票跌破净资产（常对应大底）。",
                  "range": ">10% 通常对应历史大底；<5% 偏高（顶部区域）。",
                  "source": "全市场每日"},
 }
-CORE_KEYS = ["erp", "pe", "margin", "m1m2"]   # 进综合温度的4个
+CORE_KEYS = ["erp", "margin", "ivix", "m1m2"]   # 进综合温度的4个（pe已降为参考，ivix升核）
 
 
 def _temp_level(score: float | None) -> str | None:
@@ -357,15 +365,16 @@ def _ind(key: str, series: pd.Series, unit_scale: float = 1.0, window: int = 5) 
     if s.empty:
         return {"label": meta["label"], "unit": meta["unit"], "value": None,
                 "pct": None, "heat": None, "series": [], **{
-                    k: meta[k] for k in ("desc", "how", "range", "source")}}
+                    k: meta.get(k) for k in ("desc", "how", "range", "source", "caveat")}}
     pct = _pct_rank(s, window)
     val = float(s.iloc[-1]) * unit_scale
     return {"label": meta["label"], "unit": meta["unit"],
             "value": round(val, 2), "pct": pct,
             "heat": _heat_of(pct, invert=meta["invert"]),
             "series": _sample(s),
-            "desc": meta["desc"], "how": meta["how"],
-            "range": meta["range"], "source": meta["source"]}
+            "desc": meta.get("desc"), "how": meta.get("how"),
+            "range": meta.get("range"), "source": meta.get("source"),
+            "caveat": meta.get("caveat")}
 
 
 def build_market(log=print) -> dict | None:
@@ -387,18 +396,24 @@ def build_market(log=print) -> dict | None:
     erp = (1.0 / pe.replace(0, pd.NA) - bond.reindex(pe.index, method="ffill") / 100.0).dropna() \
         if not pe.empty else pd.Series(dtype=float)
     core_series = {
-        "erp": erp, "pe": pe, "margin": margin,
+        "erp": erp, "margin": margin,
         "m1m2": mm["scissor"] if (mm is not None and "scissor" in mm) else pd.Series(dtype=float),
     }
+    # ivix（核心第4项，2026-11-02 升核；抓取失败降级为None→综合权重自动重分配）
+    try:
+        core_series["ivix"] = _fetch_ivix()
+    except Exception as e:                          # noqa: BLE001
+        log(f"[市场情绪] ivix 获取失败：{type(e).__name__}（核心降级）")
+        core_series["ivix"] = pd.Series(dtype=float)
     # 单位换算：ERP 小数→%（×100）、两融原始值→万亿（×1e-12）
     ind = {
         "erp": _ind("erp", core_series["erp"], unit_scale=100),
-        "pe": _ind("pe", core_series["pe"]),
         "margin": _ind("margin", core_series["margin"], unit_scale=1e-12),
         "m1m2": _ind("m1m2", core_series["m1m2"]),
+        "ivix": _ind("ivix", core_series["ivix"]),
     }
-    # ---- 进阶/新增4（独立参考，失败不影响核心）----
-    for k, fn in (("ivix", _fetch_ivix), ("newfund", _fetch_newfund),
+    # ---- 进阶/参考4（pe降为参考 + 3个独立指标，失败不影响核心）----
+    for k, fn in (("pe", lambda: pe), ("newfund", _fetch_newfund),
                   ("buffett", _fetch_buffett), ("breaknet", _fetch_breaknet)):
         try:
             ind[k] = _ind(k, fn())
@@ -406,12 +421,17 @@ def build_market(log=print) -> dict | None:
             log(f"[市场情绪] {k} 获取失败：{type(e).__name__}: {str(e)[:40]}（跳过该指标）")
             ind[k] = {"label": IND_META[k]["label"], "unit": IND_META[k]["unit"],
                       "value": None, "pct": None, "heat": None, "series": [],
-                      **{x: IND_META[k][x] for x in ("desc", "how", "range", "source")}}
+                      **{x: IND_META[k].get(x) for x in ("desc", "how", "range", "source", "caveat")}}
 
     # ---- 综合温度（仅核心4）----
     heats = {k: ind[k]["heat"] for k in CORE_KEYS}
     score = _composite(heats)
     level = _temp_level(score)
+    # 透明度字段（2026-11-02 Phase2）：有效指标数/权重覆盖率/热度离散度
+    valid = {k: h for k, h in heats.items() if h is not None}
+    n_valid_core = len(valid)
+    w_cov = round(sum(WEIGHTS.get(k, 0) for k in valid) / sum(WEIGHTS.values()), 3) if WEIGHTS else 0.0
+    heat_std = round(pd.Series(list(valid.values())).std(ddof=0), 2) if len(valid) > 1 else None
 
     # ---- 对照回测（月度；综合温度 vs 中证全指点位；牛熊区间自动推导）----
     idx = pe.resample("ME").last().dropna().index
@@ -422,15 +442,75 @@ def build_market(log=print) -> dict | None:
         sc = _composite(h)
         pe_v = round(float(pe[pe.index <= when].iloc[-1]), 2) if not pe[pe.index <= when].empty else None
         bt.append({"d": when.strftime("%Y-%m"), "score": sc, "pe": pe_v})
-    bullbear = _bullbear(close)
+    # 牛熊阈值敏感性（2026-11-02 Phase2：默认30%，标注20/25/30边界态）
+    bb30 = _bullbear(close, thresh=0.30)
+    bb20 = _bullbear(close, thresh=0.20)
+    bb25 = _bullbear(close, thresh=0.25)
+    _st = lambda segs: segs[-1]["type"] if segs else None
+    st20, st25, st30 = _st(bb20), _st(bb25), _st(bb30)
+    consistent = (st20 == st25 == st30)
+    if consistent:
+        bb_note = f"三阈值一致：{'牛市' if st30=='bull' else '熊市'}"
+    else:
+        bb_note = (f"阈值敏感：30%判{'牛市' if st30=='bull' else '熊市'}、"
+                   f"20%判{'牛市' if st20=='bull' else '熊市'}，边界区间")
+    bullbear = bb30
+
+    # ---- D2 回测统计（2026-11-02 Phase2）：各温度档未来1/3/6/12月中证全指收益 ----
+    close_m = close.resample("ME").last().dropna()
+    def _fwd(ts, nm):
+        c = close_m[close_m.index >= ts + pd.DateOffset(months=nm)]
+        return (float(c.iloc[0]) / float(close_m[close_m.index >= ts].iloc[0]) - 1) * 100 if len(c) else None
+    band_defs = [("≤20", 0, 20), ("20-40", 20, 40), ("40-60", 40, 60),
+                 ("60-80", 60, 80), (">80", 80, 101)]
+    band_stats = []
+    for name, lo, hi in band_defs:
+        pts = {"n": 0, 3: [], 6: [], 12: []}
+        for b in bt:
+            if b.get("score") is None or not (lo <= b["score"] < hi):
+                continue
+            ts = pd.Timestamp(b["d"] + "-01")
+            r3, r6, r12 = _fwd(ts, 3), _fwd(ts, 6), _fwd(ts, 12)
+            if r3 is None and r6 is None and r12 is None:
+                continue
+            pts["n"] += 1
+            for nm, r in ((3, r3), (6, r6), (12, r12)):
+                if r is not None:
+                    pts[nm].append(r)
+        import statistics as _st
+        def _med(v): return round(_st.median(v), 2) if v else None
+        def _wr(v): return round(sum(1 for x in v if x > 0) / len(v) * 100, 0) if v else None
+        band_stats.append({"band": name, "n": pts["n"],
+                           "r3_med": _med(pts[3]), "r3_wr": _wr(pts[3]),
+                           "r6_med": _med(pts[6]), "r6_wr": _wr(pts[6]),
+                           "r12_med": _med(pts[12]), "r12_wr": _wr(pts[12])})
+
+    # 分级解读（动态生成，2026-11-02：基于当期 band_stats，避免与展示数字矛盾）
+    _w12 = [(b["band"], b["r12_med"], b["n"]) for b in band_stats if b["r12_med"] is not None]
+    if _w12:
+        worst = min(_w12, key=lambda x: x[1])
+        best = max(_w12, key=lambda x: x[1])
+        mono = all(_w12[i][1] >= _w12[i+1][1] for i in range(len(_w12)-1))
+        level_note = (f"回测（各档未来12月中证全指收益中位数）：最差档 {worst[0]} = {worst[1]:+.1f}%（n={worst[2]}），"
+                      f"最好档 {best[0]} = {best[1]:+.1f}%。"
+                      + ("各档单调递减，分级具区分度。" if mono else
+                         "各档非单调，冷/中间档区分度弱，仅最高档警示性更强；样本小的档位仅作参考。"))
+    else:
+        level_note = "历史样本不足，暂无分档回测统计。"
 
     out = {"asof": str(pe.index.max())[:10], "weights": WEIGHTS,
            "core_keys": CORE_KEYS, "levels": TEMP_LEVELS,
            "indicators": ind, "score": score, "level": level,
+           # Phase2 透明度字段：有效核心指标数/权重覆盖率/热度离散度/牛熊阈值敏感性
+           "n_valid_core": n_valid_core, "weight_coverage": w_cov,
+           "heat_std": heat_std, "bb_note": bb_note,
+           "band_stats": band_stats,
+           "level_note": level_note,
            "backtest": bt, "bullbear": bullbear,
            "close": _sample(close),
            "generated_at": str(dt.datetime.now())}
-    log(f"[市场情绪] 综合温度 {score}（{level}）· {len(ind)}指标 · 牛熊{len(bullbear)}段 · 耗时 {(time.time()-t0):.1f}s")
+    log(f"[市场情绪] 综合温度 {score}（{level}）· 核心有效{n_valid_core}/4 覆盖{w_cov:.0%}"
+        f" · 牛熊{len(bullbear)}段 · {bb_note} · 耗时 {(time.time()-t0):.1f}s")
     return out
 
 

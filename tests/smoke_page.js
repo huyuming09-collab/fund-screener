@@ -571,8 +571,11 @@ if (D.market && D.market.indicators) {
   const ALL8 = ['erp','pe','margin','m1m2','ivix','newfund','buffett','breaknet'];
   chk('市场情绪含8指标（核心4+进阶4）且各有热度',
       ALL8.every(k => mk.indicators[k] && ('heat' in mk.indicators[k])));
-  chk('核心4（erp/pe/margin/m1m2）在 core_keys（进综合）',
-      ['erp','pe','margin','m1m2'].every(k => (mk.core_keys||[]).includes(k)));
+  chk('核心4（erp/margin/ivix/m1m2）在 core_keys（进综合，pe已降参考）',
+      ['erp','margin','ivix','m1m2'].every(k => (mk.core_keys||[]).includes(k))
+      && !(mk.core_keys||[]).includes('pe'));
+  chk('权重合计=1.0（erp.40/margin.25/ivix.20/m1m2.15）',
+      Math.abs(Object.values(mk.weights||{}).reduce((a,b)=>a+b,0) - 1) < 1e-6);
   chk('每指标含走势序列与说明（desc/how/range，帮小白理解）',
       ALL8.every(k => 'series' in mk.indicators[k] && mk.indicators[k].how && mk.indicators[k].range));
   chk('综合温度 0-100 且有等级（寒冷/偏冷/中性/偏热/过热）',

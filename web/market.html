@@ -39,6 +39,9 @@ header .asof{margin-top:2px;font-size:10.5px;opacity:.92;}
 .score .txt .t1{font-size:14px;font-weight:700;margin-bottom:4px;}
 .score .txt .t2{font-size:11.5px;color:var(--sub);line-height:1.6;}
 .wbar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:8px;gap:1px;}
+/* Phase2 透明度诊断行 */
+.diag{margin-top:7px;padding-top:7px;border-top:1px dashed var(--line);}
+.diag .dg{font-size:10.5px;color:var(--sub);line-height:1.6;}
 .wbar i{display:block;height:100%;}
 /* 标题 */
 h2.sec{font-size:14px;font-weight:700;margin:20px 2px 10px;color:var(--ink);}
@@ -120,8 +123,9 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
     <div class="gauge" id="gauge"></div>
     <div class="txt">
       <div class="t1" id="sc-title">—</div>
-      <div class="t2">综合股债性价比、估值、杠杆情绪、信用周期四大核心维度，0-100 越高越热。</div>
+      <div class="t2">综合股债性价比、杠杆情绪、恐慌情绪、信用周期四大核心维度，0-100 越高越热。</div>
       <div class="wbar" id="wbar"></div>
+      <div class="diag" id="diag" style="display:none"></div>
     </div>
   </div>
 
@@ -173,8 +177,9 @@ if (!M || !M.indicators){
     if (h<20) return '#1a6fa8'; if (h<40) return '#0b6b46';
     if (h<55) return '#4b5563'; if (h<70) return '#a85100'; return '#b3261e';
   };
-  var CORE = ['erp','pe','margin','m1m2'];
-  var ADV  = ['ivix','newfund','buffett','breaknet'];
+  /* 核心/参考分组：优先用 payload 的 core_keys（2026-11-02 核心改4核+ivix），缺失则回退硬编码 */
+  var CORE = (M.core_keys && M.core_keys.length) ? M.core_keys.slice() : ['erp','margin','ivix','m1m2'];
+  var ADV  = Object.keys(M.indicators).filter(function(k){ return CORE.indexOf(k) < 0; });
 
   document.getElementById('asof').textContent = '数据基准 ' + M.asof + ' · 8 指标 · 分位近5年';
 
@@ -190,6 +195,18 @@ if (!M || !M.indicators){
       +'<div class="val"><span class="num" style="color:'+col+'">'+score+'</span>'
       +'<span class="lv" style="color:'+col+'">'+level+'</span></div>';
     document.getElementById('sc-title').textContent = '当前市场温度 '+score+' · '+level;
+    /* Phase2 透明度：有效指标/权重覆盖/离散度 + 牛熊阈值敏感 + 分级解读 */
+    var diag = document.getElementById('diag');
+    if (diag){
+      var bits = [];
+      if (M.n_valid_core != null) bits.push('核心有效 '+M.n_valid_core+'/4');
+      if (M.weight_coverage != null) bits.push('权重覆盖 '+(M.weight_coverage*100).toFixed(0)+'%');
+      if (M.heat_std != null) bits.push('指标分歧 ±'+M.heat_std);
+      if (M.bb_note) bits.push('牛熊('+((M.bb_thresholds&&M.bb_thresholds.default*100)||30)+'%) '+M.bb_note);
+      diag.innerHTML = '<div class="dg">'+bits.join(' · ')+'</div>'
+        + (M.level_note ? '<div class="dg" style="opacity:.72">'+M.level_note+'</div>' : '');
+      diag.style.display = bits.length ? 'block' : 'none';
+    }
     var w=M.weights||{}, tot=0; for(var k in w) tot+=w[k];
     document.getElementById('wbar').innerHTML = CORE.map(function(k,i){
       var pct=((w[k]||0)/(tot||1))*100;
@@ -311,13 +328,37 @@ if (!M || !M.indicators){
       +'红色为熊市区间、蓝色为牛市区间。综合温度≥70 多对应点位阶段性高位，≤30 接近底部区域。仅作历史规律示意，不构成预测。';
   })();
 
-  /* 4. 指标说明 */
+  /* 4. 指标说明（全部8项，含 caveat 口径局限）+ 回测分档统计（D2） */
   var METH={};
-  CORE_KEYS.forEach(function(k){ var v=M.indicators[k]; if(v) METH[k]=[v.label, v.how, v.range, v.source]; });
-  document.getElementById('method').innerHTML = CORE_KEYS.map(function(k){
+  var ALLK = Object.keys(M.indicators);
+  ALLK.forEach(function(k){ var v=M.indicators[k]; if(v) METH[k]=[v.label, v.how, v.range, v.source, v.caveat, CORE.indexOf(k)>=0]; });
+  var html = ALLK.map(function(k){
     var d=METH[k]; if(!d) return '';
-    return '<div class="mdesc"><b>'+d[0]+'</b><br>'+d[1]+'<br><b>范围：</b>'+d[2]+'<br><span style="opacity:.7">来源：'+d[3]+'</span></div>';
+    var coreTag = d[5] ? '<span style="color:#e8743b;font-weight:700">[核心]</span> ' : '<span style="opacity:.6">[参考]</span> ';
+    return '<div class="mdesc">'+coreTag+'<b>'+d[0]+'</b><br>'+d[1]+'<br><b>范围：</b>'+d[2]+'<br>'
+      + '<span style="opacity:.7">来源：'+d[3]+'</span>'
+      + (d[4] ? '<br><b style="color:#a85100">口径局限：</b><span style="color:#a85100">'+d[4]+'</span>' : '')
+      + '</div>';
   }).join('');
+  /* D2 回测分档统计表 */
+  if (M.band_stats && M.band_stats.length){
+    html += '<div class="mdesc"><b>回测：各温度档未来收益（中证全指）</b><br>'
+      + '<span style="opacity:.75">样本为历史月度，前瞻收益=该档后N月中证全指涨跌幅中位数，胜率为正收益占比。</span><br>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:5px">'
+      + '<tr style="border-bottom:1px solid #ccc"><td style="padding:3px">档位</td><td>n</td><td>3月</td><td>3月胜率</td><td>6月</td><td>6月胜率</td><td>12月</td><td>12月胜率</td></tr>'
+      + M.band_stats.map(function(b){
+        var f=function(v,s){return v==null?'—':(s||'')+v.toFixed(1)+(s?'%':'')};
+        var w=function(v){return v==null?'—':v.toFixed(0)+'%'};
+        return '<tr style="border-bottom:1px solid #eee"><td style="padding:3px">'+b.band+'</td><td>'+b.n+'</td>'
+          +'<td>'+f(b.r3_med,'+')+'</td><td>'+w(b.r3_wr)+'</td>'
+          +'<td>'+f(b.r6_med,'+')+'</td><td>'+w(b.r6_wr)+'</td>'
+          +'<td>'+f(b.r12_med,'+')+'</td><td>'+w(b.r12_wr)+'</td></tr>';
+      }).join('')
+      + '</table>'
+      + (M.level_note ? '<br><span style="color:#a85100">'+M.level_note+'</span>' : '')
+      + '</div>';
+  }
+  document.getElementById('method').innerHTML = html;
 }
 
 /* 缩放浮层 */
