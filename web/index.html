@@ -1910,7 +1910,7 @@ function drawExport(canvas, pool, sizeKey, rows){
   /* ---- 页脚（主路径与债指分组路径共用，v5.17 抽取） ---- */
   function _paintFooter(){
     const fy = H - FOOT;
-    const pTxt = '班马日记本每周五 23:00 更新 · 心动值仅供参考';
+    const pTxt = '班马日记本每周日 19:00 更新 · 心动值仅供参考';
     ctx.font = '700 ' + (wide ? 21 : 23) + 'px sans-serif';
     const pW = ctx.measureText(pTxt).width + 48, pH = wide ? 50 : 54;
     const g2 = ctx.createLinearGradient(PAD, 0, PAD + pW, 0);

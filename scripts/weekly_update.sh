@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 周更 + 自动推送（crontab 每周五 23:00 调用；也可手动执行）
+# 周更 + 自动推送（Windows 计划任务 FundScreener-Weekly 每周日 19:00 经
+# weekly_update_win.cmd 调用；也可手动执行。历史：曾用 crontab 每周五 23:00）
 #   1. 跑周更管线（刷新 → 筛选 → 筛后评分 → 每池 TOP20 → 导出三件套）
 #   2. 生成运营素材包到 运营/素材库/榜单/（仅本地，失败不影响周更）
 #   3. 成功且 web/data.js 有变化 → commit + push → GitHub Pages 自动重新部署
