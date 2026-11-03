@@ -43,6 +43,21 @@ header .asof{margin-top:2px;font-size:10.5px;opacity:.92;}
 .diag{margin-top:7px;padding-top:7px;border-top:1px dashed var(--line);}
 .diag .dg{font-size:10.5px;color:var(--sub);line-height:1.6;}
 .wbar i{display:block;height:100%;}
+/* 2026-11-04 审查：权重条大白话标注 + 诊断行折叠 + 周频提示 + 点选读数条 */
+.wlab{font-size:9.5px;color:var(--sub);margin-top:4px;line-height:1.5;}
+.fdet summary{font-size:10.5px;color:var(--sub);cursor:pointer;list-style:none;}
+.fdet summary::-webkit-details-marker{display:none;}
+.fdet summary::before{content:'▸ ';color:#a9a294;}
+.fdet[open] summary::before{content:'▾ ';}
+.fdet .dg{margin-top:4px;opacity:.9;}
+.hnt{font-size:10px;font-weight:400;color:var(--sub);margin-left:6px;}
+.pinstrip{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;align-items:center;}
+.pinstrip .pin{background:#f4f1ec;border:1px solid var(--line);border-radius:6px;
+  padding:2px 7px;font-size:10px;color:var(--ink);font-weight:600;}
+.pinstrip .pinclr{background:none;border:none;color:var(--sub);font-size:10.5px;cursor:pointer;
+  text-decoration:underline;font-family:inherit;padding:2px 4px;}
+.tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.thint{font-size:9.5px;color:var(--sub);margin-top:3px;}
 /* 标题 */
 h2.sec{font-size:14px;font-weight:700;margin:20px 2px 10px;color:var(--ink);}
 h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
@@ -133,8 +148,9 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
     <div class="gauge" id="gauge"></div>
     <div class="txt">
       <div class="t1" id="sc-title">—</div>
-      <div class="t2">综合股债性价比、杠杆情绪、恐慌情绪、信用周期四大核心维度，0-100 越高越热。</div>
+      <div class="t2">把「便宜程度、杠杆热度、恐慌程度、资金面」四项合成一个 0~100 的分数：越高越热，越低越冷。</div>
       <div class="wbar" id="wbar"></div>
+      <div class="wlab" id="wlab"></div>
       <div class="diag" id="diag" style="display:none"></div>
     </div>
   </div>
@@ -150,8 +166,8 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
     <div class="legend">
       <span class="lg"><i class="sw" style="background:#e8743b"></i>综合温度</span>
       <span class="lg"><i class="sw" style="background:#8a93a3"></i>中证全指点位（右轴）</span>
-      <span class="lg"><i class="swband" style="background:#f8d5d1"></i>熊市</span>
-      <span class="lg"><i class="swband" style="background:#d4e8fa"></i>牛市</span>
+      <span class="lg"><i class="swband" style="background:#d8ecd8"></i>熊市</span>
+      <span class="lg"><i class="swband" style="background:#f8d5d1"></i>牛市</span>
       <button class="zbtn" id="cmp-zoom" type="button">⤢ 放大</button>
     </div>
     <div id="cmp-chart"></div>
@@ -207,21 +223,26 @@ if (!M || !M.indicators){
       +'<span class="lv" style="color:'+col+'">'+level+'</span></div>';
     document.getElementById('sc-title').textContent = '当前市场温度 '+score+' · '+level;
     /* Phase2 透明度：有效指标/权重覆盖/离散度 + 牛熊阈值敏感 + 分级解读 */
+    /* 2026-11-04 审查：诊断行原是一串术语（权重覆盖/指标分歧/多窗口…）用户看不懂 →
+       折叠为「数据完整度与口径」+ 大白话；权重条补文字标注（原为无说明的裸色条） */
     var diag = document.getElementById('diag');
     if (diag){
       var bits = [];
-      if (M.n_valid_core != null) bits.push('核心有效 '+M.n_valid_core+'/4');
-      if (M.weight_coverage != null) bits.push('权重覆盖 '+(M.weight_coverage*100).toFixed(0)+'%');
-      if (M.heat_std != null) bits.push('指标分歧 ±'+M.heat_std);
-      if (M.bb_note) bits.push('牛熊('+((M.bb_thresholds&&M.bb_thresholds.default*100)||30)+'%) '+M.bb_note);
+      if (M.n_valid_core != null) bits.push('核心指标 '+M.n_valid_core+'/4 项有效');
+      if (M.weight_coverage != null) bits.push('数据覆盖 '+(M.weight_coverage*100).toFixed(0)+'%');
+      if (M.heat_std != null) bits.push('各指标冷热分歧 ±'+M.heat_std+'（越大说明几项指标越不一致）');
+      if (M.bb_note) bits.push('牛熊划分（按回撤20%）：'+M.bb_note);
       if (M.multiwindow){
         var mw = Object.keys(M.multiwindow).map(function(k){
-          var v=M.multiwindow[k]; return v && v.score!=null ? k+'='+v.score+'('+(v.level||'')+')' : null;
-        }).filter(Boolean).join(' ');
-        if (mw) bits.push('多窗口 '+mw);
+          var v=M.multiwindow[k];
+          return v && v.score!=null ? String(k).replace('y','')+'年口径 '+v.score+'（'+(v.level||'')+'）' : null;
+        }).filter(Boolean).join('、');
+        if (mw) bits.push('换个时间窗看：'+mw);
       }
-      diag.innerHTML = '<div class="dg">'+bits.join(' · ')+'</div>'
-        + (M.level_note ? '<div class="dg" style="opacity:.72">'+M.level_note+'</div>' : '');
+      diag.innerHTML = '<details class="fdet"><summary>数据完整度与口径</summary>'
+        +'<div class="dg">'+bits.join('；')+'</div>'
+        +(M.level_note ? '<div class="dg" style="opacity:.75">'+M.level_note+'</div>' : '')
+        +'</details>';
       diag.style.display = bits.length ? 'block' : 'none';
     }
     var w=M.weights||{}, tot=0; for(var k in w) tot+=w[k];
@@ -230,6 +251,9 @@ if (!M || !M.indicators){
       var cols=['#e8743b','#c05a28','#a85100','#8a93a3'];
       return '<i style="width:'+pct+'%;background:'+cols[i%4]+'"></i>';
     }).join('');
+    var WNAME={erp:'股债利差',margin:'两融',ivix:'波动率',m1m2:'资金面'};
+    document.getElementById('wlab').textContent = '综合口径：'
+      + CORE.map(function(k){ return (WNAME[k]||k)+' '+Math.round(((w[k]||0)/(tot||1))*100)+'%'; }).join(' · ');
   })();
 
   /* 2. 指标卡 + 点开详情 */
@@ -252,13 +276,18 @@ if (!M || !M.indicators){
     var pad=(mx-mn||1)*0.1; mn-=pad; mx+=pad;
     var X=i=>L+(W-L-R)*(i/(n-1)), Y=v=>T+(H-T-B)*(1-(v-mn)/((mx-mn)||1));
     var path=series.map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(+p[1]).toFixed(1)).join(' ');
-    /* 纵轴：三条网格 + 数值（上/中/下），解决"看不出纵轴值" */
+    /* 纵轴：四档网格 + 数值（带单位、去 -0.0%）——2026-11-04 审查：原三档太少且
+       ERP 下沿出现 -0.0%（pad 把最小值推成微负，toFixed 后成负零） */
+    var ax=function(v){
+      var s=fmt?fmt(v):(v.toFixed(1)+(unit||''));
+      if(Math.abs(parseFloat(s))===0) s=String(s).replace('-','');
+      return s;
+    };
     var grid='';
-    [mx,(mx+mn)/2,mn].forEach(function(v){
+    [mx, mn+(mx-mn)*2/3, mn+(mx-mn)/3, mn].forEach(function(v){
       var y=Y(v);
       grid+='<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke="#ece6dc" stroke-width="1"/>'
-        +'<text x="'+(L-4)+'" y="'+(y+3).toFixed(1)+'" font-size="8.5" fill="#a9a294" text-anchor="end">'
-        +(fmt?fmt(v):v.toFixed(1))+'</text>';
+        +'<text x="'+(L-4)+'" y="'+(y+3).toFixed(1)+'" font-size="9" fill="#a9a294" text-anchor="end">'+ax(v)+'</text>';
     });
     /* 横轴：年份刻度（约 6 档），解决"看不出年份" */
     var ticks='', step=Math.max(1,Math.round((n-1)/5));
@@ -302,13 +331,12 @@ if (!M || !M.indicators){
     var fmt = (k==='buffett'||k==='breaknet'||k==='erp') ? function(x){return x.toFixed(1)+'%';} : null;
     var d=document.createElement('div');
     d.className='detail';
-    d.innerHTML='<div class="dt">'+v.label+' 走势 <button class="zbtn" type="button">⤢ 放大</button></div>'
+    d.innerHTML='<div class="dt">'+v.label+' 走势 <span class="hnt">周频 · 点一下读数</span> <button class="zbtn" type="button">⤢ 放大</button></div>'
       +'<div class="dd">'+v.desc+'</div>'
       +'<div class="chartbox" data-raw="'+encodeURIComponent(JSON.stringify(v.series||[]))+'"></div>'
       +'<div class="kv">'
         +'<span class="k">当前<b>'+(v.value==null?'—':v.value+(v.unit||''))+'</b></span>'
         +'<span class="k">热度分位<b>'+(v.pct==null?'—':v.pct.toFixed(0)+'%')+'</b></span>'
-        +'<span class="k">热度<b style="color:'+heatColor(v.heat)+'">'+(v.heat==null?'—':v.heat.toFixed(0))+'</b></span>'
       +'</div>'
       +'<div class="rules"><b>怎么算：</b>'+v.how+'</div>'
       +'<div class="rules"><b>常见范围：</b>'+v.range+'</div>'
@@ -317,8 +345,9 @@ if (!M || !M.indicators){
     var box=d.querySelector('.chartbox');
     var series=JSON.parse(decodeURIComponent(box.dataset.raw));
     box.innerHTML=lineChart(series, heatColor(v.heat), fmt, v.unit);
-    /* 点选读数（2026-11-03 发布前审查）：点/触一下显示 年月 + 数值+单位；放大改走右上按钮 */
-    attachPicker(box.querySelector('svg'), box);
+    /* 点选读数（2026-11-03 发布前审查）：点/触一下显示 年月 + 数值+单位；展开即示范末点；
+       放大改走右上按钮（放大后可连点多点、编号对照） */
+    attachPicker(box.querySelector('svg'), box, {showLast:true});
     d.querySelector('.zbtn').onclick=function(ev){ ev.stopPropagation(); openZoom(v.label+' 走势', lineChart(series, heatColor(v.heat), fmt, v.unit)); };
     d.scrollIntoView({behavior:'smooth', block:'nearest'});
   }
@@ -327,7 +356,7 @@ if (!M || !M.indicators){
   (function(){
     var bt=(M.backtest||[]).filter(b=>b.score!=null && b.pe!=null);
     if(bt.length<2){ document.getElementById('cmp-chart').innerHTML='<div class="mdesc">历史数据不足。</div>'; return; }
-    var W=400,H=190,L=24,R=8,T=14,B=22,n=bt.length;   /* L/R 加宽：放温度轴与右缘刻度 */
+    var W=400,H=190,L=24,R=30,T=14,B=22,n=bt.length;   /* L=温度轴刻度 / R=点位轴刻度 */
     var X=i=>L+(W-L-R)*(i/(n-1)), Ys=v=>T+(H-T-B)*(1-v/100);
     var pes=bt.map(b=>b.pe), pmin=Math.min.apply(null,pes), pmax=Math.max.apply(null,pes);
     var Yp=v=>T+(H-T-B)*(1-(v-pmin)/((pmax-pmin)||1));
@@ -340,7 +369,7 @@ if (!M || !M.indicators){
     var bands='';
     (M.bullbear||[]).forEach(function(b){
       var x0=XD(b.start), x1=XD(b.end);
-      var fill=b.type==='bear'?'#f8d5d1':'#d4e8fa';   /* 加深：原 #fdecea/#dff0fb 几乎不可见 */
+      var fill=b.type==='bear'?'#d8ecd8':'#f8d5d1';   /* 2026-11-04 用户定：牛市=红、熊市=绿（红涨绿跌习惯） */
       bands+='<rect x="'+x0.toFixed(1)+'" y="'+T+'" width="'+Math.max(1,(x1-x0)).toFixed(1)+'" height="'+(H-T-B)+'" fill="'+fill+'" opacity=".7"/>';
     });
     var pathS=bt.map((b,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Ys(b.score).toFixed(1)).join(' ');
@@ -361,7 +390,13 @@ if (!M || !M.indicators){
       +' data-col="#e8743b">'+bands+grid
       +'<path d="'+pathP+'" fill="none" stroke="#8a93a3" stroke-width="1.1" opacity=".8"/>'
       +'<path d="'+pathS+'" fill="none" stroke="#e8743b" stroke-width="1.6"/>'
-      +ticks+'</svg>';
+      +ticks
+      /* 右轴（点位）两个刻度 + 曲线末端标注（2026-11-04 采纳：防把点位线读成温度） */
+      +'<text x="'+(W-R+4)+'" y="'+(T+8)+'" font-size="8" fill="#8a93a3">'+Math.round(pmax)+'</text>'
+      +'<text x="'+(W-R+4)+'" y="'+(H-B-1)+'" font-size="8" fill="#8a93a3">'+Math.round(pmin)+'</text>'
+      +'<text x="'+(X(n-1)-3).toFixed(1)+'" y="'+(Ys(bt[n-1].score)-5).toFixed(1)+'" font-size="8" fill="#e8743b" text-anchor="end">温度</text>'
+      +'<text x="'+(X(n-1)-3).toFixed(1)+'" y="'+(Yp(bt[n-1].pe)-5).toFixed(1)+'" font-size="8" fill="#8a93a3" text-anchor="end">点位</text>'
+      +'</svg>';
     var box=document.getElementById('cmp-chart');
     box.innerHTML=svg;
     attachPicker(box.querySelector('svg'), box);   /* 点选读数：年月·温度·点位 */
@@ -370,7 +405,7 @@ if (!M || !M.indicators){
     var nb=bb.filter(b=>b.type==='bear').length, nu=bb.length-nb;
     document.getElementById('cmp-note').innerHTML=
       '回测 '+bt.length+' 个月（'+bt[0].d+' ~ '+bt[n-1].d+'），自动识别 <b>'+nb+' 段熊市 / '+nu+' 段牛市</b>（20% 定义）：'
-      +'浅红为熊市区间、浅蓝为牛市区间（点图可读数）。综合温度≥70 多对应点位阶段性高位，≤30 接近底部区域。仅作历史规律示意，不构成预测。';
+      +'浅红为牛市区间、浅绿为熊市区间（点图可读数）。综合温度≥70 多对应点位阶段性高位，≤30 接近底部区域。仅作历史规律示意，不构成预测。';
   })();
 
   /* 4. 指标说明（全部8项，含 caveat 口径局限）+ 回测分档统计（D2） */
@@ -389,7 +424,7 @@ if (!M || !M.indicators){
   if (M.band_stats && M.band_stats.length){
     html += '<div class="mdesc"><b>回测：各温度档未来收益（中证全指）</b><br>'
       + '<span style="opacity:.75">样本为历史月度，前瞻收益=该档后N月中证全指涨跌幅中位数，胜率为正收益占比。</span><br>'
-      + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:5px">'
+      + '<div class="tscroll"><table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:5px">'
       + '<tr style="border-bottom:1px solid #ccc"><td style="padding:3px">档位</td><td>n</td><td>3月</td><td>3月胜率</td><td>6月</td><td>6月胜率</td><td>12月</td><td>12月胜率</td></tr>'
       + M.band_stats.map(function(b){
         var f=function(v,s){return v==null?'—':(s||'')+v.toFixed(1)+(s?'%':'')};
@@ -399,7 +434,7 @@ if (!M || !M.indicators){
           +'<td>'+f(b.r6_med,'+')+'</td><td>'+w(b.r6_wr)+'</td>'
           +'<td>'+f(b.r12_med,'+')+'</td><td>'+w(b.r12_wr)+'</td></tr>';
       }).join('')
-      + '</table>'
+      + '</table></div><div class="thint">← 左右滑动看全部列</div>'
       + (M.level_note ? '<br><span style="color:#a85100">'+M.level_note+'</span>' : '')
       + '</div>';
   }
@@ -410,11 +445,15 @@ if (!M || !M.indicators){
   document.getElementById('method').innerHTML = html;
 }
 
-/* 点选读数（2026-11-03 发布前审查）：点/触走势图任意处 → 显示 年月 + 纵轴数值；
-   序列经 svg 的 data-s（/data-s2）携带，内联小图与放大浮层共用同一实现。 */
-function attachPicker(svg, box){
+/* 点选读数（2026-11-03 审查；2026-11-04 升级：放大浮层可连点多点、编号对照）：
+   点/触走势图任意处 → 显示 年月 + 纵轴数值；multi 模式每点一次钉住一个编号标记，
+   图下方出编号清单（可重点取消/清空）。序列经 svg 的 data-s（/data-s2）携带，
+   内联小图与放大浮层共用同一实现。 */
+function attachPicker(svg, box, opts){
+  opts = opts || {};
   if(!svg || !box || svg.dataset.wired || !svg.getAttribute('data-s')) return;
   svg.dataset.wired='1';
+  var multi = !!opts.multi;
   var num=function(k,d){ var v=svg.getAttribute('data-'+k); return v==null?d:+v; };
   var W=num('w',400),H=num('h',150),L=num('l',6),R=num('r',6),T=num('t',12),B=num('b',20);
   var series=JSON.parse(decodeURIComponent(svg.getAttribute('data-s')));
@@ -440,32 +479,67 @@ function attachPicker(svg, box){
   dot.setAttribute('visibility','hidden'); svg.appendChild(dot);
   var tip=document.createElement('div'); tip.className='ptip'; tip.style.display='none';
   box.appendChild(tip);
+  var pins=[], pg=document.createElementNS(NS,'g'); svg.appendChild(pg);
+  var strip=null;
   svg.style.cursor='pointer';
-  svg.onclick=function(ev){
-    var r=svg.getBoundingClientRect();
-    var vbW=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||W;
-    var x=(ev.clientX-r.left)/Math.max(1,r.width)*vbW;
-    var i=Math.round((x-L)/((W-L-R)*(series.length-1)));
-    i=Math.max(0,Math.min(series.length-1,i));
+  if(multi){ strip=document.createElement('div'); strip.className='pinstrip'; strip.style.display='none'; box.appendChild(strip); }
+  function tipText(i){
+    if(mode==='cmp'){
+      var pe=s2?+s2[i][1]:null;
+      return series[i][0]+' · 温度 '+Math.round(vals[i])+(pe==null?'':' · 点位 '+Math.round(pe));
+    }
+    var v=vals[i];
+    var body=Math.abs(v)>=100?v.toFixed(0):v.toFixed(2);
+    return series[i][0]+' · '+body+unit;
+  }
+  function renderPins(){
+    while(pg.firstChild) pg.removeChild(pg.firstChild);
+    if(!strip) return;
+    if(!pins.length){ strip.style.display='none'; strip.innerHTML=''; return; }
+    strip.style.display='flex';
+    strip.innerHTML=pins.map(function(i,k){ return '<span class="pin">'+(k+1)+' '+tipText(i)+'</span>'; }).join('')
+      +'<button class="pinclr" type="button">清空</button>';
+    strip.querySelector('.pinclr').onclick=function(ev){ ev.stopPropagation(); pins=[]; renderPins(); hideTip(); };
+    pins.forEach(function(i,k){
+      var c=document.createElementNS(NS,'circle');
+      c.setAttribute('cx',X(i).toFixed(1)); c.setAttribute('cy',Y(vals[i]).toFixed(1));
+      c.setAttribute('r','6.5'); c.setAttribute('fill',col);
+      c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','1.5');
+      pg.appendChild(c);
+      var t=document.createElementNS(NS,'text');
+      t.setAttribute('x',X(i).toFixed(1)); t.setAttribute('y',(Y(vals[i])+2.8).toFixed(1));
+      t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','8');
+      t.setAttribute('font-weight','700'); t.setAttribute('fill','#fff');
+      t.textContent=String(k+1); pg.appendChild(t);
+    });
+  }
+  function hideTip(){ tip.style.display='none'; guide.setAttribute('visibility','hidden'); dot.setAttribute('visibility','hidden'); }
+  function show(i, pin){
     var px=X(i), py=Y(vals[i]);
     guide.setAttribute('x1',px.toFixed(1)); guide.setAttribute('x2',px.toFixed(1));
     guide.setAttribute('y1',T); guide.setAttribute('y2',H-B);
     guide.setAttribute('visibility','visible');
     dot.setAttribute('cx',px.toFixed(1)); dot.setAttribute('cy',py.toFixed(1));
     dot.setAttribute('fill',col); dot.setAttribute('visibility','visible');
-    var txt;
-    if(mode==='cmp'){
-      var pe=s2?+s2[i][1]:null;
-      txt=series[i][0]+' · 温度 '+Math.round(vals[i])+(pe==null?'':' · 点位 '+Math.round(pe));
-    }else{
-      var v=vals[i];
-      var body=Math.abs(v)>=100?v.toFixed(0):v.toFixed(2);
-      txt=series[i][0]+' · '+body+unit;
+    tip.textContent=tipText(i); tip.style.display='block';
+    tip.style.left=(px/((svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||W)*100)+'%';
+    tip.style.top=(py/H*100)+'%';
+    if(multi && pin){
+      var at=pins.indexOf(i);
+      if(at>=0){ pins.splice(at,1); } else { if(pins.length>=8) pins.shift(); pins.push(i); }
+      renderPins();
     }
-    tip.textContent=txt; tip.style.display='block';
-    tip.style.left=(px/vbW*100)+'%'; tip.style.top=(py/H*100)+'%';
+  }
+  svg.onclick=function(ev){
+    var r=svg.getBoundingClientRect();
+    var vbW=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||W;
+    var x=(ev.clientX-r.left)/Math.max(1,r.width)*vbW;
+    var i=Math.round((x-L)/((W-L-R)*(series.length-1)));
+    i=Math.max(0,Math.min(series.length-1,i));
+    show(i, multi);
     if(ev.stopPropagation) ev.stopPropagation();
   };
+  if(opts.showLast) show(series.length-1, false);   /* 详情展开即示范读数 */
 }
 /* 缩放浮层 */
 function openZoom(cap, svg){
@@ -474,7 +548,7 @@ function openZoom(cap, svg){
   body.innerHTML=svg;
   document.getElementById('zoom').classList.add('show');
   var s=body.querySelector('svg');
-  if(s) attachPicker(s, body);          /* 放大后同样可点读数 */
+  if(s) attachPicker(s, body, {multi:true});   /* 放大后可连点多点、编号对照 */
 }
 function closeZoom(){ document.getElementById('zoom').classList.remove('show'); }
 </script>

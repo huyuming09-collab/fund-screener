@@ -600,10 +600,12 @@ if (D.market && D.market.indicators) {
       && !isNaN(new Date(mk.asof + 'T00:00:00').getTime())
       && new Date(mk.asof + 'T00:00:00') <= new Date(new Date().toDateString()));
   // market.html 源码级断言：牛熊色带双日期格式解析（YYYY-MM-DD 曾致 NaN 不渲染）+ 点选读数
-  chk('market.html：色带双日期解析 + 点选读数 + 图文一致（浅红/浅蓝）',
+  // 2026-11-04 二审：牛市=红 #f8d5d1 / 熊市=绿 #d8ecd8；放大浮层可连点多点（multi）
+  chk('market.html：色带双日期解析 + 点选读数 + 图文一致（红牛绿熊）',
       mktHtml.includes('p[2]?+p[2]:1') && mktHtml.includes('ptip')
-      && mktHtml.includes('浅红为熊市区间') && mktHtml.includes('#f8d5d1')
-      && mktHtml.includes('#d4e8fa'));
+      && mktHtml.includes('浅红为牛市区间') && mktHtml.includes('#f8d5d1')
+      && mktHtml.includes('#d8ecd8') && mktHtml.includes('multi:true')
+      && mktHtml.includes("replace('-','')"));   /* 负零刻度守卫（ERP 下沿曾显示 -0.0%） */
 } else {
   chk('市场情绪（8指标）存在', false);
 }
