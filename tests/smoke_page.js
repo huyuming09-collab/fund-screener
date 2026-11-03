@@ -4,6 +4,7 @@
 const fs = require('fs');
 const html = fs.readFileSync('web/index.html','utf8');
 const dataJs = fs.readFileSync('web/data.js','utf8');
+const mktHtml = fs.readFileSync('web/market.html','utf8');
 const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
 
 const classes = new Set();
@@ -591,6 +592,18 @@ if (D.market && D.market.indicators) {
   chk('牛熊区间自动推导（≥4 段，含 type/start/end，交替标注）',
       (mk.bullbear||[]).length >= 4
       && (mk.bullbear||[]).every(b => ['bear','bull'].includes(b.type) && b.start && b.end));
+  // 2026-11-03 发布前审查：asof 曾因 W-FRI 周标签显示未来日期（11-02 数据 → 11-06）。
+  // 注意：本断言在 eval 的模板串内，不能写 \d（会被模板转义吃掉）→ 用字符位校验。
+  chk('市场情绪 asof 不是未来日期',
+      typeof mk.asof === 'string' && mk.asof.length === 10
+      && mk.asof[4] === '-' && mk.asof[7] === '-'
+      && !isNaN(new Date(mk.asof + 'T00:00:00').getTime())
+      && new Date(mk.asof + 'T00:00:00') <= new Date(new Date().toDateString()));
+  // market.html 源码级断言：牛熊色带双日期格式解析（YYYY-MM-DD 曾致 NaN 不渲染）+ 点选读数
+  chk('market.html：色带双日期解析 + 点选读数 + 图文一致（浅红/浅蓝）',
+      mktHtml.includes('p[2]?+p[2]:1') && mktHtml.includes('ptip')
+      && mktHtml.includes('浅红为熊市区间') && mktHtml.includes('#f8d5d1')
+      && mktHtml.includes('#d4e8fa'));
 } else {
   chk('市场情绪（8指标）存在', false);
 }

@@ -63,8 +63,18 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
   padding:14px;margin-top:2px;}
 .detail .dt{font-size:15px;font-weight:700;margin-bottom:2px;}
 .detail .dd{font-size:11.5px;color:var(--sub);line-height:1.6;margin-bottom:10px;}
-.chartbox{width:100%;background:#faf8f4;border-radius:10px;padding:6px 4px 0;}
+.chartbox{width:100%;background:#faf8f4;border-radius:10px;padding:6px 4px 0;position:relative;}
 .chartbox svg{width:100%;height:auto;display:block;}
+/* 点选读数气泡 + 放大按钮（2026-11-03 发布前审查） */
+.ptip{position:absolute;transform:translate(-50%,-135%);background:rgba(34,30,24,.94);color:#fff;
+  font-size:10.5px;font-weight:600;padding:4px 8px;border-radius:6px;white-space:nowrap;
+  pointer-events:none;z-index:6;box-shadow:0 2px 6px rgba(0,0,0,.18);}
+.zbtn{margin-left:6px;font-size:11.5px;background:#f4f1ec;border:1px solid var(--line);border-radius:7px;
+  padding:2px 8px;cursor:pointer;color:var(--sub);font-family:inherit;}
+.zbtn:active{background:#ece7de;}
+#cmp-chart{position:relative;}
+#zoom-body{position:relative;}
+#zoom .ptip{font-size:14px;padding:6px 12px;}
 .kv{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px;}
 .kv .k{background:#f4f1ec;border-radius:8px;padding:5px 9px;font-size:10.5px;color:var(--sub);}
 .kv .k b{color:var(--ink);font-weight:700;margin-left:3px;}
@@ -129,19 +139,20 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
     </div>
   </div>
 
-  <h2 class="sec">核心指标<span class="hint">点击查看走势与说明</span></h2>
+  <h2 class="sec">核心指标<span class="hint">点卡看走势 · 点图读年月与数值</span></h2>
   <div class="grid" id="core-grid"></div>
 
   <h2 class="sec">进阶 / 参考指标</h2>
   <div class="grid" id="adv-grid"></div>
 
-  <h2 class="sec">对照回测<span class="hint">历史牛熊 vs 综合温度</span></h2>
+  <h2 class="sec">对照回测<span class="hint">历史牛熊 vs 综合温度 · 点图读数</span></h2>
   <div class="cmp">
     <div class="legend">
       <span class="lg"><i class="sw" style="background:#e8743b"></i>综合温度</span>
       <span class="lg"><i class="sw" style="background:#8a93a3"></i>中证全指点位（右轴）</span>
-      <span class="lg"><i class="swband" style="background:#fdecea"></i>熊市</span>
-      <span class="lg"><i class="swband" style="background:#dff0fb"></i>牛市</span>
+      <span class="lg"><i class="swband" style="background:#f8d5d1"></i>熊市</span>
+      <span class="lg"><i class="swband" style="background:#d4e8fa"></i>牛市</span>
+      <button class="zbtn" id="cmp-zoom" type="button">⤢ 放大</button>
     </div>
     <div id="cmp-chart"></div>
     <div class="note" id="cmp-note"></div>
@@ -153,7 +164,7 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
   </details>
 
   <div class="footer">
-    <div><b>＠班马成长日记</b> · 班马日记本每周更新</div>
+    <div><b>＠班马成长日记</b> · 班马日记本每周日 19:00 更新</div>
     <div style="margin-top:6px">数据来自公开渠道，分位按近5年历史自算；仅为数据分析，不构成投资建议。基金有风险，投资须谨慎。</div>
   </div>
 </div>
@@ -234,20 +245,34 @@ if (!M || !M.indicators){
     if(k==='breaknet') return v.value>=10?'破净率高 → 底部区域':(v.value<=5?'破净率低 → 顶部区域':'破净率中等');
     return '';
   }
-  function lineChart(series, col, fmt){
+  function lineChart(series, col, fmt, unit){
     if(!series || series.length<2) return '<div class="mdesc">历史数据不足，无法画图。</div>';
-    var W=400,H=150,L=6,R=6,T=12,B=20,n=series.length;
+    var W=400,H=150,L=36,R=8,T=12,B=20,n=series.length;   /* L 加宽：放纵轴刻度值 */
     var vals=series.map(p=>+p[1]), mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals);
     var pad=(mx-mn||1)*0.1; mn-=pad; mx+=pad;
     var X=i=>L+(W-L-R)*(i/(n-1)), Y=v=>T+(H-T-B)*(1-(v-mn)/((mx-mn)||1));
     var path=series.map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(+p[1]).toFixed(1)).join(' ');
-    var svg='<svg viewBox="0 0 '+W+' '+H+'">'
+    /* 纵轴：三条网格 + 数值（上/中/下），解决"看不出纵轴值" */
+    var grid='';
+    [mx,(mx+mn)/2,mn].forEach(function(v){
+      var y=Y(v);
+      grid+='<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke="#ece6dc" stroke-width="1"/>'
+        +'<text x="'+(L-4)+'" y="'+(y+3).toFixed(1)+'" font-size="8.5" fill="#a9a294" text-anchor="end">'
+        +(fmt?fmt(v):v.toFixed(1))+'</text>';
+    });
+    /* 横轴：年份刻度（约 6 档），解决"看不出年份" */
+    var ticks='', step=Math.max(1,Math.round((n-1)/5));
+    for(var i=0;i<n;i+=step){
+      ticks+='<text x="'+X(i).toFixed(1)+'" y="'+(H-5)+'" font-size="8.5" fill="#a9a294" text-anchor="middle">'+String(series[i][0]).slice(0,4)+'</text>';
+    }
+    var svg='<svg viewBox="0 0 '+W+' '+H+'"'
+      +' data-s="'+encodeURIComponent(JSON.stringify(series))+'"'
+      +' data-w="'+W+'" data-h="'+H+'" data-l="'+L+'" data-r="'+R+'" data-t="'+T+'" data-b="'+B+'"'
+      +' data-col="'+col+'" data-unit="'+(unit||'')+'">'
+      +grid
       +'<path d="'+path+'" fill="none" stroke="'+col+'" stroke-width="1.3"/>'
       +'<circle cx="'+X(n-1).toFixed(1)+'" cy="'+Y(+vals[n-1]).toFixed(1)+'" r="3" fill="'+col+'"/>'
-      +'<text x="'+L+'" y="'+(H-5)+'" font-size="9" fill="#a9a294">'+series[0][0].slice(0,7)+'</text>'
-      +'<text x="'+(W-R)+'" y="'+(H-5)+'" font-size="9" fill="#a9a294" text-anchor="end">'+series[n-1][0].slice(0,7)+'</text>'
-      +'<text x="'+L+'" y="'+(T+8)+'" font-size="9" fill="#a9a294">'+(fmt?fmt(mx):mx.toFixed(1))+'</text>'
-      +'<text x="'+L+'" y="'+(H-B-1)+'" font-size="9" fill="#a9a294">'+(fmt?fmt(mn):mn.toFixed(1))+'</text>'
+      +ticks
       +'</svg>';
     return svg;
   }
@@ -277,7 +302,7 @@ if (!M || !M.indicators){
     var fmt = (k==='buffett'||k==='breaknet'||k==='erp') ? function(x){return x.toFixed(1)+'%';} : null;
     var d=document.createElement('div');
     d.className='detail';
-    d.innerHTML='<div class="dt">'+v.label+' 走势</div>'
+    d.innerHTML='<div class="dt">'+v.label+' 走势 <button class="zbtn" type="button">⤢ 放大</button></div>'
       +'<div class="dd">'+v.desc+'</div>'
       +'<div class="chartbox" data-raw="'+encodeURIComponent(JSON.stringify(v.series||[]))+'"></div>'
       +'<div class="kv">'
@@ -291,10 +316,10 @@ if (!M || !M.indicators){
     cardEl.insertAdjacentElement('afterend', d);
     var box=d.querySelector('.chartbox');
     var series=JSON.parse(decodeURIComponent(box.dataset.raw));
-    box.innerHTML=lineChart(series, heatColor(v.heat), fmt);
-    // 点图放大
-    box.style.cursor='pointer';
-    box.onclick=function(){ openZoom(v.label+' 走势', lineChart(series, heatColor(v.heat), fmt)); };
+    box.innerHTML=lineChart(series, heatColor(v.heat), fmt, v.unit);
+    /* 点选读数（2026-11-03 发布前审查）：点/触一下显示 年月 + 数值+单位；放大改走右上按钮 */
+    attachPicker(box.querySelector('svg'), box);
+    d.querySelector('.zbtn').onclick=function(ev){ ev.stopPropagation(); openZoom(v.label+' 走势', lineChart(series, heatColor(v.heat), fmt, v.unit)); };
     d.scrollIntoView({behavior:'smooth', block:'nearest'});
   }
 
@@ -302,36 +327,50 @@ if (!M || !M.indicators){
   (function(){
     var bt=(M.backtest||[]).filter(b=>b.score!=null && b.pe!=null);
     if(bt.length<2){ document.getElementById('cmp-chart').innerHTML='<div class="mdesc">历史数据不足。</div>'; return; }
-    var W=400,H=190,L=6,R=6,T=14,B=22,n=bt.length;
+    var W=400,H=190,L=24,R=8,T=14,B=22,n=bt.length;   /* L/R 加宽：放温度轴与右缘刻度 */
     var X=i=>L+(W-L-R)*(i/(n-1)), Ys=v=>T+(H-T-B)*(1-v/100);
     var pes=bt.map(b=>b.pe), pmin=Math.min.apply(null,pes), pmax=Math.max.apply(null,pes);
     var Yp=v=>T+(H-T-B)*(1-(v-pmin)/((pmax-pmin)||1));
-    // 牛熊色带（按日期映射到 X）
-    var d0=new Date(bt[0].d+'-01').getTime(), d1=new Date(bt[n-1].d+'-01').getTime();
-    var XD=s=>{ var t=new Date(s+'-01').getTime(); return L+(W-L-R)*Math.max(0,Math.min(1,(t-d0)/((d1-d0)||1))); };
+    // 牛熊色带（按日期映射到 X）。日期两种格式并存：backtest 用 YYYY-MM、bullbear 用
+    // YYYY-MM-DD——旧代码统一 +'-01' 会让 YYYY-MM-DD 变成非法日期 → NaN → 色带整段不渲染
+    // （2026-11-03 发布前审查修复：说明文字写着红蓝、图里却没有任何色带）。
+    var parseD=function(s){ var p=String(s).split('-'); return new Date(+p[0],(+p[1]||1)-1,p[2]?+p[2]:1).getTime(); };
+    var d0=parseD(bt[0].d), d1=parseD(bt[n-1].d);
+    var XD=s=>{ var t=parseD(s); return L+(W-L-R)*Math.max(0,Math.min(1,(t-d0)/((d1-d0)||1))); };
     var bands='';
     (M.bullbear||[]).forEach(function(b){
       var x0=XD(b.start), x1=XD(b.end);
-      var fill=b.type==='bear'?'#fdecea':'#dff0fb';
-      bands+='<rect x="'+x0.toFixed(1)+'" y="'+T+'" width="'+Math.max(1,(x1-x0)).toFixed(1)+'" height="'+(H-T-B)+'" fill="'+fill+'" opacity=".55"/>';
+      var fill=b.type==='bear'?'#f8d5d1':'#d4e8fa';   /* 加深：原 #fdecea/#dff0fb 几乎不可见 */
+      bands+='<rect x="'+x0.toFixed(1)+'" y="'+T+'" width="'+Math.max(1,(x1-x0)).toFixed(1)+'" height="'+(H-T-B)+'" fill="'+fill+'" opacity=".7"/>';
     });
     var pathS=bt.map((b,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Ys(b.score).toFixed(1)).join(' ');
     var pathP=bt.map((b,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Yp(b.pe).toFixed(1)).join(' ');
-    var svg='<svg viewBox="0 0 '+W+' '+H+'">'+bands
+    /* 温度轴网格（0/50/100）+ 年份刻度：与指标走势同款可读性（2026-11-03 审查） */
+    var grid='';
+    [100,50,0].forEach(function(v){ var y=Ys(v);
+      grid+='<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke="#ece6dc" stroke-width="1"/>'
+        +'<text x="'+(L-3)+'" y="'+(y+3).toFixed(1)+'" font-size="8" fill="#a9a294" text-anchor="end">'+v+'</text>'; });
+    var ticks='', step=Math.max(1,Math.round((n-1)/5));
+    for(var i=0;i<n;i+=step){
+      ticks+='<text x="'+X(i).toFixed(1)+'" y="'+(H-6)+'" font-size="8.5" fill="#a9a294" text-anchor="middle">'+String(bt[i].d).slice(0,4)+'</text>';
+    }
+    var svg='<svg viewBox="0 0 '+W+' '+H+'"'
+      +' data-s="'+encodeURIComponent(JSON.stringify(bt.map(function(b){return [b.d,b.score];})))+'"'
+      +' data-s2="'+encodeURIComponent(JSON.stringify(bt.map(function(b){return [b.d,b.pe];})))+'"'
+      +' data-mode="cmp" data-w="'+W+'" data-h="'+H+'" data-l="'+L+'" data-r="'+R+'" data-t="'+T+'" data-b="'+B+'"'
+      +' data-col="#e8743b">'+bands+grid
       +'<path d="'+pathP+'" fill="none" stroke="#8a93a3" stroke-width="1.1" opacity=".8"/>'
       +'<path d="'+pathS+'" fill="none" stroke="#e8743b" stroke-width="1.6"/>'
-      +'<text x="'+L+'" y="'+(H-6)+'" font-size="9" fill="#a9a294">'+bt[0].d+'</text>'
-      +'<text x="'+(W-R)+'" y="'+(H-6)+'" font-size="9" fill="#a9a294" text-anchor="end">'+bt[n-1].d+'</text>'
-      +'</svg>';
+      +ticks+'</svg>';
     var box=document.getElementById('cmp-chart');
     box.innerHTML=svg;
-    box.style.cursor='pointer';
-    box.onclick=function(){ openZoom('历史牛熊 vs 综合温度', svg); };
+    attachPicker(box.querySelector('svg'), box);   /* 点选读数：年月·温度·点位 */
+    document.getElementById('cmp-zoom').onclick=function(){ openZoom('历史牛熊 vs 综合温度', box.innerHTML); };
     var bb=(M.bullbear||[]);
     var nb=bb.filter(b=>b.type==='bear').length, nu=bb.length-nb;
     document.getElementById('cmp-note').innerHTML=
       '回测 '+bt.length+' 个月（'+bt[0].d+' ~ '+bt[n-1].d+'），自动识别 <b>'+nb+' 段熊市 / '+nu+' 段牛市</b>（20% 定义）：'
-      +'红色为熊市区间、蓝色为牛市区间。综合温度≥70 多对应点位阶段性高位，≤30 接近底部区域。仅作历史规律示意，不构成预测。';
+      +'浅红为熊市区间、浅蓝为牛市区间（点图可读数）。综合温度≥70 多对应点位阶段性高位，≤30 接近底部区域。仅作历史规律示意，不构成预测。';
   })();
 
   /* 4. 指标说明（全部8项，含 caveat 口径局限）+ 回测分档统计（D2） */
@@ -371,11 +410,71 @@ if (!M || !M.indicators){
   document.getElementById('method').innerHTML = html;
 }
 
+/* 点选读数（2026-11-03 发布前审查）：点/触走势图任意处 → 显示 年月 + 纵轴数值；
+   序列经 svg 的 data-s（/data-s2）携带，内联小图与放大浮层共用同一实现。 */
+function attachPicker(svg, box){
+  if(!svg || !box || svg.dataset.wired || !svg.getAttribute('data-s')) return;
+  svg.dataset.wired='1';
+  var num=function(k,d){ var v=svg.getAttribute('data-'+k); return v==null?d:+v; };
+  var W=num('w',400),H=num('h',150),L=num('l',6),R=num('r',6),T=num('t',12),B=num('b',20);
+  var series=JSON.parse(decodeURIComponent(svg.getAttribute('data-s')));
+  var s2a=svg.getAttribute('data-s2');
+  var s2=s2a?JSON.parse(decodeURIComponent(s2a)):null;
+  var mode=svg.getAttribute('data-mode')||'';
+  var col=svg.getAttribute('data-col')||'#e8743b';
+  var unit=svg.getAttribute('data-unit')||'';
+  if(!series||series.length<2) return;
+  var vals=series.map(function(p){return +p[1];});
+  var mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals);
+  if(mode==='cmp'){ mn=0; mx=100; }                 /* 对照图温度轴固定 0-100 */
+  var pad=(mx-mn||1)*0.1; mn-=pad; mx+=pad;
+  var X=function(i){return L+(W-L-R)*(i/(series.length-1));};
+  var Y=function(v){return T+(H-T-B)*(1-(v-mn)/((mx-mn)||1));};
+  var NS='http://www.w3.org/2000/svg';
+  var guide=document.createElementNS(NS,'line');
+  guide.setAttribute('stroke','#b9b1a3'); guide.setAttribute('stroke-dasharray','3 3');
+  guide.setAttribute('stroke-width','1'); guide.setAttribute('visibility','hidden');
+  svg.appendChild(guide);
+  var dot=document.createElementNS(NS,'circle');
+  dot.setAttribute('r','4.5'); dot.setAttribute('stroke','#fff'); dot.setAttribute('stroke-width','1.5');
+  dot.setAttribute('visibility','hidden'); svg.appendChild(dot);
+  var tip=document.createElement('div'); tip.className='ptip'; tip.style.display='none';
+  box.appendChild(tip);
+  svg.style.cursor='pointer';
+  svg.onclick=function(ev){
+    var r=svg.getBoundingClientRect();
+    var vbW=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||W;
+    var x=(ev.clientX-r.left)/Math.max(1,r.width)*vbW;
+    var i=Math.round((x-L)/((W-L-R)*(series.length-1)));
+    i=Math.max(0,Math.min(series.length-1,i));
+    var px=X(i), py=Y(vals[i]);
+    guide.setAttribute('x1',px.toFixed(1)); guide.setAttribute('x2',px.toFixed(1));
+    guide.setAttribute('y1',T); guide.setAttribute('y2',H-B);
+    guide.setAttribute('visibility','visible');
+    dot.setAttribute('cx',px.toFixed(1)); dot.setAttribute('cy',py.toFixed(1));
+    dot.setAttribute('fill',col); dot.setAttribute('visibility','visible');
+    var txt;
+    if(mode==='cmp'){
+      var pe=s2?+s2[i][1]:null;
+      txt=series[i][0]+' · 温度 '+Math.round(vals[i])+(pe==null?'':' · 点位 '+Math.round(pe));
+    }else{
+      var v=vals[i];
+      var body=Math.abs(v)>=100?v.toFixed(0):v.toFixed(2);
+      txt=series[i][0]+' · '+body+unit;
+    }
+    tip.textContent=txt; tip.style.display='block';
+    tip.style.left=(px/vbW*100)+'%'; tip.style.top=(py/H*100)+'%';
+    if(ev.stopPropagation) ev.stopPropagation();
+  };
+}
 /* 缩放浮层 */
 function openZoom(cap, svg){
   document.getElementById('zcap').textContent=cap;
-  document.getElementById('zoom-body').innerHTML=svg;
+  var body=document.getElementById('zoom-body');
+  body.innerHTML=svg;
   document.getElementById('zoom').classList.add('show');
+  var s=body.querySelector('svg');
+  if(s) attachPicker(s, body);          /* 放大后同样可点读数 */
 }
 function closeZoom(){ document.getElementById('zoom').classList.remove('show'); }
 </script>

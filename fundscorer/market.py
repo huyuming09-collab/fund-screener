@@ -197,11 +197,26 @@ def _pm(v) -> pd.Timestamp:
 
 
 def _fetch_pe_close() -> tuple:
-    """中证全指 PE + 收盘点位（一次 load_cs，省一次请求）。"""
+    """中证全指 PE + 收盘点位（一次 load_cs，省一次请求）+ 真实数据最大日。
+
+    asof 口径（2026-11-03 数据诚实修复）：PE/收盘按 W-FRI 周频重采样，最后一桶
+    标签是桶右沿的周五——会把 11-02 的数据标成 11-06（未来日期），页面"数据基准"
+    曾因此显示未来 3 天。故额外返回原始行的最大日期，asof 一律用它。
+    """
     raw = E.load_cs("000985", refresh=True) or {}
     pe = E._pairs_series(raw.get("pe") or [])
     close = E._pairs_series(raw.get("close") or [])
-    return pe, close
+    ts = []
+    for p in (raw.get("pe") or []) + (raw.get("close") or []):
+        if p and p[0]:
+            for fmt in ("%Y%m%d", "%Y-%m-%d"):
+                try:
+                    ts.append(pd.to_datetime(str(p[0]), format=fmt))
+                    break
+                except (ValueError, TypeError):
+                    continue
+    real_last = str(max(ts).date()) if ts else None
+    return pe, close, real_last
 
 
 def _fetch_bond10() -> pd.Series:
@@ -389,7 +404,7 @@ def build_market(log=print) -> dict | None:
     """组装 market.js：8 指标（含序列）+ 综合温度 + 牛熊对照回测。任何异常降级。"""
     t0 = time.time()
     try:
-        pe, close = _fetch_pe_close()
+        pe, close, real_last = _fetch_pe_close()
         bond = _fetch_bond10()
         mm = _fetch_m1m2()
         margin = _fetch_margin()
@@ -514,7 +529,9 @@ def build_market(log=print) -> dict | None:
     else:
         level_note = "历史样本不足，暂无分档回测统计。"
 
-    out = {"asof": str(pe.index.max())[:10], "weights": WEIGHTS,
+    # asof=原始数据最大日（W-FRI 周标签可能晚于数据日：11-02 数据 → 桶标签 11-06，
+    # 页面曾显示未来日期；见 _fetch_pe_close 注释）；无原始日期才回退周标签。
+    out = {"asof": real_last or str(pe.index.max())[:10], "weights": WEIGHTS,
            "core_keys": CORE_KEYS, "levels": TEMP_LEVELS,
            "indicators": ind, "score": score, "level": level,
            # Phase2 透明度字段：有效核心指标数/权重覆盖率/热度离散度/牛熊阈值敏感性

@@ -23,7 +23,7 @@
 改任何代码前先取基线，改完必须复现：
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 现基线：393 用例（380 passed + 13 已知 PermissionError，见 STATUS §4-9）
+.venv/bin/python -m pytest tests/ -q     # 现基线：393 passed（若遇 13 个 PermissionError = STATUS §4-9 临时目录 ACL，非测试失败）
 node tests/smoke_page.js                  # 现基线：SMOKE PASS
 ```
 
