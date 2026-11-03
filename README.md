@@ -2,9 +2,9 @@
 
 [![Deploy Pages](https://github.com/huyuming09-collab/fund-screener/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/huyuming09-collab/fund-screener/actions/workflows/deploy-pages.yml)
 [![Staleness](https://github.com/huyuming09-collab/fund-screener/actions/workflows/staleness.yml/badge.svg)](https://github.com/huyuming09-collab/fund-screener/actions/workflows/staleness.yml)
-[![Tests](https://img.shields.io/badge/tests-191%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-380%20passed-brightgreen)](tests/)
 
-基金评分后端 + **静态网页周榜**（响应式：手机满宽 / 电脑窄栏居中，分类 tab 切换 中短债 / 长债 / 固收+）。**先做债券类**（纯债型 / 固收+），后续扩展到混合、股票等全类型。
+基金评分后端 + **静态网页周榜**（响应式：手机满宽 / 电脑窄栏居中，分类 tab 切换 中短债 / 长债 / 固收+ / 债指 / 指数估值）。**先做债券类**（纯债型 / 固收+），后续扩展到混合、股票等全类型。
 核心不是"罗列指标"，而是**一套经过方法论论证、可回测验证、能定期自动重评**的评分体系。
 
 > 📖 **三份入口文件，各管一事**：
@@ -27,7 +27,7 @@ python3 -m venv --system-site-packages .venv
 # 给一批基金评分（自动分类分池 + 同池比较 + 红线 + 星级）
 .venv/bin/python -m fundscorer 110017 006980 009689 160323 --json out.json
 
-# ★ 周更管线（每周五 23:00 crontab 自动执行）：刷新数据 → 筛选 → 筛后评分 → 每池取前20 → 导出
+# ★ 周更管线（每周日 19:00 Windows 计划任务 FundScreener-Weekly 自动执行）：刷新数据 → 筛选 → 筛后评分 → 每池取前20 → 导出
 #   （多池：中短债 + 长债 + 固收+ 各 TOP20，任一池失败 = 整体失败、产物不动）
 .venv/bin/python -m fundscorer.pipeline                  # 完整周更
 .venv/bin/python -m fundscorer.pipeline --skip-refresh   # 不抓数据，仅用现有缓存重筛重评（调试）
@@ -86,16 +86,18 @@ GitHub 同类项目调研见 [`docs/03-GitHub项目调研.md`](docs/03-GitHub项
 先筛后评——份额合并（ABCD 合并计规模，基金级口径：经理任期/从业取同经理全份额最大值，
 业绩取历史最久份额）→ 硬条件（规模≥5亿 / 经理从业≥5年 / 现经理任本基金≥3年 /
 成立≥5年 / 近5年无单日涨幅超阈值的异常）→ 性能条件（四项分位均值进池内前55% + 年度收益分位中位≥55%，
-保证 ≥20 支）→ 按 A 类份额的 v5.2 全市场分数降序输出。
+保证 ≥20 支）→ 按 A 类份额的全市场分数降序输出（现行 `MODEL_VERSION` v5.23，见 STATUS §3 / docs/15）。
 
 - **中短债**（标准见 [`docs/07-短债筛选标准.md`](docs/07-短债筛选标准.md)）：纯求稳，S5 单日涨幅阈值 **1%**。
 - **长债**（标准见 [`docs/09-长债筛选与评分.md`](docs/09-长债筛选与评分.md)）：稳为底 + 稍偏收益，
   S5 阈值 **2%**（长债高久期合法行情日，124 件反向检验 0 例），其余与中短债同构；评分复用 v5.1 长池 IC 权重。
 - **固收+**（标准见 [`docs/10-固收加筛选与评分.md`](docs/10-固收加筛选与评分.md)）：可转债/权益增强，三闸 + 风险预算。
-- **债券指数**（口径见 [`docs/11-三池重构与指数基金口径.md`](docs/11-三池重构与指数基金口径.md)，v5.4）：
-  不看基金经理业绩——按**近三年业绩**与同池主动 TOP 榜穿插插值排名（业绩在谁和谁之间就排在它们之间，
-  分数取这两只分数的线性插值）；同一跟踪指数最多入榜 2 只，优先低费率 + 公司规模大；成立满 3 年即可参与。
+- **债券指数**（现行口径见 [`docs/16-三池筛选评分规则总览-现行版.md`](docs/16-三池筛选评分规则总览-现行版.md) 附录 A 与 [`docs/17-债券指数插值方案重设计.md`](docs/17-债券指数插值方案重设计.md)，v5.23）：
+  不看基金经理业绩——**独立「债指」页签单列成榜**（按来源池分组，组间与跨榜分数不可横向比较），
+  按**指数评估卡真分**排序（与本池主动榜同尺、跨池不可比）；同一跟踪指数**只入榜 1 只**
+  （费率↑ → 公司非货规模↑ → 跟踪偏离↓）；成立满 3 年即可参与。
   FOF / 混合型-绝对收益 / 黄金商品等类型**整体排除**。
+  （v5.4 时代的「穿插插值、同指数最多 2 只」口径见 [`docs/11-三池重构与指数基金口径.md`](docs/11-三池重构与指数基金口径.md)，已废。）
 
 ---
 
@@ -114,20 +116,24 @@ fundscorer/
   batch.py        批量抓取/持久化：nav_full 固化、池指标强制重算（refresh_pool_metrics）
   pipeline.py     ★ 周更管线：逐池刷新 → 筛选 → 筛后评分 → 每池 TOP20 → CSV/top20.json/data.js 原子导出
   cards.py        卡片数据契约：榜单 → 详情字段 + 净值曲线采样 → JSON（top20.json / web/data.js）
-  indexfund.py    ⊘ 休眠模块：债券指数型基金分类评分。由 config.INDEX["enabled"] 总开关控制（现为 False），
-                  关闭时 universe 排除指数型、F10 复判跳过、pipeline 不走指数候选分支；代码与测试均保留，可随时回开
-  backtest.py     ⚙ 研究脚本：历史回测与因素分析（docs/05），不接入周更主链
-  backtest2.py    ⚙ 研究脚本：目标函数预注册回测（docs/06），依赖 backtest.py 的面板，不接入主链
+  indexfund.py    🟢 活跃：债券指数基金评估与单列「债指」榜。由 config.INDEX["enabled"] 总开关控制（现为 True，
+                  v5.12 单列上线、现行 v5.23 久期三档制，见 docs/17）；置 False 时 universe 排除指数型、
+                  F10 复判跳过、pipeline 不走指数候选分支；代码与测试均保留，可随时关回
+  backtest.py     ⚙ 研究脚本：历史回测与因素分析（原 docs/05 已删，证据存 data/backtest_ic*.csv，见 docs/14 §3.3），不接入周更主链
+  backtest2.py    ⚙ 研究脚本：目标函数预注册回测（docs/06 不入库，存本机 运营/素材库/方法论/），依赖 backtest.py 的面板，不接入主链
   sources/        外部一次性采集：amac_nonmoney.py（非货规模）、company_scale.py（公司非货规模映射）
 tests/            单元测试（不依赖网络，合成数据验证口径；含 score_only 等价性测试）
                   + smoke_page.js（node DOM 冒烟：渲染/环比/多池 tab 切换）
 docs/             项目结构约定（00）、评分指南 V5（01）、GitHub 项目调研（03）、短债筛选标准（07）、
-                  周更与卡片（08）、长债筛选与评分（09 摘要）、固收+筛选与评分（10）、三池重构与指数基金口径（11）
+                  周更与卡片（08）、长债筛选与评分（09 摘要）、固收+筛选与评分（10）、三池重构与指数基金口径（11）、
+                  固收+ v6 设计与验证（12）、两债池规则基线（13）、评审核验与优化路线（14）、版本变动管理（15）、
+                  三池筛选评分规则总览·现行版（16，规则以此为准）、债指方案（17）、固收+ v7 设计提案（18）、
+                  指数估值模块设计（19）、三池筛选评分体系外部评审稿（2026-10-18）
                   另有三份**不随仓库发布**的深度推演：04 全市场核验、05 因素回测、06 目标函数回测、09 完整版 ——
                   它们存放在本机 `运营/素材库/方法论/`（该目录已 gitignore），完整推演在公众号「班马成长日记」
 web/              周榜网页：index.html（响应式；分类 tab 可切换 中短债/长债/固收+）+ data.js（pipeline 生成）
                   社媒导出仅**榜单图**：`?export=<pool>&size=xhs|wide`，以及 `?export=all` 全分类工作台
-scripts/          weekly_update.sh（周更 + 自动 git push，crontab 调用）
+scripts/          weekly_update_win.cmd → weekly_update.sh（周更 + 自动 git push；Windows 计划任务 FundScreener-Weekly 每周日 19:00 调用）
                   content_digest.py（周更 → 运营素材包：要点/小红书骨架/公众号骨架，**输出仅本地**）
 .github/workflows/  deploy-pages.yml（push 即把 web/ 部署到 GitHub Pages）
 data/             运行数据（**不入 git**，见 .gitignore）：cache/、nav_full/、metrics_cache.pkl、
@@ -142,7 +148,8 @@ data/             运行数据（**不入 git**，见 .gitignore）：cache/、n
 - 公开仓库：`https://github.com/huyuming09-collab/fund-screener`（MIT 许可）
 - 线上页面（GitHub Pages，由 `.github/workflows/deploy-pages.yml` 自动部署 `web/`）：
   `https://huyuming09-collab.github.io/fund-screener/`
-- 数据流：本机 crontab 每周五跑 `scripts/weekly_update.sh` → 管线导出新 `web/data.js`
+- 数据流：本机 Windows 计划任务 `FundScreener-Weekly`（每周日 19:00）调 `scripts/weekly_update_win.cmd` → `scripts/weekly_update.sh`
+  → 管线导出新 `web/data.js`
   → 自动 commit/push → Pages 工作流重新部署 → 线上榜单刷新。管线失败则不推送，线上保留上一期。
 - 克隆后首次运行：`pip install -r requirements.txt` 后直接 `python -m fundscorer.pipeline`；
   `data/cache`、`nav_full` 等会自动重建（公司规模映射两个 CSV 已随仓库提供）。
@@ -174,24 +181,26 @@ data/             运行数据（**不入 git**，见 .gitignore）：cache/、n
 | 卡片窗口/分类 tab | `CARD` |
 | 周更处理哪些池 / 日志目录 | `PIPELINE` |
 
-### 周更流程（每周五 23:00 自动）
+### 周更流程（每周日 19:00 自动）
 
 ```
-crontab: 30 23 * * 5  →  flock + scripts/weekly_update.sh  （日志 data/pipeline_cron.log）
+Windows 计划任务 FundScreener-Weekly（每周日 19:00，Asia/Shanghai）
+  → scripts/weekly_update_win.cmd → Git Bash 跑 scripts/weekly_update.sh  （日志 data/pipeline_cron.log）
+  改期史：周五 23:00（旧 crontab，历史）→ 周日 20:00（2026-10-31）→ 周日 19:00（2026-11-01）
   1. build_universe → crawl（nav/f10/inst 抓取）→ persist_nav（nav_full 固化）    ← 逐池
   2. refresh_pool_metrics：该池指标强制重算（绕过 collect_all 陈旧缓存复用）      ← 逐池
   3. load_screen_inputs(cfg=SCREENS[pool]) → screen_candidates（硬条件+性能条件漏斗）
   4. score_pool(该池全池分位基准, score_only=候选份额) —— 只对筛后基金打分，分数与全市场快照逐位一致
   5. rank_candidates(candidates, snapshot, cfg, top_n=TOP_N=20)     ← 每池各取前 20
-  6. 原子导出：data/screen_report.csv（40 行 = 双池各 20，首列 pool，内部含 star 列）
+  6. 原子导出：data/screen_report.csv（60 行 = 三池各 20，首列 pool，内部含 star 列）
      + data/top20.json（卡片契约，无星级字段，新增 pools 逐池统计）+ web/data.js
      最后按池写 rank_history.json（环比基准，嵌套池键）；漏斗/耗时/失败落 data/pipeline_YYYYMMDD.log
      **任一池失败 = 整体失败、正式产物不替换**
   7. weekly_update.sh：data.js 有变化 → git commit + push → GitHub Pages 自动重新部署
 ```
 
-网页周榜：双击打开 `web/index.html`（file:// 直接可用，顶部 tab 切换 中短债/长债/固收+/指数，页面底部常显免责声明）。
-三档响应式：手机满宽 / 电脑 ≥640px 窄栏居中 / **≥1024px 桌面宽版**（榜单双列卡片、详情居中面板）。
+网页周榜：双击打开 `web/index.html`（file:// 直接可用，顶部 tab 切换 中短债/长债/固收+/债指/指数估值，页面底部常显免责声明）。
+响应式：v1.5 起**统一移动端布局**（删桌面断点，桌面也按手机宽度居中）。
 
 社媒导出（无页面入口，URL 触发）：`web/index.html?export=all` 打开**全分类工作台**——页签切换
 中短债/长债/固收+/指数，一键「下载全部分类」；每个分类可选小红书 3:4（1080×1440 TOP20）或公众号 3:2
@@ -213,7 +222,7 @@ crontab: 30 23 * * 5  →  flock + scripts/weekly_update.sh  （日志 data/pipe
 ## 路线图
 
 - [x] **全市场同类池**：批量抓取全部债券基金入池，分位分与星级配额生效
-- [x] **每周五自动重评**：crontab → `fundscorer.pipeline`（刷新 → 筛选 → 筛后评分 → TOP20 → 导出），见 docs/08
+- [x] **每周日自动重评**：Windows 计划任务 `FundScreener-Weekly`（每周日 19:00）→ `fundscorer.pipeline`（刷新 → 筛选 → 筛后评分 → TOP20 → 导出），见 docs/08
 - [x] **周榜网页**：web/index.html 响应式页面（榜单卡 + 支付宝风详情 + 常显免责声明；手机满宽 / 电脑窄栏居中），数据契约见 docs/08
 - [x] **中长债池上线**：先筛后评双池化（S5 阈值池别化：短债 1% / 长债 2%），周更每池各 TOP20，
       网页分类 tab 可切换，环比按池互不串池——见 docs/09

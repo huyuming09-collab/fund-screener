@@ -23,7 +23,7 @@
 改任何代码前先取基线，改完必须复现：
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 现基线：378 passed
+.venv/bin/python -m pytest tests/ -q     # 现基线：393 用例（380 passed + 13 已知 PermissionError，见 STATUS §4-9）
 node tests/smoke_page.js                  # 现基线：SMOKE PASS
 ```
 
@@ -66,7 +66,7 @@ node tests/smoke_page.js                  # 现基线：SMOKE PASS
 
 - 不把当期数据、榜单、公司名、具体产品判断**写死**进 `web/index.html` 或任何源码（一律读 `web/data.js`）
 - 不改 `.gitignore` 中 `运营/` 的忽略规则；不在 `运营/` 下建"给仓库看"的文件
-- 不删 `data/metrics_cache.pkl`（6,901 只的池指标缓存，删了要全量重抓）
+- 不删 `data/metrics_cache.pkl`（约 6,900+ 只的池指标缓存——随周更增长，以当期 `data/metrics_cache.pkl` 为准，2026-11-03 实测 6,921；删了要全量重抓）
 - 不改 `scripts/weekly_update.sh` 的 staged 路径守卫与"只 add web/data.js"逻辑
 - 不改评分权重 / 筛选阈值 / 红线参数而不告知用户（`config.py` 全部参数改动都属产品决策）
 - 不引入新的第三方依赖（`requirements.txt` 现仅 pandas/numpy/pyarrow，标准库优先）
