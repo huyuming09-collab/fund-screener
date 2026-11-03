@@ -357,30 +357,54 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
     # 信用 1.3 年）被"伪5年全期年化混排 + P2≥4完整年"整体灭绝（docs/17 §2.4/§2.5 实测）。
     if index_fund:
         base_bm: dict[str, str] = {}
+        base_pool: dict[str, str] = {}
         for r in records:
             b = base_name(r["name"])
             bm = (r.get("benchmark") or "").strip()
             if bm and not base_bm.get(b):
                 base_bm[b] = bm
+            if r.get("pool") and not base_pool.get(b):
+                base_pool[b] = r["pool"]
         pool["_fam"] = [IF.index_family(base_bm.get(b, ""), b)[0] for b in pool["base"]]
+        # v5.23（docs/17 §15）：久期三档——P1 分位基准的分层维度（原久期段仅展示用）
+        pool["_tier"] = [IF.duration_tier(base_pool.get(b, ""),
+                                          IF.index_family(base_bm.get(b, ""), b)[1], v)
+                         for b, v in zip(pool["base"], pool["vol_5y"])]
         fam_n = pool["_fam"].value_counts()
-        use_fam = pool["_fam"].map(fam_n) >= int(C.INDEX["fam_min_n"])
 
-        def _fprank(col: str, ascending: bool) -> pd.Series:
-            r_all = pool[col].rank(pct=True, ascending=ascending)
-            r_fam = pool.groupby("_fam", sort=False)[col].rank(pct=True, ascending=ascending)
-            return r_fam.where(use_fam, r_all)
+        def _layer_pct(col: str, ascending: bool) -> pd.Series:
+            """v5.23 回退链分位：族×久期档（≥tier_min_layer）→ 同久期档（≥tier_min_layer）
+            → 族（≥tier_min_fam）→ 全池。病根：跨久期混比时长久期收益项第一、回撤/波动项
+            必垫底（南方7-10国开四项 1.000/0.057/0.943/0.046 → mpct 0.448 差 0.002 出局）。"""
+            t_n = pool["_tier"].value_counts()
+            ft_n = pool.groupby(["_fam", "_tier"], sort=False).size()
+            out = pd.Series(index=pool.index, dtype="float64")
+            for i in pool.index:
+                f, t = pool.at[i, "_fam"], pool.at[i, "_tier"]
+                if int(ft_n.get((f, t), 0)) >= int(C.INDEX["tier_min_layer"]):
+                    mask = (pool["_fam"] == f) & (pool["_tier"] == t)
+                elif int(t_n.get(t, 0)) >= int(C.INDEX["tier_min_layer"]):
+                    mask = pool["_tier"] == t
+                elif int(fam_n.get(f, 0)) >= int(C.INDEX["tier_min_fam"]):
+                    mask = pool["_fam"] == f
+                else:
+                    mask = None
+                if mask is None:
+                    out[i] = pool[col].rank(pct=True, ascending=ascending)[i]
+                else:
+                    out[i] = pool.loc[mask, col].rank(pct=True, ascending=ascending)[i]
+            return out
 
         P = pd.DataFrame({
-            "ret_3y": _fprank("ret_3y", True),
-            "mdd_3y": _fprank("mdd_3y", False),
-            "ret_1y": _fprank("ret_1y", True),
-            "vol_1y": _fprank("vol_1y", False),
+            "ret_3y": _layer_pct("ret_3y", True),
+            "mdd_3y": _layer_pct("mdd_3y", False),
+            "ret_1y": _layer_pct("ret_1y", True),
+            "vol_1y": _layer_pct("vol_1y", False),
         })
         P["mean4"] = P.mean(axis=1)
         P["mpct"] = P["mean4"].rank(pct=True)
         p1_label = (f"P1 综合分位≥{cfg['comp_pct_min'] * 100:g}%"
-                    f"（3年族·同族相对，族≥{int(C.INDEX['fam_min_n'])}只）")
+                    f"（族×久期档回退链，层≥{int(C.INDEX['tier_min_layer'])}只）")
     else:
         P = composite_percentiles(pool)
         p1_label = f"P1 综合分位≥{cfg['comp_pct_min'] * 100:g}%"

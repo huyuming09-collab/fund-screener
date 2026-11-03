@@ -184,9 +184,13 @@ def build_fund(row: pd.Series, rec: dict, nav: pd.DataFrame | None,
         "score_basis": _opt_dict(row, "score_basis"),
         # v5.12 单列债指：同指数其他优秀基金（卡分 top3；空 → 前端隐藏该块）
         "index_peers": _opt_list(row, "index_peers"),
-        # 单列榜分组（来源池）与组内总只数：详情"第 x 名 / n"按组（跨组分数不可比）
+        # 单列榜分组（来源池，保留供筛选口径/详情标签）与组内总只数
         "idx_group": _opt_str(row, "idx_group"),
         "idx_group_n": _i(row.get("idx_group_n")),
+        # v5.23 久期三档（docs/17 §15）：分组展示按档、档内名次连续，
+        # 详情"第 x 名 / n"改按 idx_tier_n（跨档分数不可比，档内才可排名次）
+        "idx_tier": _opt_str(row, "idx_tier"),
+        "idx_tier_n": _i(row.get("idx_tier_n")),
         # v5.15 债指经理块基线核对项：同画像主动候选分数中位（主动基金为 None）——
         # 卡分 = 画像分 + 基线，读者可核对"同画像的主动基金大约打多少分"
         "idx_lookalike_med": _rec_metric(rec, "idx_lookalike_med"),

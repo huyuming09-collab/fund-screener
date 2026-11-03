@@ -565,7 +565,8 @@ class TestIndexFamPayload:
 
 
 class TestIndexListPayload:
-    """v5.12 单列债指（docs/17 §9）：index_peers / idx_group / idx_group_n 入卡片契约。"""
+    """v5.12 单列债指（docs/17 §9）：index_peers / idx_group / idx_group_n 入卡片契约；
+    v5.23（docs/17 §15）增 idx_tier / idx_tier_n（久期档分组与档内名次分母）。"""
 
     PEERS = [{"code": "003547", "name": "鹏华中证同业存单AAA指数7天持有", "score": 68.2,
               "fee_total": 0.0045, "company_scale": 6382.0, "ret_3y": 0.021}]
@@ -580,17 +581,23 @@ class TestIndexListPayload:
 
     def test_idx_group_fields(self):
         card = cards.build_fund(
-            _row(is_index=True, idx_group="short_bond", idx_group_n=7),
+            _row(is_index=True, idx_group="short_bond", idx_group_n=7,
+                 idx_tier="dur_s", idx_tier_n=5),
             _rec(), _nav(), 100)
         assert card["idx_group"] == "short_bond"
         assert card["idx_group_n"] == 7
+        assert card["idx_tier"] == "dur_s"
+        assert card["idx_tier_n"] == 5
         card2 = cards.build_fund(_row(), _rec(), _nav(), 100)
         assert card2["idx_group"] is None and card2["idx_group_n"] is None
+        assert card2["idx_tier"] is None and card2["idx_tier_n"] is None
 
     def test_nan_column_safety(self):
         row = _row()
         row["index_peers"] = np.nan
         row["idx_group"] = np.nan
+        row["idx_tier"] = np.nan
         f = cards.build_fund(row, _rec(), _nav(), 100)
         assert f["index_peers"] == []
         assert f["idx_group"] is None
+        assert f["idx_tier"] is None

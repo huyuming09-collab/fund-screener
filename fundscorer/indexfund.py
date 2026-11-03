@@ -88,6 +88,37 @@ def index_family(benchmark: str, name: str) -> tuple[str, str]:
     return fam, dur
 
 
+def _dur_mid(dur: str) -> float | None:
+    """久期段中点（年）：'3-5年'→4.0、'5年恒定久期'→5.0、'未标期限'→None。"""
+    if not dur or dur == "未标期限":
+        return None
+    m = re.match(r"(\d+)\s*[-–~至]\s*(\d+)\s*年", dur)
+    if m:
+        return (int(m.group(1)) + int(m.group(2))) / 2
+    m = re.match(r"(\d+)\s*年\s*恒定久期", dur)
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def duration_tier(pool: str, dur: str, vol_5y) -> str:
+    """久期三档（v5.23，2026-11-03 用户拍板，docs/17 §15）：'dur_s' | 'dur_m' | 'dur_l'。
+
+    池优先：短池 → dur_s（短端归属已由 index_pool 文本判 + 0.7% 波动终判定案）；
+    长池按久期段中点 ≤INDEX.tier_mid_max_years → dur_m，否则 dur_l；
+    未标期限 → 近5年实测波动终判（≥INDEX.tier_vol_boundary → dur_l；缺值保守归 dur_m）。
+    分档只影响筛选闸 P1 的分位基准、回撤护栏闸的中位与展示分组，不改分数口径。
+    """
+    if pool == "short_bond":
+        return "dur_s"
+    mid = _dur_mid(dur)
+    if mid is not None:
+        return "dur_m" if mid <= float(C.INDEX["tier_mid_max_years"]) else "dur_l"
+    if vol_5y is None or pd.isna(vol_5y):
+        return "dur_m"
+    return "dur_l" if float(vol_5y) >= float(C.INDEX["tier_vol_boundary"]) else "dur_m"
+
+
 def _interp(ret: float, pts: list[tuple[float, float]]) -> float | None:
     """业绩 ret 在主动榜 (业绩, 分数) 序列上的线性插值分数。
 

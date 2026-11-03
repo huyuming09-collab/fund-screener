@@ -245,6 +245,14 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
                 for b, info in base_info.items()}
     dev_map = IF.track_dev([(b, base_mid[b], info["ret"])
                             for b, info in base_info.items()])
+    # ---- 久期三档（v5.23，docs/17 §15）：档 = 分组展示 + 回撤闸中位 + 档内名次 ----
+    base_dur_vol = {}
+    for r in idx_recs:
+        b = S.base_name(r["name"])
+        if b not in base_dur_vol:
+            _f, _d = IF.index_family(base_bm.get(b, ""), r.get("name") or "")
+            base_dur_vol[b] = (_d, r.get("vol_5y"))
+    base_tier = {b: IF.duration_tier(pool, d, v) for b, (d, v) in base_dur_vol.items()}
     # ---- ① 同指数归一（候选行挂 meta / 跟踪偏离） ----
     rows = []
     for _, r in idx_rows.iterrows():
@@ -256,7 +264,8 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
                      "fee": m.get("fee_total") if m.get("fee_total") is not None
                      else base_info.get(b, {}).get("fee"),
                      "cs": m.get("company_scale"),
-                     "dev": dev_map.get(b)})
+                     "dev": dev_map.get(b),
+                     "tier": base_tier.get(b, "dur_m")})
     picks = IF.pick_per_index(rows)
     # ---- ② 评估卡真分排序（v5.14：list_top_n=0/None → 全显示，用户拍板去截断） ----
     # ---- ②″ 同画像逐只锚定（v5.18，docs/17 §13）：零点=上榜组卡分中位（在 sort 前）----
@@ -281,23 +290,37 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
                 _s[_k] = _r[_k]
     picks.sort(key=lambda r: (-(r.get("score") or float("-inf")),
                               str(r.get("code") or "")))
-    # ---- ②′ 回撤护栏闸（v5.17，用户 2026-10-22 拍板）：组内 mdd_3y > 中位×risk_gate_x
-    #      → 组内沉底（分数不动、名次后置）。缺 mdd_3y 或组<3 只 → 不闸。
+    # ---- ②′ 回撤护栏闸（v5.17 拍板；v5.23 改档内取中位，docs/17 §15）----
+    #      mdd_3y > 同久期档中位×risk_gate_x → 档内沉底（分数不动、名次后置）。
+    #      病根：原全组混久期取中位（3-5 年多数派定线），长久期结构性贴线必沉底
+    #      （博时5-10农发 3.36% > 混合中位 1.40%×2 沉底；档内中位≈3.0%×2 则不沉）。
+    #      无论是否开闸，picks 一律重排为 短→中→长 档序（档内保持分数降序）。
     _gx = float(C.INDEX.get("risk_gate_x") or 0)
     _gated = 0
-    if _gx > 0:
-        _mdds = sorted(r["mdd_3y"] for r in picks if r.get("mdd_3y") is not None)
-        if len(_mdds) >= 3:
-            _med = (_mdds[len(_mdds) // 2] if len(_mdds) % 2
-                    else (_mdds[len(_mdds) // 2 - 1] + _mdds[len(_mdds) // 2]) / 2)
-            _thr = _med * _gx
-            _keep = [r for r in picks
-                     if r.get("mdd_3y") is None or r["mdd_3y"] <= _thr]
-            _demoted = [r for r in picks
-                        if r.get("mdd_3y") is not None and r["mdd_3y"] > _thr]
-            if _demoted:
-                picks = _keep + _demoted
-                _gated = len(_demoted)
+    _TIER_ORDER = ("dur_s", "dur_m", "dur_l")
+    _by_tier = {t: [] for t in _TIER_ORDER}
+    for r in picks:
+        _by_tier.setdefault(r.get("tier"), []).append(r)
+    _reordered = []
+    for _t in _TIER_ORDER:
+        _grp = _by_tier.pop(_t, [])
+        if _gx > 0 and len(_grp) >= 3:
+            _mdds = sorted(x["mdd_3y"] for x in _grp if x.get("mdd_3y") is not None)
+            if len(_mdds) >= 3:
+                _med = (_mdds[len(_mdds) // 2] if len(_mdds) % 2
+                        else (_mdds[len(_mdds) // 2 - 1] + _mdds[len(_mdds) // 2]) / 2)
+                _thr = _med * _gx
+                _keep = [x for x in _grp
+                         if x.get("mdd_3y") is None or x["mdd_3y"] <= _thr]
+                _demoted = [x for x in _grp
+                            if x.get("mdd_3y") is not None and x["mdd_3y"] > _thr]
+                if _demoted:
+                    _grp = _keep + _demoted
+                    _gated += len(_demoted)
+        _reordered.extend(_grp)
+    for _g in _by_tier.values():            # 未知档（防御分支）保底追加
+        _reordered.extend(_g)
+    picks = _reordered
     _top_n = int(C.INDEX.get("list_top_n") or 0)
     show = picks[:_top_n] if _top_n > 0 else picks
     # ---- ③ 同指数其他优秀基金 ×3（全部已打分指数基金 → 基金级取最好份额 → 同组卡分次高） ----
@@ -317,12 +340,21 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
                 (-(cur["score"] or -1), str(cur["code"])):
             best[b] = row
     out_rows = []
-    for i, r in enumerate(show, 1):
+    # v5.23：档内名次连续（短→中→长），idx_tier/idx_tier_n 入契约供分组展示与详情页
+    _tier_rank: dict = {}
+    _tier_n: dict = {}
+    for r in show:
+        _tier_n[r.get("tier")] = _tier_n.get(r.get("tier"), 0) + 1
+    for r in show:
+        _t = r.get("tier")
+        _tier_rank[_t] = _tier_rank.get(_t, 0) + 1
         same = sorted((f for f in best.values()
                        if f["idx"] == r.get("idx") and f["base"] != r["base"]),
                       key=lambda x: (-(x["score"] or -1), str(x["code"])))
         row = dict(r)
-        row["rank"] = i
+        row["rank"] = _tier_rank[_t]
+        row["idx_tier"] = _t
+        row["idx_tier_n"] = _tier_n.get(_t, 0)
         row["is_index"] = True
         row["score_basis"] = None
         row["rank_prev"] = None
@@ -338,8 +370,10 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
         df["idx_group_n"] = len(df)
     log(f"[5a][{tag}] 债指单列榜：候选 {len(idx_rows)} → 同指数归一 {len(picks)}"
         f" → 展示 {len(df)}（选中键 fee低→公司规模大→跟踪偏离小；评估卡真分排序；"
-        f"回撤闸沉底 {_gated} 只（中位×{_gx:g}）；同画像锚定中位 "
-        f"{_amed:.2f}、自动折幅 λ={_alam:.3f}；偏离可算基金 {len(dev_map)} 只）")
+        f"回撤闸档内沉底 {_gated} 只（档内中位×{_gx:g}）；同画像锚定中位 "
+        f"{_amed:.2f}、自动折幅 λ={_alam:.3f}；偏离可算基金 {len(dev_map)} 只）"
+        + "；档 " + "、".join(f"{t.replace('dur_', '')}={_tier_n.get(t, 0)}"
+                              for t in ("dur_s", "dur_m", "dur_l")))
     return df, len(picks)
 
 

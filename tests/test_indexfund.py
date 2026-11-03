@@ -15,8 +15,8 @@ import pandas as pd
 import pytest
 
 from fundscorer import batch, config as C
-from fundscorer.indexfund import (index_family, index_id, interleave,
-                                  pick_per_index, track_dev)
+from fundscorer.indexfund import (duration_tier, index_family, index_id,
+                                  interleave, pick_per_index, track_dev)
 from fundscorer.screen import base_name, screen_candidates
 from fundscorer.scorer import (
     EXCLUDED_POOL,
@@ -467,13 +467,14 @@ class TestIndexFamilyV511:
 
 
 class TestIndexScreenV511:
-    """D-I1 筛选：债指 P1/P2 = 3 年族四项 + 同族相对分位（active 路径标签/口径不变）。"""
+    """D-I1 筛选：债指 P1/P2 口径（active 路径标签/口径不变）。
+    v5.23：P1 从"3年族同族相对"改「族×久期档回退链」（docs/17 §15）；P2 仍为同族基准。"""
 
     def test_index_funnel_labels(self):
         records, yearly, spikes = index_records(n=40)
         _, f = screen_candidates(records, spikes, yearly,
                                  C.SCREENS["short_bond"], index_fund=True)
-        assert any(k.startswith("P1 综合分位≥45%（3年族·同族相对") for k in f)
+        assert any(k.startswith("P1 综合分位≥45%（族×久期档回退链") for k in f)
         assert any(k.startswith("P2 年度分位中位≥55%（同族基准·≥3完整年）") for k in f)
 
     def test_active_funnel_labels_unchanged(self):
@@ -484,13 +485,97 @@ class TestIndexScreenV511:
         assert not any("同族" in k for k in f)
 
     def test_fam_below_min_n_falls_back_to_branch(self, monkeypatch):
-        # 族<30 → 回退分支池基准，流程不中断、候选可产出（回退语义由 rank 路径保证）
+        # 族<30 → P2 回退分支池基准，流程不中断、候选可产出。
+        # （P1 自 v5.23 走久期档回退链，不再依赖 fam_min_n 断崖；本测守 P2 回退语义）
         monkeypatch.setitem(C.INDEX, "fam_min_n", 100)
         records, yearly, spikes = index_records(n=40)
         cand, f = screen_candidates(records, spikes, yearly,
                                     C.SCREENS["short_bond"], index_fund=True)
         assert f["合并基金数"] == 40
         assert len(cand) >= 1
+
+
+# ================================================================ v5.23 久期三档（docs/17 §15）
+class TestDurationTierV523:
+    """分档函数：池优先 → 久期段中点 → 未标期限按实测波动终判（≥界归长档）。"""
+
+    def test_short_pool_always_short_tier(self):
+        # 短池归属已由 index_pool 文本判+0.7%波动终判定案，分档不再复判
+        assert duration_tier("short_bond", "7-10年", 0.03) == "dur_s"
+
+    def test_long_pool_by_dur_mid(self):
+        assert duration_tier("long_bond", "1-3年", 0.01) == "dur_m"
+        assert duration_tier("long_bond", "1-5年", 0.01) == "dur_m"      # 中点3 ≤5
+        assert duration_tier("long_bond", "3-5年", 0.01) == "dur_m"
+        assert duration_tier("long_bond", "5年恒定久期", 0.01) == "dur_m"  # 中点5 ≤5
+        assert duration_tier("long_bond", "7-10年", 0.02) == "dur_l"
+        assert duration_tier("long_bond", "5-10年", 0.02) == "dur_l"
+
+    def test_unmarked_falls_back_to_vol_boundary(self):
+        b = float(C.INDEX["tier_vol_boundary"])
+        assert duration_tier("long_bond", "未标期限", b) == "dur_l"       # ≥界 → 长档
+        assert duration_tier("long_bond", "未标期限", b - 1e-9) == "dur_m"
+        assert duration_tier("long_bond", "未标期限", None) == "dur_m"    # 缺值保守归中
+        assert duration_tier("long_bond", "未标期限", float("nan")) == "dur_m"
+
+
+def _tier_records():
+    """32 只 long 池国开债指数：G 12（1-5年，收益最好回撤最小）+ L 10（7-10年，
+    收益次高但回撤/波动最差）+ B 10（1-5年，收益最差）。
+
+    旧口径（同族混比）：L 四项 = 收益分位 0.484、回撤/波动 0.172 → mean4 0.328 < 0.45
+    **长久期全数出局**（南方7-10国开实测 0.448 差 0.002 的极端版）；
+    新口径（族×久期档回退链）：L 在 dur_l 层内同久期比 → mean4 0.5 →
+    mpct 0.484 ≥ 0.45 **全数过线**。P2 分年错开保证 L 全数过、B 全数不过。
+    """
+    records, yearly, spikes = [], {}, {}
+
+    def add(prefix, n, tag, ret3, mdd3, vol1, y0):
+        for i in range(n):
+            code = f"{prefix}{i:02d}"
+            name = f"测试国开债{tag}指数{prefix.upper()}{i}A"
+            records.append({
+                "code": code, "name": name, "pool": "long_bond",
+                "type_text": "指数型-固收", "scale_yi": 6.0, "nav_years": 6.0,
+                "ret_5y": ret3, "mdd_5y": mdd3 * 1.5, "ret_3y": ret3,
+                "mdd_3y": mdd3, "ret_1y": ret3, "vol_1y": vol1,
+                "vol_5y": vol1, "manager": "指数部",
+                "benchmark": f"中债国开债{tag}指数收益率×95%",
+            })
+            yearly[base_name(name)] = {y: y0 + i * 0.001
+                                       for y in range(2021, 2026)}
+            spikes[code] = 0.005
+
+    add("gg", 12, "1-5年", 0.050, 0.010, 0.010, 0.030)   # G：族内最强
+    add("ll", 10, "7-10年", 0.045, 0.045, 0.035, 0.050)   # L：长久期主角
+    add("bb", 10, "1-5年", 0.015, 0.025, 0.020, 0.010)    # B：垫底
+    return records, yearly, spikes
+
+
+class TestP1TierStratificationV523:
+    """v5.23 P1 分层回归（docs/17 §15 对照实验证据）：混比时长久期全灭、分层后全数过线；
+    mpct 仍按全池排（45% 切线总量不变，只换人、不放水）。"""
+
+    def test_long_duration_funds_pass_after_stratification(self):
+        records, yearly, spikes = _tier_records()
+        cand, f = screen_candidates(records, spikes, yearly,
+                                    C.SCREENS["long_bond"], index_fund=True)
+        p1_key = next(k for k in f
+                      if k.startswith("P1 综合分位≥45%（族×久期档回退链"))
+        # 过 P1 = G 12 + L 10 = 22（B 10 全数被 P1 挡下；旧口径此处为 12，L 全灭）
+        assert f[p1_key] == 22
+        bases = set(cand["base"])
+        # 最终候选还须过 P2：L 分年值全档最高 → 10 只全数存活
+        assert sum(1 for b in bases if "7-10年" in b) == 10
+        assert not any("BB" in b for b in bases)
+
+    def test_active_path_labels_untouched(self):
+        # 主动路径标签不含久期档字样（分层只作用于 index_fund 分支）
+        records, yearly, spikes = _tier_records()
+        _, f = screen_candidates(records, spikes, yearly,
+                                 C.SCREENS["long_bond"])
+        assert any(k.startswith("P1 综合分位≥45%") for k in f)
+        assert not any("久期档" in k for k in f)
 
 
 class TestInterleaveH1Prime:

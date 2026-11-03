@@ -321,8 +321,11 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
   switchTab('index');
   const listIx = document.getElementById('list').innerHTML;
   // v5.14（2026-10-21）：债指分位与本池主动候选同尺（"业绩差不多分数也差不多"）+ 去截断全显示
+  // v5.23（2026-11-03）：分组键改久期三档（短/中/长，docs/17 §15）；旧数据回退来源池两组
+  const ixHasTier = (D.funds||[]).some(f=>f.idx_tier);
   chk('债指 tab 分组头（心动值与本池主动榜同尺，跨池不可比）',
-      listIx.includes('债指 · ') && listIx.includes('心动值与本池主动榜同尺'));
+      listIx.includes('债指 · ') && listIx.includes('心动值与本池主动榜同尺')
+      && (!ixHasTier || listIx.includes('短久期债指')));
   const ixWithPeers = (D.funds||[]).find(f=>f.is_index && (f.index_peers||[]).length);
   if (ixWithPeers) {
     openDetail(ixWithPeers.code);
@@ -331,9 +334,10 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
         dbP.includes('<h3>同指数其他优秀基金')
         && dbP.includes('同一跟踪指数只在榜内展示 1 只')
         && dbP.includes('池内相对心动值，与主动榜不可比'));
-    chk('债指详情名次分母 = 组内只数',
+    chk('债指详情名次分母 = 档内只数（v5.23，旧数据回退组内只数）',
         document.getElementById('d-rank').textContent
-          .includes('第 '+ixWithPeers.rank+' 名 / '+ixWithPeers.idx_group_n));
+          .includes('第 '+ixWithPeers.rank+' 名 / '
+                   + (ixWithPeers.idx_tier_n || ixWithPeers.idx_group_n)));
     // 2026-10-22 用户拍板：债指开放"加入对比"（同池=债指池内可比；v5.17 场外化同轮）
     chk('指数卡显示"加入对比"按钮',
         (listIx.split('<div class="fundcard"').find(s=>s.includes(ixWithPeers.code)) || '')

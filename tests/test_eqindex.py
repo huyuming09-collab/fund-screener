@@ -359,4 +359,6 @@ def test_strategy_default_metric_is_pb():
 def test_bond_pools_untouched():
     assert C.PIPELINE["pools"] == ["short_bond", "long_bond", "fixed_plus"]
     assert "eq_index" not in C.PIPELINE["pools"]
-    assert C.POOL_VERSIONS["index"] == "v5.19"
+    # 指数模块（eq_index）不碰债指池版本；债指版本只随债指规则变动——
+    # v5.19 → v5.23 = 2026-11-03 久期三档制（docs/17 §15，用户拍板），属债指自身规则变更
+    assert C.POOL_VERSIONS["index"] == "v5.23"

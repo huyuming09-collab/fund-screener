@@ -491,7 +491,9 @@ const yi  = v => v==null ? '—' : v.toFixed(2)+'亿';
 const $ = id => document.getElementById(id);
 /* 分类标签：优先取 data.js 的 categories（config.CARD 为单一真源——2026-10-19 池名
    改为 中短债/长债/固收+ 后只需改 config 一处）；data.js 缺失/旧版时回退本地映射 */
-const CATEGORY_LABELS = {short_bond:'中短债', long_bond:'长债', fixed_plus:'固收+', index:'债指'};
+const CATEGORY_LABELS = {short_bond:'中短债', long_bond:'长债', fixed_plus:'固收+', index:'债指',
+  dur_s:'短久期', dur_m:'中久期', dur_l:'长久期'};   /* v5.23 久期三档（docs/17 §15） */
+const TIER_SUB = {dur_s:'存单、1-3年等短端', dur_m:'3-5年、1-5年等中端', dur_l:'5-10年、7-10年等长端'};
 const catLabel = c => {
   const hit = ((D && D.categories) || []).find(x => x && x.id === c);
   return (hit && hit.name) || CATEGORY_LABELS[c] || c || '';
@@ -839,11 +841,16 @@ function renderList(){
   const funds = (D.funds || []).filter(f => (f.category || D.category || 'short_bond') === cat);
   /* v5.12 债指单列（docs/17 §9）：按来源池分组展示——组间分数不可横向比较 */
   const grouped = cat === 'index';
-  const gcount = g => funds.filter(f => f.idx_group === g).length;
+  /* v5.23 久期三档：分组/名次键改 idx_tier（短/中/长，档内名次连续），idx_group 保留为来源池；
+     旧 data.js 无 idx_tier → 回退按来源池两组渲染（升级兼容，勿删） */
+  const hasTier = funds.some(f => f.idx_tier);
+  const gKeys = hasTier ? ['dur_s','dur_m','dur_l'] : ['short_bond','long_bond'];
+  const gOf = f => hasTier ? f.idx_tier : f.idx_group;
+  const gcount = g => funds.filter(f => gOf(f) === g).length;
   $('meta').innerHTML = `数据基准 <b class="asof">${D.asof}</b> · `
     + `${catLabel(cat)}${grouped ? '榜' : '池'} 本期上榜 <b>${funds.length}</b> 只`
-    + (grouped ? `（${['short_bond','long_bond'].filter(g=>gcount(g))
-        .map(g=>`${catLabel(g)} ${gcount(g)}`).join(' · ')})` : '');
+    + (grouped ? `（${gKeys.filter(g=>gcount(g))
+        .map(g=>`${catLabel(g)}债指 ${gcount(g)}`).join(' · ')})` : '');
   if(!funds.length){ $('list').innerHTML = '<div class="empty-tip">本期暂无上榜基金</div>'; return; }
   const cardHTML = f => `
     <div class="fundcard${f.is_index?' is-index':''}" data-code="${f.code}" onclick='openDetail(${JSON.stringify(f.code)})'>
@@ -870,12 +877,12 @@ function renderList(){
       </div>
     </div>`;
   if (grouped) {
-    const GRP_HEAD = ['short_bond','long_bond'].map(g => {
-      const gs = funds.filter(f => f.idx_group === g);
+    const GRP_HEAD = gKeys.map(g => {
+      const gs = funds.filter(f => gOf(f) === g);
       if (!gs.length) return '';
       return `<div class="idx-group">`
         + `<b>${catLabel(g)}债指 · ${gs.length} 只</b>`
-        + `<span class="sub">同指数只展示1只 · 心动值与本池主动榜同尺（仅作水平参照，不一起排位）· 跨池不可比</span></div>`
+        + `<span class="sub">${hasTier ? TIER_SUB[g] + ' · ' : ''}同指数只展示1只 · 心动值与本池主动榜同尺（仅作水平参照，不一起排位）· 跨池不可比</span></div>`
         + gs.map(cardHTML).join('');
     }).join('');
     $('list').innerHTML = GRP_HEAD;
@@ -1472,9 +1479,11 @@ function openDetail(code){
   /* 头部名次：分母 = 该基金所在池的 n（pools 缺失回退顶层 n）；含环比后缀 */
   const ps = poolStat(CUR.category);
   /* v5.12 债指单列：名次分母 = 所在组（中短债/长债各自成榜，跨组分数不可比） */
-  const gn = CUR.idx_group_n || (ps && ps.n) || D.n;
+  /* v5.23：名次为久期档内名次、n 按档；旧数据无 idx_tier → 回退 idx_group */
+  const _tier = CUR.idx_tier || CUR.idx_group;
+  const gn = CUR.idx_tier_n || CUR.idx_group_n || (ps && ps.n) || D.n;
   let rk = `第 ${CUR.rank} 名 / ${gn}`
-    + (CUR.idx_group ? `（${catLabel(CUR.idx_group)}债指）` : '');
+    + (_tier ? `（${catLabel(_tier)}债指）` : '');
   if(CUR.is_new) rk += '（新增）';
   else if(CUR.rank_delta!=null) rk += CUR.rank_delta>0 ? `（较上期 ↑${CUR.rank_delta}）`
       : CUR.rank_delta<0 ? `（较上期 ↓${-CUR.rank_delta}）` : '（较上期 持平）';
@@ -1919,10 +1928,14 @@ function drawExport(canvas, pool, sizeKey, rows){
 
   /* ---- 债指分组绘制（v5.17，用户 2026-10-22 拍板：两组分段、组内名次连续、全量不截断） ---- */
   function _drawIdxGrouped(){
-    const segs = ['short_bond', 'long_bond']
+    /* v5.23 久期三档（docs/17 §15）；旧 data.js 无 idx_tier → 回退来源池两组 */
+    const _ht = funds.some(f => f.idx_tier);
+    const _keys = _ht ? ['dur_s', 'dur_m', 'dur_l'] : ['short_bond', 'long_bond'];
+    const _gf = f => _ht ? f.idx_tier : f.idx_group;
+    const segs = _keys
       .map(g => ({title: catLabel(g) + '债指 · '
-                    + funds.filter(f => f.idx_group === g).length + ' 只',
-                  list: funds.filter(f => f.idx_group === g)
+                    + funds.filter(f => _gf(f) === g).length + ' 只',
+                  list: funds.filter(f => _gf(f) === g)
                         .sort((a, b) => (a.rank || 0) - (b.rank || 0))}))
       .filter(s => s.list.length);
     const titleH = wide ? 34 : 44, bandGap = wide ? 8 : 10;
