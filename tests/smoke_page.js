@@ -607,7 +607,11 @@ if (D.market && D.market.indicators) {
       && mktHtml.includes('#d8ecd8') && mktHtml.includes('multi:true')
       && mktHtml.includes("replace('-','')")   /* 负零刻度守卫（ERP 下沿曾显示 -0.0%） */
       /* 品牌口径（2026-11-04 用户定）："温度"一词留给指数温度计，市场情绪页禁用 */
-      && !mktHtml.includes('温度'));
+      && !mktHtml.includes('温度')
+      /* 导出窗口（2026-11-04 用户拍板）：?export=market 两档（大图/4+4全览） */
+      && mktHtml.includes('function initExportMarket')
+      && mktHtml.includes('export=market')
+      && mktHtml.includes('mkt-exp wide'));
 } else {
   chk('市场情绪（8指标）存在', false);
 }
