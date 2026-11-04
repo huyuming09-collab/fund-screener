@@ -56,7 +56,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 .c-div .ic{background:rgba(190,90,110,.12);}
 .c-eq .ic{background:rgba(120,110,180,.12);}
 .c-mkt .ic{background:rgba(70,140,130,.13);}
-/* 市场情绪卡：右上角迷你温度分数预览 */
+/* 市场情绪卡：右上角迷你情绪分预览 */
 .mkt-mini{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;
   align-items:flex-end;line-height:1;}
 .mkt-mini .t{font-size:22px;font-weight:750;}
@@ -152,7 +152,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
     <a class="card c-mkt" href="market.html" id="mkt-card">
       <div class="ic">📊</div>
       <div class="nm">市场情绪</div>
-      <div class="ds" id="mkt-card-ds">股债性价比、估值、情绪、周期多维温度</div>
+      <div class="ds" id="mkt-card-ds">股债性价比、估值、情绪、周期多维情绪分</div>
       <div class="mkt-mini" id="mkt-mini" hidden></div>
       <span class="arrow">›</span>
     </a>
@@ -182,7 +182,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
 
 <script src="data.js"></script>
 <script>
-/* v2.1 主界面市场情绪卡：只填预览（温度分数+等级），详情在 market.html */
+/* v2.1 主界面市场情绪卡：只填预览（情绪分+等级），详情在 market.html */
 (function(){
   var M = window.CARD_DATA && window.CARD_DATA.market;
   var card = document.getElementById('mkt-card');
@@ -193,7 +193,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
   mini.hidden = false;
   mini.innerHTML = '<span class="t" style="color:'+col+'">'+M.score+'</span>'
     + '<span class="l" style="color:'+col+'">'+M.level+'</span>';
-  document.getElementById('mkt-card-ds').textContent = '市场温度 '+M.score+' · '+M.level+'，8 指标多维观察';
+  document.getElementById('mkt-card-ds').textContent = '市场情绪分 '+M.score+' · '+M.level+'，8 指标多维观察';
 })();
 </script>
 </body>

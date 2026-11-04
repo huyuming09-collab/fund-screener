@@ -583,7 +583,7 @@ if (D.market && D.market.indicators) {
       Math.abs(Object.values(mk.weights||{}).reduce((a,b)=>a+b,0) - 1) < 1e-6);
   chk('每指标含走势序列与说明（desc/how/range，帮小白理解）',
       ALL8.every(k => 'series' in mk.indicators[k] && mk.indicators[k].how && mk.indicators[k].range));
-  chk('综合温度 0-100 且有等级（寒冷/偏冷/中性/偏热/过热）',
+  chk('情绪分 0-100 且有等级（寒冷/偏冷/中性/偏热/过热）',
       mk.score >= 0 && mk.score <= 100
       && ['寒冷','偏冷','中性','偏热','过热'].includes(mk.level));
   chk('回测序列有历史月份（≥12 月）且含 score/pe',
@@ -605,7 +605,9 @@ if (D.market && D.market.indicators) {
       mktHtml.includes('p[2]?+p[2]:1') && mktHtml.includes('ptip')
       && mktHtml.includes('浅红为牛市区间') && mktHtml.includes('#f8d5d1')
       && mktHtml.includes('#d8ecd8') && mktHtml.includes('multi:true')
-      && mktHtml.includes("replace('-','')"));   /* 负零刻度守卫（ERP 下沿曾显示 -0.0%） */
+      && mktHtml.includes("replace('-','')")   /* 负零刻度守卫（ERP 下沿曾显示 -0.0%） */
+      /* 品牌口径（2026-11-04 用户定）："温度"一词留给指数温度计，市场情绪页禁用 */
+      && !mktHtml.includes('温度'));
 } else {
   chk('市场情绪（8指标）存在', false);
 }

@@ -27,7 +27,7 @@ header .back{display:inline-flex;align-items:center;gap:2px;color:#fff;text-deco
 header .back:active{background:rgba(255,255,255,.28);}
 header h1{margin:0;font-size:16px;font-weight:650;}
 header .asof{margin-top:2px;font-size:10.5px;opacity:.92;}
-/* 综合温度 */
+/* 综合情绪分 */
 .score{display:flex;align-items:center;gap:16px;background:var(--card);border-radius:var(--radius);
   padding:16px 18px;box-shadow:var(--shadow);margin-top:16px;}
 .gauge{position:relative;width:96px;height:96px;flex:0 0 auto;}
@@ -143,7 +143,7 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
     <div class="asof" id="asof">—</div>
   </header>
 
-  <!-- 综合温度 -->
+  <!-- 综合情绪分 -->
   <div class="score">
     <div class="gauge" id="gauge"></div>
     <div class="txt">
@@ -161,10 +161,10 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
   <h2 class="sec">进阶 / 参考指标</h2>
   <div class="grid" id="adv-grid"></div>
 
-  <h2 class="sec">对照回测<span class="hint">历史牛熊 vs 综合温度 · 点图读数</span></h2>
+  <h2 class="sec">对照回测<span class="hint">历史牛熊 vs 综合情绪分 · 点图读数</span></h2>
   <div class="cmp">
     <div class="legend">
-      <span class="lg"><i class="sw" style="background:#e8743b"></i>综合温度</span>
+      <span class="lg"><i class="sw" style="background:#e8743b"></i>综合情绪分</span>
       <span class="lg"><i class="sw" style="background:#8a93a3"></i>中证全指点位（右轴）</span>
       <span class="lg"><i class="swband" style="background:#d8ecd8"></i>熊市</span>
       <span class="lg"><i class="swband" style="background:#f8d5d1"></i>牛市</span>
@@ -210,7 +210,7 @@ if (!M || !M.indicators){
 
   document.getElementById('asof').textContent = '数据基准 ' + M.asof + ' · 8 指标 · 分位近5年';
 
-  /* 1. 综合温度仪表盘 + 权重条 */
+  /* 1. 综合情绪分仪表盘 + 权重条 */
   (function(){
     var score=M.score, level=M.level, col=LV[level]||'#4b5563';
     var r=38,C=2*Math.PI*r,fill=Math.max(0,Math.min(100,score))/100*C;
@@ -221,7 +221,7 @@ if (!M || !M.indicators){
       +' stroke-dasharray="'+fill.toFixed(1)+' '+C.toFixed(1)+'"/></svg>'
       +'<div class="val"><span class="num" style="color:'+col+'">'+score+'</span>'
       +'<span class="lv" style="color:'+col+'">'+level+'</span></div>';
-    document.getElementById('sc-title').textContent = '当前市场温度 '+score+' · '+level;
+    document.getElementById('sc-title').textContent = '当前市场情绪分 '+score+' · '+level;
     /* Phase2 透明度：有效指标/权重覆盖/离散度 + 牛熊阈值敏感 + 分级解读 */
     /* 2026-11-04 审查：诊断行原是一串术语（权重覆盖/指标分歧/多窗口…）用户看不懂 →
        折叠为「数据完整度与口径」+ 大白话；权重条补文字标注（原为无说明的裸色条） */
@@ -352,11 +352,11 @@ if (!M || !M.indicators){
     d.scrollIntoView({behavior:'smooth', block:'nearest'});
   }
 
-  /* 3. 对照回测图（综合温度 + 中证全指点位 + 牛熊色带） */
+  /* 3. 对照回测图（综合情绪分 + 中证全指点位 + 牛熊色带） */
   (function(){
     var bt=(M.backtest||[]).filter(b=>b.score!=null && b.pe!=null);
     if(bt.length<2){ document.getElementById('cmp-chart').innerHTML='<div class="mdesc">历史数据不足。</div>'; return; }
-    var W=400,H=190,L=24,R=30,T=14,B=22,n=bt.length;   /* L=温度轴刻度 / R=点位轴刻度 */
+    var W=400,H=190,L=24,R=30,T=14,B=22,n=bt.length;   /* L=情绪轴刻度 / R=点位轴刻度 */
     var X=i=>L+(W-L-R)*(i/(n-1)), Ys=v=>T+(H-T-B)*(1-v/100);
     var pes=bt.map(b=>b.pe), pmin=Math.min.apply(null,pes), pmax=Math.max.apply(null,pes);
     var Yp=v=>T+(H-T-B)*(1-(v-pmin)/((pmax-pmin)||1));
@@ -374,7 +374,7 @@ if (!M || !M.indicators){
     });
     var pathS=bt.map((b,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Ys(b.score).toFixed(1)).join(' ');
     var pathP=bt.map((b,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Yp(b.pe).toFixed(1)).join(' ');
-    /* 温度轴网格（0/50/100）+ 年份刻度：与指标走势同款可读性（2026-11-03 审查） */
+    /* 情绪轴网格（0/50/100）+ 年份刻度：与指标走势同款可读性（2026-11-03 审查） */
     var grid='';
     [100,50,0].forEach(function(v){ var y=Ys(v);
       grid+='<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke="#ece6dc" stroke-width="1"/>'
@@ -391,21 +391,21 @@ if (!M || !M.indicators){
       +'<path d="'+pathP+'" fill="none" stroke="#8a93a3" stroke-width="1.1" opacity=".8"/>'
       +'<path d="'+pathS+'" fill="none" stroke="#e8743b" stroke-width="1.6"/>'
       +ticks
-      /* 右轴（点位）两个刻度 + 曲线末端标注（2026-11-04 采纳：防把点位线读成温度） */
+      /* 右轴（点位）两个刻度 + 曲线末端标注（2026-11-04 采纳：防把点位线读成情绪分） */
       +'<text x="'+(W-R+4)+'" y="'+(T+8)+'" font-size="8" fill="#8a93a3">'+Math.round(pmax)+'</text>'
       +'<text x="'+(W-R+4)+'" y="'+(H-B-1)+'" font-size="8" fill="#8a93a3">'+Math.round(pmin)+'</text>'
-      +'<text x="'+(X(n-1)-3).toFixed(1)+'" y="'+(Ys(bt[n-1].score)-5).toFixed(1)+'" font-size="8" fill="#e8743b" text-anchor="end">温度</text>'
+      +'<text x="'+(X(n-1)-3).toFixed(1)+'" y="'+(Ys(bt[n-1].score)-5).toFixed(1)+'" font-size="8" fill="#e8743b" text-anchor="end">情绪分</text>'
       +'<text x="'+(X(n-1)-3).toFixed(1)+'" y="'+(Yp(bt[n-1].pe)-5).toFixed(1)+'" font-size="8" fill="#8a93a3" text-anchor="end">点位</text>'
       +'</svg>';
     var box=document.getElementById('cmp-chart');
     box.innerHTML=svg;
-    attachPicker(box.querySelector('svg'), box);   /* 点选读数：年月·温度·点位 */
-    document.getElementById('cmp-zoom').onclick=function(){ openZoom('历史牛熊 vs 综合温度', box.innerHTML); };
+    attachPicker(box.querySelector('svg'), box);   /* 点选读数：年月·情绪·点位 */
+    document.getElementById('cmp-zoom').onclick=function(){ openZoom('历史牛熊 vs 综合情绪分', box.innerHTML); };
     var bb=(M.bullbear||[]);
     var nb=bb.filter(b=>b.type==='bear').length, nu=bb.length-nb;
     document.getElementById('cmp-note').innerHTML=
       '回测 '+bt.length+' 个月（'+bt[0].d+' ~ '+bt[n-1].d+'），自动识别 <b>'+nb+' 段熊市 / '+nu+' 段牛市</b>（20% 定义）：'
-      +'浅红为牛市区间、浅绿为熊市区间（点图可读数）。综合温度≥70 多对应点位阶段性高位，≤30 接近底部区域。仅作历史规律示意，不构成预测。';
+      +'浅红为牛市区间、浅绿为熊市区间（点图可读数）。综合情绪分≥70 多对应点位阶段性高位，≤30 接近底部区域。仅作历史规律示意，不构成预测。';
   })();
 
   /* 4. 指标说明（全部8项，含 caveat 口径局限）+ 回测分档统计（D2） */
@@ -422,7 +422,7 @@ if (!M || !M.indicators){
   }).join('');
   /* D2 回测分档统计表 */
   if (M.band_stats && M.band_stats.length){
-    html += '<div class="mdesc"><b>回测：各温度档未来收益（中证全指）</b><br>'
+    html += '<div class="mdesc"><b>回测：各情绪档未来收益（中证全指）</b><br>'
       + '<span style="opacity:.75">样本为历史月度，前瞻收益=该档后N月中证全指涨跌幅中位数，胜率为正收益占比。</span><br>'
       + '<div class="tscroll"><table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:5px">'
       + '<tr style="border-bottom:1px solid #ccc"><td style="padding:3px">档位</td><td>n</td><td>3月</td><td>3月胜率</td><td>6月</td><td>6月胜率</td><td>12月</td><td>12月胜率</td></tr>'
@@ -465,7 +465,7 @@ function attachPicker(svg, box, opts){
   if(!series||series.length<2) return;
   var vals=series.map(function(p){return +p[1];});
   var mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals);
-  if(mode==='cmp'){ mn=0; mx=100; }                 /* 对照图温度轴固定 0-100 */
+  if(mode==='cmp'){ mn=0; mx=100; }                 /* 对照图情绪轴固定 0-100 */
   var pad=(mx-mn||1)*0.1; mn-=pad; mx+=pad;
   var X=function(i){return L+(W-L-R)*(i/(series.length-1));};
   var Y=function(v){return T+(H-T-B)*(1-(v-mn)/((mx-mn)||1));};
@@ -486,7 +486,7 @@ function attachPicker(svg, box, opts){
   function tipText(i){
     if(mode==='cmp'){
       var pe=s2?+s2[i][1]:null;
-      return series[i][0]+' · 温度 '+Math.round(vals[i])+(pe==null?'':' · 点位 '+Math.round(pe));
+      return series[i][0]+' · 情绪分 '+Math.round(vals[i])+(pe==null?'':' · 点位 '+Math.round(pe));
     }
     var v=vals[i];
     var body=Math.abs(v)>=100?v.toFixed(0)
