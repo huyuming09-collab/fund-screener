@@ -489,7 +489,9 @@ function attachPicker(svg, box, opts){
       return series[i][0]+' · 温度 '+Math.round(vals[i])+(pe==null?'':' · 点位 '+Math.round(pe));
     }
     var v=vals[i];
-    var body=Math.abs(v)>=100?v.toFixed(0):v.toFixed(2);
+    var body=Math.abs(v)>=100?v.toFixed(0)
+      :(v!==0&&Math.abs(v)<0.01?v.toFixed(4)   /* 两融早期只有万分之几万亿，toFixed(2) 会抹成 0.00 */
+        :v.toFixed(2));
     return series[i][0]+' · '+body+unit;
   }
   function renderPins(){
@@ -534,7 +536,9 @@ function attachPicker(svg, box, opts){
     var r=svg.getBoundingClientRect();
     var vbW=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||W;
     var x=(ev.clientX-r.left)/Math.max(1,r.width)*vbW;
-    var i=Math.round((x-L)/((W-L-R)*(series.length-1)));
+    /* 取点反演：i = (x-L)/(W-L-R)*(n-1)。2026-11-04 修复：曾把 (n-1) 误写进分母，
+       导致点哪里都算出 index 0（用户反馈"点曲线没反应，只有首末点"） */
+    var i=Math.round((x-L)/(W-L-R)*(series.length-1));
     i=Math.max(0,Math.min(series.length-1,i));
     show(i, multi);
     if(ev.stopPropagation) ev.stopPropagation();

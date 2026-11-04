@@ -390,11 +390,14 @@ def _ind(key: str, series: pd.Series, unit_scale: float = 1.0, window: int = 5) 
                 "pct": None, "heat": None, "series": [], **{
                     k: meta.get(k) for k in ("desc", "how", "range", "source", "caveat")}}
     pct = _pct_rank(s, window)
-    val = float(s.iloc[-1]) * unit_scale
+    # 序列与 value 同单位（2026-11-04 修复：原 series 未做 unit_scale 换算，ERP 序列全是
+    # 0.0x 小数、两融序列是"元"，页面按 %/万亿 格式化 → 轴标签全成 0.0%、读数成"6590646万亿"）
+    sd = s * unit_scale
+    val = float(sd.iloc[-1])
     return {"label": meta["label"], "unit": meta["unit"],
             "value": round(val, 2), "pct": pct,
             "heat": _heat_of(pct, invert=meta["invert"]),
-            "series": _sample(s),
+            "series": _sample(sd),
             "desc": meta.get("desc"), "how": meta.get("how"),
             "range": meta.get("range"), "source": meta.get("source"),
             "caveat": meta.get("caveat")}
