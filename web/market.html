@@ -127,88 +127,6 @@ h2.sec .hint{font-size:11px;color:var(--sub);font-weight:500;margin-left:6px;}
 @media (orientation:landscape){ #zoom .inner{max-width:96vw;} #zoom svg{max-height:88vh;} }
 .footer{margin-top:auto;padding-top:22px;text-align:center;font-size:10px;color:#a9a294;line-height:1.6;}
 .footer b{color:var(--accent-ink);font-weight:700;}
-/* ==== 导出窗口（2026-11-04 用户拍板新增：情绪周榜常驻导出图）====
-   market.html?export=market&size=xhs|wide&bare=1 → 无头截图出图（配方同 index.html）
-   xhs=本周市场情绪大图 1080×1620（四核心大卡）；wide=4+4 指标全览小图 1200×800 */
-body.exp{margin:0;background:#20242c;}
-.exp-wrap{max-width:1240px;margin:0 auto;padding:14px;}
-.exp-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#20242c;color:#e8e3da;
-  padding:8px 12px;border-radius:10px;font-size:13px;}
-.exp-bar .t{font-weight:700;font-size:14px;}
-.exp-bar a{color:#ffb08a;text-decoration:none;border:1px solid #4a4f59;border-radius:8px;padding:4px 10px;}
-.exp-bar a.on{background:#ff6a00;border-color:#ff6a00;color:#fff;}
-.exp-hint{color:#9aa1ab;font-size:12px;padding:6px 4px 10px;line-height:1.6;}
-.exp-stage-box{background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.25);
-  overflow:hidden;width:max-content;margin:0 auto;}
-.mkt-exp{position:relative;overflow:hidden;background:#faf7f2;color:#26231e;
-  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;}
-body.bare{background:#fff;padding:0;margin:0;}
-body.bare .exp-wrap{max-width:none;margin:0;padding:0;}
-body.bare .exp-bar,body.bare .exp-hint{display:none;}
-body.bare .exp-stage-box{background:none;border-radius:0;box-shadow:none;margin:0;width:auto;}
-.mkt-exp.xhs{width:1080px;height:1620px;padding:48px;box-sizing:border-box;}
-.mkt-exp.wide{width:1200px;height:800px;padding:36px 48px;box-sizing:border-box;}
-/* 大图内部 */
-.me-head{display:flex;justify-content:space-between;align-items:center;}
-.me-head .tt{font-size:44px;font-weight:800;letter-spacing:1px;}
-.me-head .cap{background:#ffe9d9;color:#b3541e;border-radius:999px;padding:10px 24px;font-size:26px;font-weight:700;}
-.me-row{display:flex;gap:44px;align-items:center;margin-top:38px;}
-.me-ring{position:relative;width:300px;height:300px;flex:0 0 auto;}
-.me-ring svg{width:100%;height:100%;transform:rotate(-90deg);}
-.me-ring .cv{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-.me-ring .num{font-size:92px;font-weight:800;line-height:1;}
-.me-ring .lv{font-size:30px;font-weight:700;margin-top:8px;}
-.me-info{flex:1;min-width:0;}
-.me-info .lab{font-size:30px;color:#8a8378;font-weight:600;}
-.me-scale{display:flex;height:46px;border-radius:12px;overflow:hidden;margin-top:16px;}
-.me-scale i{display:block;height:100%;}
-.me-marks{display:flex;justify-content:space-between;font-size:22px;color:#8a8378;margin-top:8px;}
-.me-pos{position:relative;height:32px;}
-.me-pos .tri{position:absolute;top:0;transform:translateX(-50%);font-size:26px;color:#26231e;font-weight:800;}
-.me-weights{font-size:27px;font-weight:700;margin-top:18px;}
-.me-sub{font-size:24px;color:#8a8378;margin-top:10px;}
-.me-sec{font-size:34px;font-weight:800;margin-top:36px;border-left:10px solid #ff6a00;padding-left:16px;}
-.me-grid{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:24px;}
-.me-card{background:#fff;border:1px solid #efe7dc;border-radius:24px;padding:30px 34px;box-sizing:border-box;}
-.me-card .nm{display:flex;align-items:center;gap:12px;font-size:30px;font-weight:700;color:#5c564c;}
-.me-card .dot{width:16px;height:16px;border-radius:50%;flex:0 0 auto;}
-.me-card .vl{font-size:74px;font-weight:800;margin-top:12px;line-height:1.05;}
-.me-card .vl .u{font-size:28px;font-weight:600;color:#8a8378;margin-left:8px;}
-.me-card .pb{display:flex;align-items:center;gap:14px;margin-top:16px;}
-.me-card .trk{flex:1;height:18px;border-radius:9px;background:#f1ede6;overflow:hidden;}
-.me-card .trk i{display:block;height:100%;border-radius:9px;}
-.me-card .pc{font-size:28px;font-weight:800;min-width:96px;text-align:right;}
-.me-card .cc{font-size:27px;font-weight:700;margin-top:14px;}
-.me-refs{margin-top:26px;background:#fff;border:1px solid #efe7dc;border-radius:20px;
-  padding:26px 34px;font-size:26px;color:#5c564c;line-height:1.7;}
-.me-refs b{color:#26231e;font-weight:800;}
-.me-refs .t{color:#8a8378;font-weight:700;margin-right:10px;}
-.me-foot{position:absolute;left:48px;right:48px;bottom:44px;border-top:2px solid #efe7dc;
-  padding-top:20px;display:flex;justify-content:space-between;align-items:flex-end;gap:20px;}
-.me-foot .l{font-size:23px;color:#8a8378;line-height:1.7;}
-.me-foot .r{font-size:26px;font-weight:800;color:#c05a28;white-space:nowrap;}
-/* 宽图内部（4+4 两列） */
-.w-head{display:flex;justify-content:space-between;align-items:center;}
-.w-head .tt{font-size:38px;font-weight:800;}
-.w-head .cap{background:#ffe9d9;color:#b3541e;border-radius:999px;padding:8px 20px;font-size:23px;font-weight:700;}
-.w-two{display:flex;gap:44px;margin-top:22px;}
-.w-col{flex:1;min-width:0;}
-.w-col .ct{font-size:28px;font-weight:800;border-left:8px solid #ff6a00;padding-left:12px;margin-bottom:4px;}
-.w-col .ct.ref{border-left-color:#8a93a3;color:#5c564c;}
-.w-item{padding:13px 0 11px;border-bottom:1px solid #efe7dc;}
-.w-item .r1{display:flex;justify-content:space-between;align-items:baseline;}
-.w-item .nm{font-size:26px;font-weight:700;color:#5c564c;}
-.w-item .vl{font-size:38px;font-weight:800;}
-.w-item .vl .u{font-size:20px;font-weight:600;color:#8a8378;margin-left:6px;}
-.w-item .r2{display:flex;align-items:center;gap:12px;margin-top:8px;}
-.w-item .trk{flex:1;height:12px;border-radius:6px;background:#f1ede6;overflow:hidden;}
-.w-item .trk i{display:block;height:100%;border-radius:6px;}
-.w-item .pc{font-size:22px;font-weight:800;min-width:78px;text-align:right;}
-.w-item .cc{font-size:21px;color:#8a8378;margin-top:6px;}
-.w-foot{position:absolute;left:48px;right:48px;bottom:26px;border-top:2px solid #efe7dc;
-  padding-top:14px;display:flex;justify-content:space-between;align-items:center;
-  font-size:21px;color:#8a8378;gap:16px;}
-.w-foot .r{font-weight:800;color:#c05a28;font-size:23px;white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -276,8 +194,8 @@ body.bare .exp-stage-box{background:none;border-radius:0;box-shadow:none;margin:
 <script>
 /* v2.1 市场情绪详情页（数据：data.js → CARD_DATA.market，8 指标） */
 var M = window.CARD_DATA && window.CARD_DATA.market;
-/* LV / heatColor / concl / MktExpSizes 提升到顶层（2026-11-04 导出窗口）：
-   initExportMarket 在常规渲染前执行，导出态不进 else 块，这几个工具必须先就绪 */
+/* LV / heatColor / concl 置于顶层（2026-11-04：导出已移至 index.html 的
+   market-export.js，本页不再自带导出；保持顶层对页面等效无副作用） */
 var LV = {'寒冷':'#1a6fa8','偏冷':'#0b6b46','中性':'#4b5563','偏热':'#a85100','过热':'#b3261e'};
 var heatColor = function(h){
   if (h==null) return '#8a93a3';
@@ -296,12 +214,7 @@ function concl(k,v){
   if(k==='breaknet') return v.value>=10?'破净率高 → 底部区域':(v.value<=5?'破净率低 → 顶部区域':'破净率中等');
   return '';
 }
-var MktExpSizes = {
-  xhs:  {w:1080, h:1620, label:'本周市场情绪大图（四核心大卡）'},
-  wide: {w:1200, h:800,  label:'4+4 指标全览小图'}
-};
-if (initExportMarket()){ /* 导出态：舞台已渲染，跳过常规页 */
-} else if (!M || !M.indicators){
+if (!M || !M.indicators){
   document.getElementById('mp').insertAdjacentHTML('beforeend',
     '<div style="padding:40px 20px;text-align:center;color:#8a8378;font-size:13px">数据未生成：请先运行 python -m fundscorer.pipeline</div>');
 } else {
@@ -535,111 +448,6 @@ if (initExportMarket()){ /* 导出态：舞台已渲染，跳过常规页 */
   document.getElementById('method').innerHTML = html;
 }
 
-/* ==== 导出窗口（2026-11-04 用户拍板：情绪周榜常驻导出图）====
-   ?export=market&size=xhs → 本周市场情绪大图 1080×1620（四核心大卡）
-   ?export=market&size=wide → 4+4 指标全览小图 1200×800
-   bare=1 去操作条；出图走无头截图（配方同 index.html），数据随 data.js 每周日更新 */
-function _meRing(score, level){
-  var r=120, C=2*Math.PI*r, fill=Math.max(0,Math.min(100,score))/100*C;
-  var col=LV[level]||'#4b5563';
-  return '<div class="me-ring"><svg viewBox="0 0 300 300">'
-    +'<circle cx="150" cy="150" r="'+r+'" fill="none" stroke="#efe9e0" stroke-width="26"/>'
-    +'<circle cx="150" cy="150" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="26" stroke-linecap="round"'
-    +' stroke-dasharray="'+fill.toFixed(1)+' '+C.toFixed(1)+'"/></svg>'
-    +'<div class="cv"><span class="num" style="color:'+col+'">'+score+'</span>'
-    +'<span class="lv" style="color:'+col+'">'+level+'</span></div></div>';
-}
-function _meScale(score){
-  var segs=[['#1a6fa8',20],['#0b6b46',20],['#4b5563',20],['#a85100',20],['#b3261e',20]];
-  var bar=segs.map(function(s){return '<i style="width:'+s[1]+'%;background:'+s[0]+'"></i>';}).join('');
-  var marks=['0','20','40','60','80','100'].map(function(m){return '<span>'+m+'</span>';}).join('');
-  return '<div class="me-scale">'+bar+'</div><div class="me-marks">'+marks+'</div>'
-    +'<div class="me-pos"><span class="tri" style="left:'+Math.max(2,Math.min(98,score))+'%">▼</span></div>';
-}
-function _meCard(k){
-  var v=M.indicators[k]; if(!v) return '';
-  var pct=v.pct==null?0:v.pct, hc=heatColor(v.heat);
-  return '<div class="me-card">'
-    +'<div class="nm"><i class="dot" style="background:'+hc+'"></i>'+v.label+'</div>'
-    +'<div class="vl">'+(v.value==null?'—':v.value)+'<span class="u">'+(v.unit||'')+'</span></div>'
-    +'<div class="pb"><span class="trk"><i style="width:'+pct+'%;background:'+hc+'"></i></span>'
-    +'<span class="pc" style="color:'+hc+'">'+(v.pct==null?'—':v.pct.toFixed(0)+'%')+'</span></div>'
-    +'<div class="cc" style="color:'+hc+'">'+concl(k,v)+'</div>'
-    +'</div>';
-}
-function _mktExpXhs(){
-  var score=M.score, level=M.level, w=M.weights||{};
-  var wtxt=[['erp','股债利差'],['margin','两融'],['ivix','波动率'],['m1m2','资金面']]
-    .map(function(p){ return p[1]+' '+Math.round((w[p[0]]||0)*100)+'%'; }).join(' · ');
-  var COREk=(M.core_keys&&M.core_keys.length)?M.core_keys.slice():['erp','margin','ivix','m1m2'];
-  return '<div class="mkt-exp xhs">'
-    +'<div class="me-head"><div class="tt">班马日记本 · 市场情绪周报</div>'
-    +'<div class="cap">基准 '+(M.asof||'—')+'</div></div>'
-    +'<div class="me-row">'+_meRing(score,level)
-    +'<div class="me-info"><div class="lab">当前市场情绪分（0-100，越高越热）</div>'
-    +_meScale(score)
-    +'<div class="me-weights">综合口径：'+wtxt+'</div>'
-    +'<div class="me-sub">核心 4 项合成 · 进阶 4 项独立参考 · 每周日 19:00 随周更更新</div>'
-    +'</div></div>'
-    +'<div class="me-sec">四个核心指标（进综合）</div>'
-    +'<div class="me-grid">'+COREk.map(_meCard).join('')+'</div>'
-    +'<div class="me-refs"><span class="t">参考指标速览</span>'
-    +Object.keys(M.indicators).filter(function(k){ return COREk.indexOf(k)<0; })
-        .map(function(k){ var v=M.indicators[k];
-          return v.label+' <b>'+(v.value==null?'—':v.value)+(v.unit||'')+'</b>'; }).join(' · ')
-    +'</div>'
-    +'<div class="me-foot"><div class="l">'
-    +'情绪分与各指标分位按近 5 年历史自算 · 数据基准 '+(M.asof||'—')+' · 每周日 19:00 更新<br>'
-    +'历史业绩不代表未来，不构成投资建议</div>'
-    +'<div class="r">@班马成长日记</div></div>'
-    +'</div>';
-}
-function _mktExpWide(){
-  var COREk=(M.core_keys&&M.core_keys.length)?M.core_keys.slice():['erp','margin','ivix','m1m2'];
-  var ADVk=Object.keys(M.indicators).filter(function(k){ return COREk.indexOf(k)<0; });
-  function item(k){
-    var v=M.indicators[k]; if(!v) return '';
-    var pct=v.pct==null?0:v.pct, hc=heatColor(v.heat);
-    return '<div class="w-item">'
-      +'<div class="r1"><span class="nm">'+v.label+'</span>'
-      +'<span class="vl">'+(v.value==null?'—':v.value)+'<span class="u">'+(v.unit||'')+'</span></span></div>'
-      +'<div class="r2"><span class="trk"><i style="width:'+pct+'%;background:'+hc+'"></i></span>'
-      +'<span class="pc" style="color:'+hc+'">'+(v.pct==null?'—':v.pct.toFixed(0)+'%')+'</span></div>'
-      +'<div class="cc">'+concl(k,v)+'</div></div>';
-  }
-  return '<div class="mkt-exp wide">'
-    +'<div class="w-head"><div class="tt">班马日记本 · 市场情绪 8 指标</div>'
-    +'<div class="cap">基准 '+(M.asof||'—')+' · 情绪分 '+(M.score!=null?M.score:'—')+' '+(M.level||'')+'</div></div>'
-    +'<div class="w-two">'
-    +'<div class="w-col"><div class="ct">核心 4（进综合）</div>'+COREk.map(item).join('')+'</div>'
-    +'<div class="w-col"><div class="ct ref">参考 4（独立观察）</div>'+ADVk.map(item).join('')+'</div>'
-    +'</div>'
-    +'<div class="w-foot"><span>情绪分与分位按近 5 年历史自算 · 每周日 19:00 更新 · 历史业绩不代表未来，不构成投资建议</span>'
-    +'<span class="r">@班马成长日记</span></div>'
-    +'</div>';
-}
-function initExportMarket(){
-  if (typeof location==='undefined' || !location.search) return false;
-  var q=new URLSearchParams(location.search);
-  if (q.get('export')!=='market') return false;
-  if (!M || !M.indicators) return false;
-  var sizeKey=q.get('size'); if(sizeKey!=='wide') sizeKey='xhs';
-  var bare=q.get('bare')==='1';
-  var S=MktExpSizes[sizeKey];
-  document.body.innerHTML='';
-  document.body.classList.add('exp'); if(bare) document.body.classList.add('bare');
-  var stage=sizeKey==='wide'?_mktExpWide():_mktExpXhs();
-  var bar='<div class="exp-bar"><span class="t">市场情绪导出图</span>'
-    +'<a class="'+(sizeKey==='xhs'?'on':'')+'" href="?export=market&size=xhs">大图 1080×1620</a>'
-    +'<a class="'+(sizeKey==='wide'?'on':'')+'" href="?export=market&size=wide">指标全览 1200×800</a>'
-    +'<span style="opacity:.75">出图：无头截图加 &amp;bare=1</span></div>';
-  var hint='<div class="exp-hint">'+S.label+' · '+S.w+'×'+S.h
-    +' · 基准 '+(M.asof||'—')+' · 数据随 data.js 每周日更新，勿用于非本期内容</div>';
-  document.body.insertAdjacentHTML('beforeend',
-    '<div class="exp-wrap">'+(bare?'':bar+hint)
-    +'<div class="exp-stage-box">'+stage+'</div></div>');
-  return true;
-}
 /* 点选读数（2026-11-03 审查；2026-11-04 升级：放大浮层可连点多点、编号对照）：
    点/触走势图任意处 → 显示 年月 + 纵轴数值；multi 模式每点一次钉住一个编号标记，
    图下方出编号清单（可重点取消/清空）。序列经 svg 的 data-s（/data-s2）携带，

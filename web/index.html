@@ -481,6 +481,7 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
 </div>
 
 <script src="data.js"></script>
+<script src="market-export.js"></script>
 <script>
 /* ============ 工具 ============ */
 const D = window.CARD_DATA;
@@ -1730,6 +1731,7 @@ function drawTrend(){
 const EXPORT_SIZES = {
   xhs:  {w:1080, h:1620, rows:20, label:'小红书 2:3（1080×1620，TOP20）'},
   wide: {w:1200, h:800,  rows:10, label:'公众号宽图 3:2（1200×800，TOP10）'},
+  cover:{w:1200, h:510,  rows:10, label:'公众号封面 2.35:1（1200×510，仅情绪封面）'},
 };
 function exportRows(pool, rows){
   if (pool === 'eq_index'){
@@ -2149,55 +2151,85 @@ function exportPools(){
 }
 function initExport(){
   if (typeof location === 'undefined' || !location.search) return false;
-  let pool = null, sizeKey = null, rows = null, bare = false;
+  let pool = null, sizeKey = null, rows = null, bare = false, mktKey = null;
   try {
     const q = new URLSearchParams(location.search);
     pool = q.get('export'); sizeKey = q.get('size'); rows = parseInt(q.get('rows') || '', 10) || null;
-    bare = q.get('bare') === '1';
+    bare = q.get('bare') === '1'; mktKey = q.get('key');
   } catch (e) { return false; }
-  if (!pool || !(D && D.funds)) return false;
+  if (!pool) return false;
+  const ME = window.MktExport;
+  const mktNow = () => !!(ME && ME.available && ME.names.indexOf(pool) >= 0);
+  if (mktNow() ? !(D && D.market) : !(D && D.funds)) return false;
   if (!EXPORT_SIZES[sizeKey]) sizeKey = 'xhs';
-  const pools = exportPools();
-  if (!pools.length) return false;
-  if (!pools.some(p => p.id === pool)) pool = pools[0].id;      // all/缺省/未知 → 首个可用池
+  /* 尺寸档位随目标收敛：cover 只属情绪封面；market_score 单档；池导出无 cover */
+  const tgtSizes = () => (mktNow() ? ME.sizesOf(pool) : ['xhs','wide']);
+  if (tgtSizes().indexOf(sizeKey) < 0) sizeKey = tgtSizes()[0];
+  const pools = mktNow() ? [] : exportPools();
+  if (!mktNow()) {
+    if (!pools.length) return false;
+    if (!pools.some(p => p.id === pool)) pool = pools[0].id;      // all/缺省/未知 → 首个可用池
+  }
   document.body.innerHTML = '';
   document.body.classList.add('exp');
   if (bare) document.body.classList.add('bare');
+  const poolBtns = pools.map(p => '<button data-pool="' + p.id + '">' + p.name + '</button>').join('');
+  const mktBtns = (ME && ME.available) ? ME.buttons() : '';
   const wrap = document.createElement('div'); wrap.className = 'exp-wrap';
   wrap.innerHTML = '<div class="exp-bar"><span class="t"></span></div>'
     + '<div class="exp-bar exp-opts">'
-    + pools.map(p => '<button data-pool="' + p.id + '">' + p.name + '</button>').join('')
+    + poolBtns + mktBtns
     + '<span style="flex:1 0 0"></span>'
     + '<button data-size="xhs">小红书 3:4</button><button data-size="wide">公众号宽图 3:2</button>'
+    + '<button data-size="cover">封面 2.35:1</button>'
     + '<button class="dl">下载 PNG</button>'
     + (pools.length > 1 ? '<button class="dl-all">下载全部分类</button>' : '')
     + '</div><div class="exp-hint"></div>'
-    + '<div class="exp-canvas-box"><canvas id="exp-canvas"></canvas></div>';
+    + '<div class="exp-canvas-box"><div id="mkt-stage"></div><canvas id="exp-canvas"></canvas></div>';
   document.body.appendChild(wrap);
   const cv = document.getElementById('exp-canvas');
+  const stage = document.getElementById('mkt-stage');
   const hint = wrap.querySelector('.exp-hint'), title = wrap.querySelector('.t');
   const nameOf = id => (pools.find(p => p.id === id) || {}).name || catLabel(id);
   const draw = () => {
-    const info = drawExport(cv, pool, sizeKey, rows);
-    title.textContent = nameOf(pool) + '心动榜 · 班马日记本导出'
-      + (pools.length > 1 ? '（共 ' + pools.length + ' 个分类，页签切换）' : '');
-    hint.textContent = (pool === 'index'
-      ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '全量分组')   /* v5.17 债指不分 TOP 截断 */
-      : pool === 'eq_index'
-      ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '指数估值·按尺寸行数')
-      : EXPORT_SIZES[sizeKey].label) + ' · ' + info.rows + ' 行 · 数据基准 '
-      + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）'
-      + (pools.length > 1 ? '；「下载全部」逐池出图，浏览器可能询问是否允许多文件下载' : '');
+    if (mktNow()) {
+      title.textContent = ME.nameOf(pool) + ' · 班马日记本导出';
+      hint.textContent = ME.hint(pool, sizeKey) + ' · 数据基准 '
+        + ((D.market && D.market.asof) || '') + '（随 data.js 每周日更新，勿用于非本期内容）';
+      stage.innerHTML = ME.build(pool, sizeKey, mktKey);
+      stage.style.display = ''; cv.style.display = 'none';
+    } else {
+      const info = drawExport(cv, pool, sizeKey, rows);
+      title.textContent = nameOf(pool) + '心动榜 · 班马日记本导出'
+        + (pools.length > 1 ? '（共 ' + pools.length + ' 个分类，页签切换）' : '');
+      hint.textContent = (pool === 'index'
+        ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '全量分组')   /* v5.17 债指不分 TOP 截断 */
+        : pool === 'eq_index'
+        ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '指数估值·按尺寸行数')
+        : EXPORT_SIZES[sizeKey].label) + ' · ' + info.rows + ' 行 · 数据基准 '
+        + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）'
+        + (pools.length > 1 ? '；「下载全部」逐池出图，浏览器可能询问是否允许多文件下载' : '');
+      stage.style.display = 'none'; cv.style.display = '';
+    }
     wrap.querySelectorAll('button[data-size]').forEach(b =>
       b.classList.toggle('on', b.getAttribute('data-size') === sizeKey));
     wrap.querySelectorAll('button[data-pool]').forEach(b =>
       b.classList.toggle('on', b.getAttribute('data-pool') === pool));
   };
-  wrap.querySelectorAll('button[data-pool]').forEach(b => b.onclick = () => { pool = b.getAttribute('data-pool'); draw(); });
-  wrap.querySelectorAll('button[data-size]').forEach(b => b.onclick = () => { sizeKey = b.getAttribute('data-size'); draw(); });
-  wrap.querySelector('.dl').onclick = () => exportDownload(cv, pool, sizeKey);
+  wrap.querySelectorAll('button[data-pool]').forEach(b => b.onclick = () => {
+    pool = b.getAttribute('data-pool');
+    if (tgtSizes().indexOf(sizeKey) < 0) sizeKey = tgtSizes()[0];
+    draw();
+  });
+  wrap.querySelectorAll('button[data-size]').forEach(b => b.onclick = () => {
+    const s = b.getAttribute('data-size');
+    sizeKey = tgtSizes().indexOf(s) >= 0 ? s : tgtSizes()[0];
+    draw();
+  });
+  wrap.querySelector('.dl').onclick = () => { if (!mktNow()) exportDownload(cv, pool, sizeKey); };
   const dlAll = wrap.querySelector('.dl-all');
   if (dlAll) dlAll.onclick = () => {
+    if (mktNow()) return;
     const list = pools.map(p => p.id), step = i => {
       if (i >= list.length) { draw(); return; }
       drawExport(cv, list[i], sizeKey, rows);

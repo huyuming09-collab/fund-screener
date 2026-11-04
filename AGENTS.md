@@ -49,11 +49,11 @@ node tests/smoke_page.js                  # 现基线：SMOKE PASS
 ## 5. 配图规范
 
 - 社媒配图**只导出榜单图**：`web/index.html?export=<pool>&size=xhs|wide`（`<pool>` = `short_bond` / `long_bond` / `fixed_plus`）
-- 情绪周榜图：`web/market.html?export=market&size=xhs|wide&bare=1`（xhs=大图 1080×1620 四核心大卡、wide=4+4 全览 1200×800；2026-11-04 用户拍板新增，数据随 data.js 每周日更新）
+- 情绪周榜图（与榜单导出同一工作台 `index.html`）：`?export=market_score|market_core|market_ref|market_ind|market_cover&size=…&bare=1`（大图 / 核心4详解 / 参考4详解 / 单指标卡`&key=` / 封面 1200×510；实现 `web/market-export.js`，2026-11-04 拍板，数据随 data.js 每周日更新，属每周固定模板）
 - 全分类工作台：`?export=all`
 - **不要再新增封面 / 对照 / 直方图 / 表格类导出模式**——这类图不随周更维护，会与当期数据脱节；确有需要先问用户
 - **导出必须带 `&bare=1`**：裸 URL 会把顶部黑色操作条与提示行截进图（已多次踩坑）；出图后抽检顶部无暗条（y≈20 采样行，暗像素占比 <20%）
-- 页面当前只有 `EXPORT_SIZES.xhs` 与 `.wide` 两档，导出图为一次性快照，**不进周更管线**
+- 页面 `EXPORT_SIZES` 三档：`xhs` / `wide` / `cover`（1200×510，仅情绪封面），导出图为一次性快照，**不进周更管线**
 
 ## 6. 状态同步纪律
 
