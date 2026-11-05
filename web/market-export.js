@@ -3,9 +3,9 @@
      ?export=market_score &size=xhs            周榜大图：环形情绪分+一句话解读（1080×1620）
      ?export=market_core  &size=xhs|wide       核心 4 详解：小红书竖版 / 公众号横版（wide 含常见范围）
      ?export=market_ref   &size=xhs|wide       参考 4 详解：同上
-     ?export=market_ind   &key=erp&size=wide   单指标详解卡（公众号图文并排；key 可换 8 指标任一）
      ?export=market_cover &size=cover          公众号封面（1200×510，2.35:1）
    全部加 &bare=1 走无头截图出图；数据随 data.js 每周日更新，属每周固定模板。
+   （2026-11-05 用户拍板删除单指标卡 market_ind——已渲染的卡图仍留在期次包供发文。）
    本文件自包含（LV/heatColor/concl 为导出侧副本），index.html 只负责解析与分派。 */
 (function () {
   var M = window.CARD_DATA && window.CARD_DATA.market;
@@ -42,9 +42,9 @@
   }
 
   var SIZES = { xhs:{w:1080,h:1620}, wide:{w:1200,h:800}, cover:{w:1200,h:510} };
-  var NAMES = ['market_score','market_core','market_ref','market_ind','market_cover'];
+  var NAMES = ['market_score','market_core','market_ref','market_cover'];
   var BTN  = [['market_score','情绪大图'],['market_core','核心4详解'],['market_ref','参考4详解'],
-              ['market_ind','单指标卡'],['market_cover','情绪封面']];
+              ['market_cover','情绪封面']];
 
   function coreKeys(){
     return (M.core_keys && M.core_keys.length) ? M.core_keys.slice() : ['erp','margin','ivix','m1m2'];
@@ -110,22 +110,6 @@
   +'.mx.s-wide .it .cc{font-size:25px;}'
   +'.mx.s-wide .it .ds{font-size:21px;line-height:1.5;}'
   +'.mx.s-wide .it .rg{font-size:20px;margin-top:5px;}'
-  +'.mx .blk{margin-bottom:16px;}'
-  /* 单指标卡（2026-11-05 重做：全宽大数值 + 通栏分位条 + 结论 + 双栏文本块；
-     原"左 44% 窄栏 + 右侧文本"在手机与预览下比例失衡） */
-  +'.mx .ind-hd{display:flex;justify-content:space-between;align-items:flex-end;margin-top:28px;gap:20px;}'
-  +'.mx .ind-hd .nm{font-size:36px;font-weight:700;color:#5c564c;padding-bottom:12px;}'
-  +'.mx .ind-hd .big{font-size:96px;font-weight:800;line-height:1;}'
-  +'.mx .ind-hd .big .u{font-size:30px;font-weight:600;color:#8a8378;margin-left:10px;}'
-  +'.mx .ind-bar{display:flex;align-items:center;gap:16px;margin-top:24px;}'
-  +'.mx .ind-bar .trk{flex:1;height:22px;border-radius:11px;background:#f1ede6;overflow:hidden;}'
-  +'.mx .ind-bar .trk i{display:block;height:100%;border-radius:11px;}'
-  +'.mx .ind-bar .pc{font-size:30px;font-weight:800;min-width:170px;text-align:right;}'
-  +'.mx .ind-cc{font-size:34px;font-weight:700;margin-top:20px;}'
-  +'.mx .ind-cols{display:grid;grid-template-columns:1fr 1fr;column-gap:48px;margin-top:26px;}'
-  +'.mx.s-xhs .ind-cols{grid-template-columns:1fr;}'
-  +'.mx .blk .k{font-size:24px;font-weight:800;color:#c05a28;margin-bottom:6px;}'
-  +'.mx .blk .v{font-size:23px;color:#5c564c;line-height:1.7;}'
   /* 封面 */
   +'.mx .cv-wrap{display:flex;height:100%;align-items:center;justify-content:space-between;gap:40px;}'
   +'.mx .cv-l .t1{font-size:74px;font-weight:800;letter-spacing:2px;}'
@@ -233,24 +217,6 @@
       +foot(l2)
       +'</div>';
   }
-  function buildInd(key, sizeKey){
-    var v = M.indicators[key]; if(!v) return '';
-    var o = ind(key);
-    var blk = function(t, k){ return v[k] ? '<div class="blk"><div class="k">'+t+'</div><div class="v">'+v[k]+'</div></div>' : ''; };
-    /* 顶部：名称 + 大数值（同一行）→ 通栏分位条 → 结论；下方文本块双栏（竖版单列） */
-    var top = '<div class="ind-hd"><div class="nm">'+v.label+'</div>'
-      +'<div class="big" style="color:'+o.hc+'">'+(v.value==null?'—':v.value)
-      +'<span class="u">'+(v.unit||'')+'</span></div></div>'
-      +'<div class="ind-bar"><span class="trk"><i style="width:'+o.pct+'%;background:'+o.hc+'"></i></span>'
-      +'<span class="pc" style="color:'+o.hc+'">近 5 年分位 '+(v.pct==null?'—':v.pct.toFixed(0)+'%')+'</span></div>'
-      +'<div class="ind-cc" style="color:'+o.hc+'">'+concl(key,v)+'</div>';
-    var leftBlk  = blk('是什么','desc') + blk('怎么算','how') + blk('常见范围','range');
-    var rightBlk = blk('数据来源','source') + blk('口径局限','caveat');
-    var cols = sizeKey==='wide'
-      ? '<div class="ind-cols"><div>'+leftBlk+'</div><div>'+rightBlk+'</div></div>'
-      : '<div class="ind-cols">'+leftBlk+rightBlk+'</div>';
-    return '<div class="mx s-'+sizeKey+'">'+head('市场情绪 · 单指标详解')+top+cols+foot()+'</div>';
-  }
   function buildCover(){
     var score=M.score, level=M.level;
     var chips = coreKeys().map(function(k){
@@ -267,7 +233,6 @@
     ensureStyle();
     if (name==='market_score') return buildScore();                 /* 固定竖版 */
     if (name==='market_cover') return buildCover();                 /* 固定 1200×510 */
-    if (name==='market_ind')   return buildInd(key||'erp', sizeKey==='xhs'?'xhs':'wide');
     if (name==='market_core' || name==='market_ref')
       return buildList(name, sizeKey==='wide'?'wide':'xhs');
     return '';
@@ -275,7 +240,6 @@
   function hint(name, sizeKey){
     if (name==='market_score') return '情绪周榜大图（环形+一句话解读，1080×1620）';
     if (name==='market_cover') return '公众号封面（1200×510，2.35:1）';
-    if (name==='market_ind')   return '单指标详解卡（'+(sizeKey==='xhs'?'竖版 1080×1620':'横版 1200×800')+'，&key=erp|margin|ivix|m1m2|pe|newfund|buffett|breaknet）';
     return (name==='market_ref'?'参考 4 详解':'核心 4 详解')+'（'+(sizeKey==='wide'?'公众号横版，含常见范围':'小红书竖版')+'）';
   }
   function nameOf(id){

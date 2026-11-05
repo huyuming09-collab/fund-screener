@@ -49,7 +49,7 @@ node tests/smoke_page.js                  # 现基线：SMOKE PASS
 ## 5. 配图规范
 
 - 社媒配图**只导出榜单图**：`web/index.html?export=<pool>&size=xhs|wide`（`<pool>` = `short_bond` / `long_bond` / `fixed_plus`）
-- 情绪周榜图（与榜单导出同一工作台 `index.html`）：`?export=market_score|market_core|market_ref|market_ind|market_cover&size=…&bare=1`（大图 / 核心4详解 / 参考4详解 / 单指标卡`&key=` / 封面 1200×510；实现 `web/market-export.js`，2026-11-04 拍板，数据随 data.js 每周日更新，属每周固定模板）
+- 情绪周榜图（与榜单导出同一工作台 `index.html`）：`?export=market_score|market_core|market_ref|market_cover&size=…&bare=1`（大图 / 核心4详解 / 参考4详解 / 封面 1200×510；实现 `web/market-export.js`，2026-11-04 拍板、2026-11-05 删单指标卡，数据随 data.js 每周日更新，属每周固定模板）
 - 全分类工作台：`?export=all`
 - **不要再新增封面 / 对照 / 直方图 / 表格类导出模式**——这类图不随周更维护，会与当期数据脱节；确有需要先问用户
 - **导出必须带 `&bare=1`**：裸 URL 会把顶部黑色操作条与提示行截进图（已多次踩坑）；出图后抽检顶部无暗条（y≈20 采样行，暗像素占比 <20%）
