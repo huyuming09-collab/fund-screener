@@ -383,6 +383,10 @@ body.exp{display:block;overflow:auto;background:#20242c;}
 .exp-bar button{padding:7px 14px;border-radius:9px;border:1px solid #3a4048;background:#2a2f38;
                 color:#e8eaee;font-size:13px;cursor:pointer;}
 .exp-bar button.on{background:#ff6a00;border-color:#ff6a00;color:#fff;font-weight:600;}
+.exp-bar .grp{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.exp-bar .grp b{font-size:11px;color:#9aa3ad;background:#2b3039;border:1px solid #3a4048;
+  border-radius:7px;padding:3px 8px;font-weight:600;letter-spacing:1px;}
+#mkt-stage{width:max-content;max-width:100%;}
 .exp-hint{color:#9aa3ad;font-size:12px;margin-bottom:12px;}
 .exp-canvas-box{background:#fff;border-radius:12px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,.35);}
 #exp-canvas{width:100%;height:auto;display:block;}
@@ -2176,12 +2180,13 @@ function initExport(){
   const poolBtns = pools.map(p => '<button data-pool="' + p.id + '">' + p.name + '</button>').join('');
   const mktBtns = (ME && ME.available) ? ME.buttons() : '';
   const wrap = document.createElement('div'); wrap.className = 'exp-wrap';
+  const SIZE_LABEL = {xhs:'小红书 3:4', wide:'公众号宽图 3:2', cover:'封面 2.35:1'};
   wrap.innerHTML = '<div class="exp-bar"><span class="t"></span></div>'
     + '<div class="exp-bar exp-opts">'
-    + poolBtns + mktBtns
+    + '<span class="grp"><b>榜单</b>' + poolBtns + '</span>'
+    + '<span class="grp"><b>情绪</b>' + mktBtns + '</span>'
     + '<span style="flex:1 0 0"></span>'
-    + '<button data-size="xhs">小红书 3:4</button><button data-size="wide">公众号宽图 3:2</button>'
-    + '<button data-size="cover">封面 2.35:1</button>'
+    + '<span class="grp"><b>尺寸</b><span id="size-btns"></span></span>'
     + '<button class="dl">下载 PNG</button>'
     + (pools.length > 1 ? '<button class="dl-all">下载全部分类</button>' : '')
     + '</div><div class="exp-hint"></div>'
@@ -2192,12 +2197,22 @@ function initExport(){
   const hint = wrap.querySelector('.exp-hint'), title = wrap.querySelector('.t');
   const nameOf = id => (pools.find(p => p.id === id) || {}).name || catLabel(id);
   const draw = () => {
+    /* 尺寸按钮按当前图型动态显示（2026-11-05：榜单只 xhs/wide、封面只 cover、其余 xhs/wide） */
+    const sb = wrap.querySelector('#size-btns');
+    if (sb) {
+      sb.innerHTML = tgtSizes().map(s => '<button data-size="' + s + '">' + (SIZE_LABEL[s] || s) + '</button>').join('');
+      sb.querySelectorAll('button').forEach(b => b.onclick = () => { sizeKey = b.getAttribute('data-size'); draw(); });
+    }
     if (mktNow()) {
       title.textContent = ME.nameOf(pool) + ' · 班马日记本导出';
       hint.textContent = ME.hint(pool, sizeKey) + ' · 数据基准 '
         + ((D.market && D.market.asof) || '') + '（随 data.js 每周日更新，勿用于非本期内容）';
       stage.innerHTML = ME.build(pool, sizeKey, mktKey);
       stage.style.display = ''; cv.style.display = 'none';
+      /* 预览自适应（2026-11-05 修：固定像素舞台在手机上显示不全；bare 出图必须
+         zoom=1 保持 1:1 像素——窗口宽=舞台宽，非 bare 才按预览容器缩） */
+      const bw = stage.parentElement.clientWidth || ME.sizes[sizeKey].w;
+      stage.style.zoom = bare ? 1 : Math.min(1, bw / ME.sizes[sizeKey].w);
     } else {
       const info = drawExport(cv, pool, sizeKey, rows);
       title.textContent = nameOf(pool) + '心动榜 · 班马日记本导出'
@@ -2221,11 +2236,7 @@ function initExport(){
     if (tgtSizes().indexOf(sizeKey) < 0) sizeKey = tgtSizes()[0];
     draw();
   });
-  wrap.querySelectorAll('button[data-size]').forEach(b => b.onclick = () => {
-    const s = b.getAttribute('data-size');
-    sizeKey = tgtSizes().indexOf(s) >= 0 ? s : tgtSizes()[0];
-    draw();
-  });
+  window.addEventListener('resize', () => { if (mktNow()) draw(); });
   wrap.querySelector('.dl').onclick = () => { if (!mktNow()) exportDownload(cv, pool, sizeKey); };
   const dlAll = wrap.querySelector('.dl-all');
   if (dlAll) dlAll.onclick = () => {

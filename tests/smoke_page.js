@@ -609,13 +609,15 @@ if (D.market && D.market.indicators) {
       && mktHtml.includes("replace('-','')")   /* 负零刻度守卫（ERP 下沿曾显示 -0.0%） */
       /* 品牌口径（2026-11-04 用户定）："温度"一词留给指数温度计，市场情绪页禁用 */
       && !mktHtml.includes('温度'));
-  /* 导出窗口（2026-11-04 拍板：与 index.html 导出工作台同址，实现见 market-export.js） */
-  chk('市场情绪导出：index 引入模块 + cover 档 + 模块含 5 种图',
+  /* 导出窗口（2026-11-04 拍板同址；2026-11-05 二修：分组按钮 + 动态尺寸 + 情绪专属免责） */
+  chk('市场情绪导出：index 引入模块 + 分组按钮 + 模块含 5 种图 + 情绪免责',
       html.includes('market-export.js') && html.includes('window.MktExport')
-      && html.includes('data-size="cover"')
+      && html.includes('<b>情绪</b>') && html.includes('#size-btns')
       && mktExpJs.includes("'market_score'") && mktExpJs.includes("'market_core'")
       && mktExpJs.includes("'market_ref'") && mktExpJs.includes("'market_ind'")
-      && mktExpJs.includes("'market_cover'") && mktExpJs.includes('function buildScore'));
+      && mktExpJs.includes("'market_cover'") && mktExpJs.includes('function buildScore')
+      && mktExpJs.includes('不构成任何投资建议或基金推介')
+      && !mktHtml.includes('心动值'));
 } else {
   chk('市场情绪（8指标）存在', false);
 }

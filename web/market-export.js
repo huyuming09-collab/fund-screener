@@ -111,16 +111,19 @@
   +'.mx.s-wide .it .ds{font-size:21px;line-height:1.5;}'
   +'.mx.s-wide .it .rg{font-size:20px;margin-top:5px;}'
   +'.mx .blk{margin-bottom:16px;}'
-  /* 单指标卡 */
-  +'.mx .ind2{display:flex;gap:44px;margin-top:34px;}'
-  +'.mx .ind2 .lc{width:44%;}'
-  +'.mx .ind2 .rc{flex:1;}'
-  +'.mx .ind2 .big{font-size:120px;font-weight:800;line-height:1;}'
-  +'.mx .ind2 .big .u{font-size:34px;font-weight:600;color:#8a8378;margin-left:10px;}'
-  +'.mx .ind2 .trk{height:22px;border-radius:11px;background:#f1ede6;overflow:hidden;margin-top:26px;}'
-  +'.mx .ind2 .trk i{display:block;height:100%;border-radius:11px;}'
-  +'.mx .ind2 .pc{font-size:30px;font-weight:800;margin-top:12px;text-align:right;}'
-  +'.mx .ind2 .cc{font-size:30px;font-weight:700;margin-top:22px;}'
+  /* 单指标卡（2026-11-05 重做：全宽大数值 + 通栏分位条 + 结论 + 双栏文本块；
+     原"左 44% 窄栏 + 右侧文本"在手机与预览下比例失衡） */
+  +'.mx .ind-hd{display:flex;justify-content:space-between;align-items:flex-end;margin-top:28px;gap:20px;}'
+  +'.mx .ind-hd .nm{font-size:36px;font-weight:700;color:#5c564c;padding-bottom:12px;}'
+  +'.mx .ind-hd .big{font-size:96px;font-weight:800;line-height:1;}'
+  +'.mx .ind-hd .big .u{font-size:30px;font-weight:600;color:#8a8378;margin-left:10px;}'
+  +'.mx .ind-bar{display:flex;align-items:center;gap:16px;margin-top:24px;}'
+  +'.mx .ind-bar .trk{flex:1;height:22px;border-radius:11px;background:#f1ede6;overflow:hidden;}'
+  +'.mx .ind-bar .trk i{display:block;height:100%;border-radius:11px;}'
+  +'.mx .ind-bar .pc{font-size:30px;font-weight:800;min-width:170px;text-align:right;}'
+  +'.mx .ind-cc{font-size:34px;font-weight:700;margin-top:20px;}'
+  +'.mx .ind-cols{display:grid;grid-template-columns:1fr 1fr;column-gap:48px;margin-top:26px;}'
+  +'.mx.s-xhs .ind-cols{grid-template-columns:1fr;}'
   +'.mx .blk .k{font-size:24px;font-weight:800;color:#c05a28;margin-bottom:6px;}'
   +'.mx .blk .v{font-size:23px;color:#5c564c;line-height:1.7;}'
   /* 封面 */
@@ -185,7 +188,9 @@
   }
   function foot(l2){
     var asof = M.asof||'—';
-    var dis = (window.CARD_DATA && window.CARD_DATA.disclaimer) || '历史业绩不代表未来，不构成投资建议';
+    /* 情绪图专属免责（2026-11-05 修：原误用 data.js 通用文案，里面写的是"心动值"） */
+    var dis = '情绪分与各指标均为历史数据自算的分析参考，不构成任何投资建议或基金推介；'
+      + '数据来自公开渠道，可能存在延迟与错误。历史业绩不代表未来，不构成投资建议。';
     return '<div class="ft"><div class="l">情绪分与各指标分位按近 5 年历史自算 · 数据基准 '+asof+' · 每周日 19:00 更新<br>'
       +(l2||dis)+'</div><div class="r">@班马成长日记</div></div>';
   }
@@ -231,20 +236,20 @@
   function buildInd(key, sizeKey){
     var v = M.indicators[key]; if(!v) return '';
     var o = ind(key);
-    var txt = function(k, t){ return v[k] ? '<div class="blk"><div class="k">'+t+'</div><div class="v">'+v[k]+'</div></div>' : ''; };
-    var left = '<div class="lc"><div class="nm" style="font-size:34px;font-weight:700;color:#5c564c">'+v.label+'</div>'
-      +'<div class="big" style="color:'+o.hc+';margin-top:16px">'+(v.value==null?'—':v.value)+'<span class="u">'+(v.unit||'')+'</span></div>'
-      +'<div class="trk"><i style="width:'+o.pct+'%;background:'+o.hc+'"></i></div>'
-      +'<div class="pc" style="color:'+o.hc+'">近 5 年分位 '+(v.pct==null?'—':v.pct.toFixed(0)+'%')+'</div>'
-      +'<div class="cc" style="color:'+o.hc+'">'+concl(key,v)+'</div></div>';
-    var right = '<div class="rc">'
-      + txt('desc','是什么') + txt('how','怎么算') + txt('range','常见范围')
-      + txt('source','数据来源') + txt('caveat','口径局限')
-      + '</div>';
-    var body = sizeKey==='wide'
-      ? '<div class="ind2">'+left+right+'</div>'
-      : '<div>'+left.replace('class="lc"','class="lc" style="width:auto"')+'<div style="margin-top:30px">'+right+'</div></div>';
-    return '<div class="mx s-'+sizeKey+'">'+head('市场情绪 · 单指标详解')+body+foot()+'</div>';
+    var blk = function(t, k){ return v[k] ? '<div class="blk"><div class="k">'+t+'</div><div class="v">'+v[k]+'</div></div>' : ''; };
+    /* 顶部：名称 + 大数值（同一行）→ 通栏分位条 → 结论；下方文本块双栏（竖版单列） */
+    var top = '<div class="ind-hd"><div class="nm">'+v.label+'</div>'
+      +'<div class="big" style="color:'+o.hc+'">'+(v.value==null?'—':v.value)
+      +'<span class="u">'+(v.unit||'')+'</span></div></div>'
+      +'<div class="ind-bar"><span class="trk"><i style="width:'+o.pct+'%;background:'+o.hc+'"></i></span>'
+      +'<span class="pc" style="color:'+o.hc+'">近 5 年分位 '+(v.pct==null?'—':v.pct.toFixed(0)+'%')+'</span></div>'
+      +'<div class="ind-cc" style="color:'+o.hc+'">'+concl(key,v)+'</div>';
+    var leftBlk  = blk('是什么','desc') + blk('怎么算','how') + blk('常见范围','range');
+    var rightBlk = blk('数据来源','source') + blk('口径局限','caveat');
+    var cols = sizeKey==='wide'
+      ? '<div class="ind-cols"><div>'+leftBlk+'</div><div>'+rightBlk+'</div></div>'
+      : '<div class="ind-cols">'+leftBlk+rightBlk+'</div>';
+    return '<div class="mx s-'+sizeKey+'">'+head('市场情绪 · 单指标详解')+top+cols+foot()+'</div>';
   }
   function buildCover(){
     var score=M.score, level=M.level;
