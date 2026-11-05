@@ -16,7 +16,9 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
+import os
 import re
 import time
 import urllib.request
@@ -832,6 +834,79 @@ def load_cs(code: str, refresh: bool) -> dict | None:
             return None
 
 
+LX_URL = "https://open.lixinger.com/api/cn/index/fundamental"
+
+
+def _lx_token() -> str | None:
+    """理杏仁 open API token（2026-11-05 接入）：env ``LIXINGER_TOKEN`` 优先，
+    否则 ``data/lixinger_token.txt``（已 gitignore，**绝不入库**）。缺失 → 跳过该源。"""
+    tok = (os.environ.get("LIXINGER_TOKEN") or "").strip()
+    if tok:
+        return tok
+    try:
+        return (DATA_DIR / "lixinger_token.txt").read_text(encoding="utf-8").strip() or None
+    except Exception:                          # noqa: BLE001
+        return None
+
+
+def _lx_code(code: str) -> str:
+    """目录码 CSIH30184 / SH000922 / SZ399975 → 理杏仁码 H30184 / 000922 / 399975。"""
+    for p in ("CSI", "SH", "SZ"):
+        if code.startswith(p):
+            return code[len(p):]
+    return code
+
+
+def load_lx_pb(code: str, refresh: bool) -> list | None:
+    """理杏仁指数**等权 PB** 日频近 10 年（open API ``cn/index/fundamental``，metric=pb.ew）。
+
+    实测 2026-11-05：单码请求（stockCodes 批量上限=1）、日频含当日、10 年 2433 行、
+    覆盖 166/187（海外/港股与冷门主题无 → 回退单 PE）；限流 1000 次/分。
+    缓存 20h；网络失败沿用旧缓存；空结果也入缓存（负缓存，避免反复打无数据指数）。
+    """
+    tok = _lx_token()
+    if not tok:
+        return None
+    key = f"lxpb_v1_{code}"
+    cached = D._load_cache(key, C.EQ_INDEX["cache_hours"])
+    if cached is not None:
+        return cached or None
+    if not refresh:
+        try:
+            p = D._cache_path(key)
+            return (pd.read_pickle(p) if p.exists() else None) or None
+        except Exception:                      # noqa: BLE001
+            return None
+
+    def _dec(b: bytes, enc: str | None) -> bytes:
+        return gzip.decompress(b) if "gzip" in (enc or "") else b
+
+    body = json.dumps({"token": tok, "stockCodes": [_lx_code(code)],
+                       "metricsList": ["pb.ew"],
+                       "startDate": "2016-01-01",
+                       "endDate": time.strftime("%Y-%m-%d")}).encode("utf-8")
+    req = urllib.request.Request(
+        LX_URL, data=body, method="POST",
+        headers={"Content-Type": "application/json",
+                 "Accept-Encoding": "gzip",   # 服务端强制校验此头（2026-11-05 实测）
+                 "User-Agent": UA})
+    try:
+        resp = urllib.request.urlopen(req, timeout=30)
+        txt = _dec(resp.read(), resp.headers.get("Content-Encoding")).decode("utf-8", "ignore")
+        rows = (json.loads(txt).get("data")) or []
+        pairs = [[r["date"][:10], r["pb.ew"]] for r in rows
+                 if r.get("pb.ew") is not None]
+        pairs.reverse()                        # 接口按日期降序 → 改升序
+        D._save_cache(key, pairs)              # 空列表也存（负缓存）
+        return pairs or None
+    except Exception:                          # noqa: BLE001  失败沿用旧缓存
+        try:
+            p = D._cache_path(key)
+            return (pd.read_pickle(p) if p.exists() else None) or None
+        except Exception:                      # noqa: BLE001
+            return None
+
+
 def _pairs_series(pairs: list) -> pd.Series:
     if not pairs:
         return pd.Series(dtype=float)
@@ -970,7 +1045,7 @@ _CLOSE_PROXY = {"SZ399006": "110026", "HKHSTECH": "012348", "NDX": "006479",
 
 
 def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
-    """v3 基础版：中证 PE/点位为主、雪球 PB 为辅；10Y 为主窗口，3/5/全历史可切。"""
+    """v3 基础版：中证 PE/点位为主、雪球 PB 为辅、理杏仁等权 PB 回退；10Y 主窗口，3/5/全历史可切。"""
     cs = load_cs(entry["cs"], refresh) if entry.get("cs") else None
     dj = None
     try:
@@ -991,6 +1066,11 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
                               for d, v in zip(dates, vals)])
         if len(pb_s) < 26:                         # 雪球未覆盖时只回 1 个占位点，视为无 PB
             pb_s = pd.Series(dtype=float)
+    if pb_s.empty:
+        # 雪球未覆盖（半导体等 21+10 只实测缺口）→ 理杏仁等权 PB 回退（2026-11-05 接入）
+        lx = load_lx_pb(entry["code"], refresh)
+        if lx:
+            pb_s = _pairs_series(lx)
     close_s = _pairs_series(close_pairs)
     close_proxy = False
     if close_s.empty and entry["code"] in _CLOSE_PROXY:
@@ -1422,7 +1502,7 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
         + "、".join(f"{k}{v}" for k, v in tier_cnt.items())
         + f"；耗时 {time.time() - t0:.1f}s")
     return {"version": cfg["version"], "asof": asof,
-            "source": "中证指数官网 PE/点位 + 雪球基金 PB（分位为程序自算）",
+            "source": "中证指数官网 PE/点位 + 雪球基金 PB + 理杏仁等权 PB 回退（分位为程序自算）",
             "catalog_n": len(CATALOG),
             "mainstream_n": sum(1 for c in CATALOG if c.get("mainstream") and not c.get("defer")),
             "hot_per_group": cfg["hot_per_group"],
