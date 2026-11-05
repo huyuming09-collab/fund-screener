@@ -444,6 +444,14 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('指数详情含估值结论/走势/方法口径/场外基金',
         de.includes('估值结论') && de.includes('估值走势')
         && de.includes('方法口径') && de.includes('场外基金') && de.includes('<svg'));
+    /* 2026-11-05 详情卡重设计 + 指数语境免责 + 自选 */
+    chk('指数详情卡：KPI 大行 + 明细折叠 + 图例在图下方（无均值±1σ/色带）',
+        de.includes('eq-kpis') && de.includes('详细数据') && de.includes('eq-legend2')
+        && !de.includes('均值±1σ') && !de.includes('六档区间'));
+    chk('指数详情免责为温度版（禁心动值）且按钮为加自选',
+        document.getElementById('d-disc').textContent === DISC_EQ
+        && !document.getElementById('d-disc').textContent.includes('心动值')
+        && document.getElementById('d-pick').textContent.includes('自选'));
     // v2.0 折叠「指标说明」：口径/怎么算/为什么/科学吗（按指数特点选主指标）
     chk('指数详情含折叠「指标说明」（口径/怎么算/为什么/科学吗）',
         de.includes('指标说明') && de.includes('eq-meth')
@@ -468,8 +476,12 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     openDetail(shortFunds[0].code);
     chk('回到基金详情恢复「综合心动值」标签',
         document.getElementById('d-score-label').textContent==='综合心动值');
+    chk('回到基金详情恢复「加入对比」按钮（EQ 曾改成加自选）',
+        document.getElementById('d-pick').textContent==='加入对比');
     closeDetail();
     SECTION = 'bond'; switchTab('short_bond');   /* v1.7 回偏债区 */
+    chk('切回榜单后底部免责恢复 data.js 版（含心动值）',
+        document.getElementById('p-disc').textContent === D.disclaimer);
   } else {
     console.log('· 无指数估值数据（旧 data.js / 未建库）');
   }
@@ -619,6 +631,11 @@ if (D.market && D.market.indicators) {
       && mktExpJs.includes('function buildScore')
       && mktExpJs.includes('不构成任何投资建议或基金推介')
       && !mktHtml.includes('心动值'));
+  /* 指数温度计 2026-11-05：自选分组 + localStorage + 指数语境免责 */
+  chk('指数自选：localStorage 存储 + 第5分组 + 指数语境免责',
+      html.includes('EQ_WATCH_KEY') && html.includes('localStorage')
+      && html.includes('concat(') && html.includes('自选')
+      && html.includes('DISC_EQ') && html.includes('eqToggleWatch'));
 } else {
   chk('市场情绪（8指标）存在', false);
 }

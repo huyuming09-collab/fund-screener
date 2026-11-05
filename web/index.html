@@ -121,7 +121,7 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .tier.t4{background:#eef0f3;color:#4b5563;}   /* 正常·常温（中性·灰） */
 .tier.t5{background:#fff3e3;color:#a85100;}   /* 合理偏高·微暖（暖·橙） */
 .tier.t6{background:#fdecea;color:#b3261e;}   /* 高估·燥热（热·红） */
-.tier.big{display:inline-block;font-size:16px;padding:7px 14px;border-radius:11px;margin:2px 0 8px;}
+.tier.big{display:inline-block;font-size:24px;padding:10px 18px;border-radius:13px;margin:2px 0 8px;}
 .eq-pct{text-align:right;flex:0 0 auto;}
 .eq-pct b{display:block;font-size:18px;color:var(--accent-ink);line-height:1.1;}
 .eq-pct span{font-size:10.5px;color:var(--sub);}
@@ -172,6 +172,13 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eqrow-act.a0{background:#fdecea;color:#b3261e;}
 .eqrow-sub{font-size:10.5px;color:var(--sub);margin-top:4px;line-height:1.5;}
 .eq-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 8px;}
+/* 2026-11-05 详情卡重设计：结论句放大 + 一行 4 个大数，明细进折叠 */
+.eq-concl{font-size:17px;font-weight:650;color:var(--text);line-height:1.5;flex:1;min-width:180px;}
+.eq-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0 4px;}
+.eq-kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 4px;text-align:center;}
+.eq-kpi .l{font-size:10px;color:var(--sub);line-height:1.3;}
+.eq-kpi .v{font-size:19px;font-weight:750;margin-top:4px;line-height:1.2;
+  font-variant-numeric:tabular-nums;}
 .eq-act{background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:12px;}
 .eq-act b{font-size:16px;color:var(--accent-ink);}
 .eq-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0;}
@@ -184,12 +191,15 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eq-toggle button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 /* v1.2 紧凑列表行（非卡片）· v1.4 简化：名称手机可两行、右侧「当前温度」 */
 /* v1.5 指数列表改三列表格（用户 2026-10-31）：指数名称 | 近一周涨跌幅 | 当前温度 */
-.eqi{display:grid;grid-template-columns:1fr 78px 62px;gap:7px;align-items:center;
+.eqi{display:grid;grid-template-columns:1fr 78px 62px 30px;gap:7px;align-items:center;
      padding:9px 2px;border-bottom:1px solid #edeff2;cursor:pointer;transition:background .1s;}
 .eqi:active{background:#f6f7f9;}
-.eqi-head{display:grid;grid-template-columns:1fr 78px 62px;gap:7px;align-items:center;
+.eqi-head{display:grid;grid-template-columns:1fr 78px 62px 30px;gap:7px;align-items:center;
      padding:5px 2px 6px;border-bottom:2px solid var(--line);font-size:10.5px;
      color:var(--sub);font-weight:650;letter-spacing:.2px;}
+/* 自选星标（2026-11-05） */
+.eqi-w{font-size:17px;text-align:center;color:#d5d9de;cursor:pointer;user-select:none;line-height:1;}
+.eqi-w.on{color:#ff6a00;}
 .eqi-head .r{text-align:right;}
 .eqi-l{display:flex;align-items:center;gap:7px;min-width:0;}
 .eqi-l .tier{flex:0 0 auto;min-width:0;padding:4px 6px;font-size:11px;}
@@ -217,18 +227,16 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eqfull-search{flex:0 0 auto;padding:0 14px 8px;}
 .eqfull-search input{width:100%;padding:8px 11px;border-radius:10px;border:1px solid var(--line);
   background:#fff;font-size:13px;color:var(--text);outline:none;}
-.eq-chart-wrap{display:flex;gap:10px;align-items:flex-start;}
-.eq-legend{flex:0 0 92px;padding-top:10px;}
-.eq-legend .lg{display:flex;align-items:center;gap:5px;font-size:9.5px;color:var(--sub);
-  line-height:1.3;margin-bottom:8px;white-space:nowrap;}
-.eq-legend .ln{flex:0 0 16px;height:0;border-top:2px solid #c54300;}
-.eq-legend .ln.blue{border-top:1.5px dashed #2456b8;}
-.eq-legend .ln.red{border-top:1.5px dashed #b3261e;}
-.eq-legend .ln.gray{border-top:1.5px dashed #6b7280;}
-.eq-legend .ln.green{border-top:1.5px dashed #0b6b46;}
-.eq-legend .ln.light{border-top:1.5px dashed #c9cdd4;}
-.eq-legend .band{flex:0 0 16px;height:10px;border-radius:2px;
-  background:linear-gradient(90deg,#e3f5ec,#eef0f3,#fdecea);}
+/* 2026-11-05 走势图重画：图例移到图下方横排（原左侧 92px 栏删除）；
+   浅色粗线=估值口径原值、深色实线=指数点位、红/蓝/绿虚线=危险/中位/机会 */
+.eq-chart-wrap{display:block;}
+.eq-legend2{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;padding:8px 0 2px;}
+.eq-legend2 .lg{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--sub);white-space:nowrap;}
+.eq-legend2 .ln{flex:0 0 16px;height:0;border-top:2px solid #f0a868;}
+.eq-legend2 .ln.dark{border-top:2px solid #1f2937;}
+.eq-legend2 .ln.blue{border-top:1.5px dashed #2456b8;}
+.eq-legend2 .ln.red{border-top:1.5px dashed #b3261e;}
+.eq-legend2 .ln.green{border-top:1.5px dashed #0b6b46;}
 /* 搜索框 + 查看更多 */
 .eq-bar{margin:2px 0 8px;}
 .eq-bar input{width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--line);
@@ -489,6 +497,10 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
 <script>
 /* ============ 工具 ============ */
 const D = window.CARD_DATA;
+/* 指数语境专属免责（2026-11-05 用户拍板：指数部分说"温度/估值分位"、不说"心动值"；
+   榜单语境继续用 D.disclaimer 原版——那边说的是对的）。置于顶部避免任何 TDZ。 */
+const DISC_EQ = '温度与估值分位均为历史数据自算的分析参考，不构成任何投资建议或基金推介；'
+  + '数据来自公开渠道，可能存在延迟与错误。历史业绩不代表未来，不构成投资建议。';
 const pct = (v, nd=2) => v==null ? '—' : (v*100).toFixed(nd)+'%';
 const cls = v => v==null ? '' : (v>=0 ? 'pos' : 'neg');
 const pctCls = v => v==null ? '' : (v>=0 ? 'pos' : 'neg');   /* 收益红、回撤本身用中性展示 */
@@ -554,6 +566,10 @@ const navCats = () => ((D && D.categories) || [])
   .filter(c => !(c && c.hidden))
   .filter(c => SECTIONS[SECTION].tabs.includes(c.id));   /* 只留本区页签 */
 function renderTabs(active){
+  /* 2026-11-05：底部免责按语境分——指数估值 tab 用温度版，其余用榜单原版 */
+  const _pd = document.getElementById('p-disc');
+  if (_pd) _pd.textContent = (active === 'eq_index') ? DISC_EQ
+    : ((D && D.disclaimer) || DISCLAIMER_FALLBACK);
   const cats = navCats();
   /* v1.8 只有 1 个页签时不渲染页签条（指数区=指数估值，冗余）→ 白区直接铺满，顶栏统一 */
   if (cats.length <= 1){ $('tabs').innerHTML = ''; return; }
@@ -1097,6 +1113,26 @@ function eqPctLabel(x){
 const EQ_SEARCH_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'
   + ' stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/>'
   + '<path d="M15.5 15.5L21 21"/></svg>';
+/* ==== 自选（2026-11-05 用户拍板）：第 5 个分组；localStorage 本机存储（换设备不同步）；
+   自选组全量显示、无"查看更多"；导出图不含自选（避免与原分组重复计数） ==== */
+const EQ_WATCH_KEY = 'eq_watch_v1';
+let EQ_WATCH = (function(){ try { return JSON.parse(localStorage.getItem(EQ_WATCH_KEY)) || []; } catch(e){ return []; } })();
+const eqIsWatch = c => EQ_WATCH.indexOf(c) >= 0;
+function eqWatchSyncPick(){
+  const b = $('d-pick'); if (!b || !EQ_CUR) return;
+  b.textContent = eqIsWatch(EQ_CUR.code) ? '✓ 已自选' : '★ 加自选';
+  b.classList.remove('on');                 /* 该按钮在基金详情里是"对比"态，复位 */
+}
+function eqToggleWatch(code, ev){
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const i = EQ_WATCH.indexOf(code);
+  if (i >= 0) EQ_WATCH.splice(i, 1); else EQ_WATCH.push(code);
+  try { localStorage.setItem(EQ_WATCH_KEY, JSON.stringify(EQ_WATCH)); } catch(e){}
+  if ($('list') && $('list').classList.contains('eq-mode')) renderEqIndexList();
+  if (EQ_CUR && EQ_CUR.code === code) eqWatchSyncPick();
+  const full = $('eqfull');
+  if (full && full.getAttribute('aria-hidden') === 'false') eqRenderFull();
+}
 /* v1.5 三列表格行（用户 2026-10-31）：指数名称 | 近一周涨跌幅 | 当前温度。
    行内只显示数字（不重复列名，列名由 .eqi-head 表头统一给）；温度按档位着色（冷→热），
    近一周涨跌幅红涨绿跌（ret_1w 来自 build 周频 close 末两点）。 */
@@ -1113,11 +1149,13 @@ function eqRowHTML(x, withGroup){
     </div>
     <div class="eqi-chg" style="color:${wCol}">${wTxt}</div>
     <div class="eqi-pct" style="color:${tcol}">${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
+    <div class="eqi-w${eqIsWatch(x.code) ? ' on' : ''}" title="加入/移出自选"
+      onclick="eqToggleWatch('${x.code}', event)">★</div>
   </div>`;
 }
-/* v1.5 三列表头（用户要求：指数名称 近一周涨跌幅 当前温度） */
+/* v1.5 三列表头（用户要求：指数名称 近一周涨跌幅 当前温度）+ 自选列 */
 const EQ_TABLE_HEAD = `<div class="eqi-head"><span>指数名称</span>
-  <span class="r">近一周涨跌幅</span><span class="r">当前温度</span></div>`;
+  <span class="r">近一周涨跌幅</span><span class="r">当前温度</span><span></span></div>`;
 function setEqFilter(g){ EQ_FILTER = (EQ_FILTER === g ? 'all' : g); renderEqIndexList(); }
 /* v1.4 搜索图标化（问题7）：默认只有放大镜；点开弹出输入框，再点✕收起 */
 function eqToggleSearch(){
@@ -1136,8 +1174,13 @@ function eqFiltered(qOverride){
 /* 组内排序：统一按估值分位从低到高（越便宜越靠前），不搞主流优先。
    主流/非主流只决定「直接展示 vs 更多里展示」，不决定排序（用户 2026-10-31）。 */
 function eqGroupSorted(g, mainstreamOnly){
-  let a = eqIndices().filter(x => x.group === g);
-  if (mainstreamOnly) a = a.filter(x => x.mainstream);
+  let a;
+  if (g === '自选'){
+    a = eqIndices().filter(x => eqIsWatch(x.code));   /* 自选=视图分组：全量显示、不按主流截断 */
+  } else {
+    a = eqIndices().filter(x => x.group === g);
+    if (mainstreamOnly) a = a.filter(x => x.mainstream);
+  }
   const dir = EQ_SORT_ASC ? 1 : -1;
   return a.sort((a,b) => dir * ((a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile)));
 }
@@ -1168,13 +1211,15 @@ function eqRenderResults(){
       : '<div class="empty-tip">没有匹配的指数，换个关键词试试</div>';
     return;
   }
-  const groups = EQ_GROUPS.filter(g => eqIndices().some(x => x.group === g));
+  const groups = EQ_GROUPS.filter(g => eqIndices().some(x => x.group === g)).concat(['自选']);
   box.innerHTML = groups.map(g => {
     if (EQ_FILTER !== 'all' && EQ_FILTER !== g) return '';
-    /* v1.5 主列表=主流指数直接全展示（当前温度排序，可用图标切换方向） */
+    const isW = g === '自选';
+    /* v1.5 主列表=主流指数直接全展示（当前温度排序，可用图标切换方向）；自选=全量 */
     const gs = eqGroupSorted(g, true);
-    const total = eqIndices().filter(x => x.group === g).length;
-    if (!gs.length) return '';
+    const total = isW ? gs.length : eqIndices().filter(x => x.group === g).length;
+    if (!gs.length) return isW
+      ? '<div class="empty-tip">还没有自选指数——点指数行右侧 ★ 或在详情页加入</div>' : '';
     const hidden = total - gs.length;
     return `<div class="eq-group"><b>${g} · ${total} 个</b>${eqSortCtl()}</div>`
       + EQ_TABLE_HEAD
@@ -1226,8 +1271,8 @@ function eqRenderFull(){
       : '<div class="empty-tip">没有匹配的指数，换个关键词试试</div>';
     return;
   }
-  /* 分组 tab 条：宽基/行业/策略/海外 */
-  const present = EQ_GROUPS.filter(g => eqIndices().some(x => x.group === g));
+  /* 分组 tab 条：宽基/行业/策略/海外 + 自选（2026-11-05） */
+  const present = EQ_GROUPS.filter(g => eqIndices().some(x => x.group === g)).concat(['自选']);
   if (tabsEl){
     tabsEl.innerHTML = present.map(g =>
       `<button class="${EQ_FULL_GROUP===g?'on':''}" onclick="eqFullSetGroup('${g}')">${g}</button>`
@@ -1236,7 +1281,8 @@ function eqRenderFull(){
   /* 排序条：左侧说明 + 右侧"当前温度"切换图标 */
   const gs = eqGroupSorted(EQ_FULL_GROUP, false);
   if (sortEl){
-    sortEl.innerHTML = `<span>${EQ_FULL_GROUP} · 全部 ${gs.length} 个（含非主流）</span>${eqSortCtl()}`;
+    sortEl.innerHTML = `<span>${EQ_FULL_GROUP === '自选' ? '自选 · 全部 ' + gs.length + ' 个'
+      : EQ_FULL_GROUP + ' · 全部 ' + gs.length + ' 个（含非主流）'}</span>${eqSortCtl()}`;
   }
   if (title) title.textContent = '指数全量';
   if (sub) sub.textContent = '';
@@ -1254,7 +1300,7 @@ function renderEqIndexList(){
       + '<b>python -m fundscorer.eqindex --ingest</b>，再跑管线。</div>';
     return;
   }
-  const groups = EQ_GROUPS.filter(g => list.some(x => x.group === g));
+  const groups = EQ_GROUPS.filter(g => list.some(x => x.group === g)).concat(['自选']);
   /* v1.4 搜索图标化（问题7）：图标并入过滤条行；展开时为 输入框+✕ 独占一行 */
   const searchBar = EQ_SEARCH_OPEN
     ? '<div class="eq-bar">'
@@ -1287,7 +1333,9 @@ function eqChartSVG(x, win, metric){
   const mpts = eqSeriesInWindow((x.series||{})[metric], win);
   if (mpts.length < 2) return '<div class="eq-line">该指标历史数据不足，无法画图。</div>';
   const cpts = eqSeriesInWindow((x.series||{}).close, win);
-  const W = 660, H = 270, L = 44, R = 54, T = 18, B = 30;
+  /* 2026-11-05 走势图重画（用户拍板）：图加高 270→330、删六档色带、删均值±1σ、
+     估值线改浅色粗线、指数点位改深色实线、中位线改蓝（红/蓝/绿三色区分） */
+  const W = 660, H = 330, L = 44, R = 54, T = 18, B = 30;
   const vals = mpts.map(p => +p[1]);
   let mn = Math.min(...vals), mx = Math.max(...vals);
   const pad = (mx - mn || 1) * 0.08; mn -= pad; mx += pad;
@@ -1298,36 +1346,19 @@ function eqChartSVG(x, win, metric){
   const X = i => Xd(mpts[i][0]);
   const Y = v => T + (H - T - B) * (1 - (v - mn) / (mx - mn));
   const st = eqWindowStats(x, win, metric) || {};
-  const bands = [st.q10, st.q30, st.q45, st.q55, st.q70].map(v => v==null?null:+v);
   const yOf = v => v==null?null:Y(v);
-  const zone = (v0,v1,color) => {
-    const y0 = yOf(v0), y1 = yOf(v1);
-    if (y0==null || y1==null) return '';
-    return `<rect x="${L}" y="${Math.min(y0,y1).toFixed(1)}" width="${W-L-R}"
-      height="${Math.abs(y1-y0).toFixed(1)}" fill="${color}" opacity=".55"/>`;
-  };
-  let bg = '';
-  if (bands.every(v => v!=null)){
-    /* v2.0 六档色带（冷蓝→冷绿→凉绿→中性灰→暖橙→热红），与 tiers 10/30/45/55/70 对齐 */
-    bg += zone(mn, bands[0], '#dff0fb') + zone(bands[0], bands[1], '#e3f5ec')
-      + zone(bands[1], bands[2], '#e9f6ee') + zone(bands[2], bands[3], '#eef0f3')
-      + zone(bands[3], bands[4], '#fff3e3') + zone(bands[4], mx, '#fdecea');
-  }
   const path = mpts.map((p,i) => (i?'L':'M') + X(i).toFixed(1) + ' ' + Y(+p[1]).toFixed(1)).join(' ');
   const line = (v,color,dash) => {
     const y = yOf(v); if (y==null) return '';
     return `<line x1="${L}" y1="${y.toFixed(1)}" x2="${W-R}" y2="${y.toFixed(1)}"
       stroke="${color}" stroke-width="1.1" ${dash?'stroke-dasharray="4 4"':''}/>`;
   };
-  const refs = line(st.danger,'#b3261e',true) + line(st.median,'#6b7280',true)
+  const refs = line(st.danger,'#b3261e',true) + line(st.median,'#2456b8',true)
     + line(st.opportunity,'#0b6b46',true);
-  const sig = (v,color) => line(v,color,true);
   let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block"
     role="img" aria-label="指数估值走势">
-    ${bg}${refs}
-    ${sig(st.mean==null?null:st.mean - (st.std||0),'#c9cdd4')}
-    ${sig(st.mean==null?null:st.mean + (st.std||0),'#c9cdd4')}
-    <path d="${path}" fill="none" stroke="#c54300" stroke-width="1.3" stroke-linejoin="round"/>`;
+    ${refs}
+    <path d="${path}" fill="none" stroke="#f0a868" stroke-width="2" stroke-linejoin="round"/>`;
   // 指数点位（右轴）——按日期对齐 X（序列长度可与估值序列不同）
   if (cpts.length >= 2){
     const cv = cpts.map(p => +p[1]);
@@ -1335,12 +1366,12 @@ function eqChartSVG(x, win, metric){
     const cpad = (cmax - cmin || 1) * 0.06; cmin -= cpad; cmax += cpad;
     const CY = v => T + (H - T - B) * (1 - (v - cmin) / (cmax - cmin));
     const cpath = cpts.map((p,i) => (i?'L':'M') + Xd(p[0]).toFixed(1) + ' ' + CY(+p[1]).toFixed(1)).join(' ');
-    svg += `<path d="${cpath}" fill="none" stroke="#2456b8" stroke-width="0.9"
-      stroke-dasharray="4 3" opacity=".8"/>`;
-    svg += `<text x="${W-R+4}" y="${T+10}" font-size="10" fill="#2456b8">指数点位</text>`;
+    svg += `<path d="${cpath}" fill="none" stroke="#1f2937" stroke-width="1.7"
+      stroke-linejoin="round"/>`;
+    svg += `<text x="${W-R+4}" y="${T+10}" font-size="10" fill="#1f2937">指数点位</text>`;
   }
   svg += `<circle cx="${X(mpts.length-1).toFixed(1)}" cy="${Y(+mpts[mpts.length-1][1]).toFixed(1)}"
-      r="3.4" fill="#c54300"/>`;
+      r="3.6" fill="#f0a868" stroke="#fff" stroke-width="1.2"/>`;
   svg += `<text x="${L}" y="${T+10}" font-size="10" fill="#6b7280">${num(mx,2)}</text>`;
   svg += `<text x="${L}" y="${H-B-2}" font-size="10" fill="#6b7280">${num(mn,2)}</text>`;
   /* v1.3 横轴多刻度：起/25%/50%/75%/末（年月），不再只有首尾两个 */
@@ -1359,6 +1390,8 @@ function eqChartSVG(x, win, metric){
   return svg;
 }
 function eqStat(l, v){ return `<div class="eq-stat"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
+/* 2026-11-05 详情卡重设计：一行 4 个大数（KPI） */
+function eqKpi(l, v){ return `<div class="eq-kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
 /* v2.0 折叠「指标说明」：按指数特点的估值口径 + 怎么算 + 为什么 + 是否科学（用户要求折叠展示） */
 function eqMethodologyHTML(x){
   const m = x.methodology;
@@ -1391,46 +1424,53 @@ function eqIndexBodyHTML(x){
   <div class="sec"><h3>估值结论<span class="hint">${x.history_label||eqWinLabel(win)} · ${x.method_label||'PE+PB'}</span></h3>
     <div class="eq-summary">
       <div class="tier big ${tierCls(tier)}">${tierTemp(tier)}</div>
-      <div class="eq-note">体感温度 = 该指数在历史区间中的冷热位置，越冷越便宜、越热越贵；仅作估值参考，不构成建议。</div>
+      <div class="eq-concl">${metric==='pb'?'PB':'PE'} 温度分位 ${st.pct==null?'—':st.pct.toFixed(1)+'%'}，综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
     </div>
-    <div class="eq-stats">
-      ${eqStat('综合温度分位', x.percentile==null?'—':x.percentile.toFixed(1)+'%')}
-      ${eqStat((metric==='pb'?'PB':'PE')+' 温度分位', st.pct==null?'—':st.pct.toFixed(1)+'%')}
-      ${eqStat('当前 ' + (metric==='pb'?'PB':'PE'), numPos(cur, 2))}
-      ${eqStat('危险值 / 机会值', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)}
-      ${eqStat('中位数', num(st.median,2))}
-      ${eqStat('最大 / 最小', `${num(st.max,2)} / ${num(st.min,2)}`)}
-      ${eqStat('均值 / 标准差', `${num(st.mean,2)} / ${num(st.std,2)}`)}
-      ${eqStat('z 分数', st.z==null?'—':st.z.toFixed(2))}
-      ${eqStat('指数点位', num(closeLast,2))}
+    <div class="eq-kpis">
+      ${eqKpi('综合分位', x.percentile==null?'—':x.percentile.toFixed(1)+'%')}
+      ${eqKpi('当前 ' + (metric==='pb'?'PB':'PE'), numPos(cur, 2))}
+      ${eqKpi('危险 / 机会', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)}
+      ${eqKpi('指数点位', num(closeLast,2))}
     </div>
-    <div class="eq-line">综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见下方「指标说明」）；
-      ${x.pb==null?'PB 历史暂无，按 PE 单一指标；':'PE 与 PB 同时参与；'}
+    <div class="eq-line">综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见「指标说明」）；
+      ${x.pb==null?'PB 历史暂缺，按 PE 单一指标；':'PE 与 PB 同时参与；'}
       样本 ${st.weeks?st.weeks+' 周':'—'}；估值日期 ${x.valuation_date||'—'}。</div>
+    <details class="eq-meth"><summary>详细数据（分位口径 / 区间 / 统计量）</summary>
+      <div class="eq-meth-body">
+        <div class="eq-stats">
+          ${eqStat((metric==='pb'?'PB':'PE')+' 温度分位', st.pct==null?'—':st.pct.toFixed(1)+'%')}
+          ${eqStat('中位数', num(st.median,2))}
+          ${eqStat('最大 / 最小', `${num(st.max,2)} / ${num(st.min,2)}`)}
+          ${eqStat('均值 / 标准差', `${num(st.mean,2)} / ${num(st.std,2)}`)}
+          ${eqStat('z 分数', st.z==null?'—':st.z.toFixed(2))}
+          ${eqStat('样本周数', st.weeks?st.weeks+' 周':'—')}
+        </div>
+        <div class="eq-line">体感温度 = 该指数在历史区间中的冷热位置，越冷越便宜、越热越贵；仅作估值参考，不构成建议。</div>
+      </div>
+    </details>
     ${eqMethodologyHTML(x)}
   </div>
   <div class="sec"><h3>估值走势<span class="hint">${metric==='pb'?'市净率 PB':'市盈率 PE'} · 点位${x.close_proxy?'（基金净值代理）':''}</span></h3>    <div class="eq-toggle">${winBtn('3y')}${winBtn('5y')}${winBtn('10y')}${winBtn('all')}
       <span style="width:8px"></span>${metricBtn('pe')}${metricBtn('pb')}</div>
     <div class="eq-chart-wrap">
-      <div class="eq-legend">
-        <div class="lg"><i class="ln"></i>${metric==='pb'?'PB 估值':'PE 估值'}</div>
-        ${(closePts&&closePts.length>=2)?'<div class="lg"><i class="ln blue"></i>指数点位</div>':''}
-        <div class="lg"><i class="ln red"></i>危险值(70)</div>
-        <div class="lg"><i class="ln gray"></i>中位数(50)</div>
-        <div class="lg"><i class="ln green"></i>机会值(10)</div>
-        <div class="lg"><i class="ln light"></i>均值±1σ</div>
-        <div class="lg"><i class="band"></i>六档区间</div>
+      <div class="eq-chart">${eqChartSVG(x, win, metric)}</div>
+      <div class="eq-legend2">
+        <span class="lg"><i class="ln"></i>${metric==='pb'?'PB 估值':'PE 估值'}原值</span>
+        ${(closePts&&closePts.length>=2)?'<span class="lg"><i class="ln dark"></i>指数点位</span>':''}
+        <span class="lg"><i class="ln red"></i>危险值(70)</span>
+        <span class="lg"><i class="ln blue"></i>中位数(50)</span>
+        <span class="lg"><i class="ln green"></i>机会值(10)</span>
       </div>
-      <div class="eq-chart" style="flex:1;min-width:0;">${eqChartSVG(x, win, metric)}</div>
     </div>
-    <div class="eq-line">左侧为各线图示：实线=当前估值口径，蓝虚线=指数点位（右轴），
-      红/灰/绿虚线=危险(70分位)/中位(50)/机会(10)参考线，浅灰虚线=均值±1σ，色带=六档区间。</div>
+    <div class="eq-line">浅色粗线 = 估值口径原值（左轴），深色线 = 指数点位（右轴）；
+      红 / 蓝 / 绿虚线 = 危险(70分位) / 中位(50) / 机会(10) 参考线。</div>
   </div>
-  <div class="sec"><h3>方法口径</h3>
+  <div class="sec"><details class="eq-meth"><summary>方法口径与说明</summary><div class="eq-meth-body">
     <div class="mgr-sub">${x.why||''}<br>
       当前体感温度 = ${x.pb!=null?'PE+PB':'PE'} 的 ${x.history_label||eqWinLabel('10y')}综合温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}；
       温度分位是<b>历史冷热位置参考</b>，不代表未来涨跌，也不构成投资建议。<br>
       数据：中证指数官网 PE(TTM)/点位${x.pb!=null?' + 雪球基金 PB':''}；估值日期 ${x.valuation_date||'—'}。</div>
+  </div></details>
   </div>
   <div class="sec"><h3>场外基金<span class="hint">按综合费率升序 · 已剔场内 ETF 与增强型</span></h3>
     ${(x.funds||[]).length ? x.funds.map(eqFundRow).join('')
@@ -1453,8 +1493,10 @@ function openEqIndexDetail(code){
   $('d-code-inline').textContent = x.code;
   $('d-rank').textContent = `${x.history_label||eqWinLabel('10y')}综合温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}`;
   $('d-code').textContent = `${x.group} · 可选基金${x.fund_count||0}只 · ${x.valuation_date||'—'}`;
-  $('d-disc').textContent = D.disclaimer;
-  $('d-pick').style.display = 'none';
+  $('d-disc').textContent = DISC_EQ;      /* 指数语境用温度版免责（2026-11-05 拍板） */
+  $('d-pick').style.display = '';         /* EQ 详情复用该按钮 = 加自选 */
+  eqWatchSyncPick();
+  $('d-pick').onclick = () => eqToggleWatch(EQ_CUR.code);
   $('d-body').innerHTML = eqIndexBodyHTML(x);
   const el = $('detail'); el.style.display = 'block';
   requestAnimationFrame(() => el.classList.add('show'));
@@ -1478,6 +1520,11 @@ function openDetail(code){
   /* v5.22：指数估值详情会改档位标签/颜色，回到基金详情时复位 */
   $('d-score-label').textContent = '综合心动值';
   $('d-score').style.color = '';
+  /* 2026-11-05：从指数详情回来要恢复「加入对比」按钮（EQ 详情把它改成了加自选） */
+  $('d-pick').style.display = '';
+  $('d-pick').onclick = detailPick;
+  $('d-pick').textContent = '加入对比';
+  $('d-pick').classList.remove('on');
   WIN = '1y';
   $('d-name').textContent = CUR.name;
   $('d-score').textContent = CUR.score;
@@ -1886,7 +1933,7 @@ function _drawEqExport(canvas, S, rowsLimit){
   ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 19 : 21) + 'px sans-serif';
   ctx.fillText('班马日记本每周更新 · 估值冷热不是买卖信号', PAD, fy + 24);
   ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
-  const lines = _wrapText(ctx, (D && D.disclaimer) || DISCLAIMER_FALLBACK, W - PAD * 2, 3);
+  const lines = _wrapText(ctx, DISC_EQ, W - PAD * 2, 3);   /* 指数导出图：温度版免责（2026-11-05） */
   lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 54 + i * 19));
   ctx.textAlign = 'right'; ctx.fillStyle = '#9aa0a6';
   ctx.fillText('@班马成长日记', W - PAD, fy + 24); ctx.textAlign = 'left';
