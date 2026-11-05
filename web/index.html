@@ -232,18 +232,21 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eq-chart-wrap{display:block;}
 .eq-legend2{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;padding:8px 0 2px;}
 .eq-legend2 .lg{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--sub);white-space:nowrap;}
-.eq-legend2 .ln{flex:0 0 16px;height:0;border-top:2px solid #f0a868;}
+.eq-legend2 .ln{flex:0 0 16px;height:0;border-top:2px solid #1c5fd0;}
 .eq-legend2 .ln.dark{border-top:2px solid #1f2937;}
 .eq-legend2 .ln.blue{border-top:1.5px dashed #2456b8;}
 .eq-legend2 .ln.red{border-top:1.5px dashed #b3261e;}
 .eq-legend2 .ln.green{border-top:1.5px dashed #0b6b46;}
 /* ==== 2026-11-05 二轮：结论卡（参考市场情绪卡片）+ 点读数气泡 + 放大浮层 + 图例不挤 ==== */
+/* 三轮微调：体感温度词=卡内最大元素（72px），当前倍数退到标签行右侧（30px） */
 .eqv-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin:8px 0 4px;}
 .eqv-card .lab{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:650;color:#5c564c;}
+.eqv-card .lab .cur{margin-left:auto;font-size:30px;font-weight:750;color:var(--text);
+  font-variant-numeric:tabular-nums;line-height:1;}
+.eqv-card .lab .cur .u{font-size:15px;font-weight:600;color:var(--sub);margin-left:4px;}
 .eqv-card .dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;}
-.eqv-card .val{font-size:56px;font-weight:800;line-height:1.05;margin-top:8px;}
-.eqv-card .val .u{font-size:22px;font-weight:600;color:var(--sub);margin-left:8px;}
-.eqv-card .pb{display:flex;align-items:center;gap:12px;margin-top:12px;}
+.eqv-card .eqv-tier{font-size:72px;font-weight:800;line-height:1.04;margin-top:6px;letter-spacing:2px;}
+.eqv-card .pb{display:flex;align-items:center;gap:12px;margin-top:14px;}
 .eqv-card .trk{flex:1;height:16px;border-radius:8px;background:#f1ede6;overflow:hidden;}
 .eqv-card .trk i{display:block;height:100%;border-radius:8px;}
 .eqv-card .pc{font-size:24px;font-weight:800;min-width:88px;text-align:right;}
@@ -1396,10 +1399,10 @@ function eqChartSVG(x, win, metric){
     role="img" aria-label="指数估值走势"
     data-s="${encodeURIComponent(JSON.stringify(mpts))}"${cpts.length>=2?` data-s2="${encodeURIComponent(JSON.stringify(cpts))}"`:''}
     data-mode="eq" data-unit="${metric==='pb'?'PB':'PE-TTM'}" data-pad="0.08"
-    data-col="#f0a868" data-w="${W}" data-h="${H}" data-l="${L}" data-r="${R}" data-t="${T}" data-b="${B}">
+    data-col="#1c5fd0" data-w="${W}" data-h="${H}" data-l="${L}" data-r="${R}" data-t="${T}" data-b="${B}">
     <path d="${area}" fill="#d7e8fb" stroke="none"/>
     ${refs}
-    <path d="${path}" fill="none" stroke="#f0a868" stroke-width="2" stroke-linejoin="round"/>`;
+    <path d="${path}" fill="none" stroke="#1c5fd0" stroke-width="2" stroke-linejoin="round"/>`;
   // 指数点位（右轴）——按日期对齐 X（序列长度可与估值序列不同）
   if (cpts.length >= 2){
     const cv = cpts.map(p => +p[1]);
@@ -1412,7 +1415,7 @@ function eqChartSVG(x, win, metric){
     svg += `<text x="${W-R+4}" y="${T+10}" font-size="10" fill="#1f2937">指数点位</text>`;
   }
   svg += `<circle cx="${X(mpts.length-1).toFixed(1)}" cy="${Y(+mpts[mpts.length-1][1]).toFixed(1)}"
-      r="3.6" fill="#f0a868" stroke="#fff" stroke-width="1.2"/>`;
+      r="3.6" fill="#1c5fd0" stroke="#fff" stroke-width="1.2"/>`;
   svg += `<text x="${L}" y="${T+10}" font-size="10" fill="#6b7280">${num(mx,2)}</text>`;
   svg += `<text x="${L}" y="${H-B-2}" font-size="10" fill="#6b7280">${num(mn,2)}</text>`;
   /* v1.3 横轴多刻度：起/25%/50%/75%/末（年月），不再只有首尾两个 */
@@ -1426,7 +1429,7 @@ function eqChartSVG(x, win, metric){
     svg += `<text x="${t.x.toFixed(1)}" y="${H-8}" font-size="10" fill="#9aa0a6"`
       + ` text-anchor="${t.first?'start':(t.last?'end':'middle')}">${t.s}</text>`;
   });
-  svg += `<text x="${W-R+4}" y="${H-B-2}" font-size="10" fill="#c54300">${num(+mpts[mpts.length-1][1],2)}</text>`;
+  svg += `<text x="${W-R+4}" y="${H-B-2}" font-size="10" fill="#1c5fd0">${num(+mpts[mpts.length-1][1],2)}</text>`;
   svg += '</svg>';
   return svg;
 }
@@ -1444,7 +1447,7 @@ function attachPicker(svg, box, opts){
   var s2a=svg.getAttribute('data-s2');
   var s2=s2a?JSON.parse(decodeURIComponent(s2a)):null;
   var mode=svg.getAttribute('data-mode')||'';
-  var col=svg.getAttribute('data-col')||'#f0a868';
+  var col=svg.getAttribute('data-col')||'#1c5fd0';
   var unit=svg.getAttribute('data-unit')||'';
   if(!series||series.length<2) return;
   var vals=series.map(function(p){return +p[1];});
@@ -1581,10 +1584,11 @@ function eqIndexBodyHTML(x){
   return `
   <div class="sec"><h3>估值结论<span class="hint">${x.history_label||eqWinLabel(win)} · ${x.method_label||'PE+PB'}</span></h3>
     <div class="eqv-card">
-      <div class="lab"><i class="dot" style="background:${tierColor(tier)}"></i>${metric==='pb'?'PB':'PE-TTM'} 温度 · ${x.method_label||'PE+PB'} 口径</div>
-      <div class="val">${numPos(cur, 2)}<span class="u">倍</span></div>
+      <div class="lab"><i class="dot" style="background:${tierColor(tier)}"></i>${metric==='pb'?'PB':'PE-TTM'} 温度 · ${x.method_label||'PE+PB'} 口径
+        <span class="cur">${numPos(cur, 2)}<span class="u">倍</span></span></div>
+      <div class="eqv-tier" style="color:${tierColor(tier)}">${tierTemp(tier)}</div>
       <div class="pb"><span class="trk"><i style="width:${st.pct==null?0:st.pct.toFixed(1)}%;background:${tierColor(tier)}"></i></span><span class="pc" style="color:${tierColor(tier)}">${st.pct==null?'—':st.pct.toFixed(1)+'%'}</span></div>
-      <div class="cc" style="color:${tierColor(tier)}">${tierTemp(tier)} · 综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
+      <div class="cc" style="color:${tierColor(tier)}">综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'} · 越低越便宜</div>
     </div>
     <div class="eq-kpis">
       ${eqKpi('危险 / 机会', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)}
