@@ -986,26 +986,30 @@ _CYCLICAL_KW = ("银行", "煤炭", "钢铁", "有色", "稀有金属", "稀土"
                 "水泥", "玻璃", "船舶", "港口", "物流", "航运", "钢铁",
                 # 2026-11-05 用户拍板"按指数特点+大众认可口径"：半导体/芯片盈利强周期、
                 # PE 顶部失真是财经共识 → 归周期用 PB（原在 _GROWTH_KW，该表已废弃）
-                "半导体", "芯片", "集成电路")
+                "半导体", "芯片", "集成电路",
+                "黄金")            # 黄金股=资源周期，PE 曾到 1.8% 极端失真（全量体检发现）
 _GROWTH_KW = ("科技", "人工智能", "计算机", "软件", "电子", "通信",
               "医药", "生物", "创新药", "医疗", "新能源", "光伏", "风电", "锂电",
               "电池", "消费", "白酒", "食品", "零售", "家电", "传媒", "游戏",
               "云计算", "大数据", "物联网", "机器人", "军工", "航天", "智能")
+# 红利/价值词（2026-11-05 提为模块级：原只在策略组判，现策略/海外/行业三组统一先过）
+_DIVIDEND_KW = ("红利", "股息", "价值", "低波", "高股息")
 
 
 def _valuation_style(entry: dict) -> str:
-    """按指数名字/分组判估值主口径：cyclical/growth/broad/dividend。"""
+    """按指数名字/分组判估值主口径：cyclical/growth/broad/dividend（大众认可口径）。
+
+    2026-11-05 全量体检后统一：宽基=broad；其余组（行业/策略/海外）一律
+    **红利词 → dividend，周期词 → cyclical，否则 growth**。
+    修掉两个分桶缺口：策略组原不查周期词（煤炭等错判 growth）、海外组原一律
+    growth（港股红利/香港银行错判）。
+    """
     name = entry.get("name", "")
     group = entry.get("group", "")
     if group == "宽基":
         return "broad"
-    if group == "海外":
-        return "growth"
-    if group == "策略":
-        if any(k in name for k in ("红利", "股息", "价值", "低波", "高股息", "央企红利")):
-            return "dividend"
-        return "growth"
-    # 行业：先判周期（更具体的排除性判断），否则成长
+    if any(k in name for k in _DIVIDEND_KW):
+        return "dividend"
     if any(k in name for k in _CYCLICAL_KW):
         return "cyclical"
     return "growth"
