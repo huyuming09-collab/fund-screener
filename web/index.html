@@ -237,6 +237,34 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eq-legend2 .ln.blue{border-top:1.5px dashed #2456b8;}
 .eq-legend2 .ln.red{border-top:1.5px dashed #b3261e;}
 .eq-legend2 .ln.green{border-top:1.5px dashed #0b6b46;}
+/* ==== 2026-11-05 二轮：结论卡（参考市场情绪卡片）+ 点读数气泡 + 放大浮层 + 图例不挤 ==== */
+.eqv-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin:8px 0 4px;}
+.eqv-card .lab{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:650;color:#5c564c;}
+.eqv-card .dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;}
+.eqv-card .val{font-size:56px;font-weight:800;line-height:1.05;margin-top:8px;}
+.eqv-card .val .u{font-size:22px;font-weight:600;color:var(--sub);margin-left:8px;}
+.eqv-card .pb{display:flex;align-items:center;gap:12px;margin-top:12px;}
+.eqv-card .trk{flex:1;height:16px;border-radius:8px;background:#f1ede6;overflow:hidden;}
+.eqv-card .trk i{display:block;height:100%;border-radius:8px;}
+.eqv-card .pc{font-size:24px;font-weight:800;min-width:88px;text-align:right;}
+.eqv-card .cc{font-size:23px;font-weight:700;margin-top:12px;}
+.eq-chart{position:relative;}
+.eq-legend2{gap:10px 16px;row-gap:12px;justify-content:flex-start;padding:12px 2px 4px;}
+.eq-chart-wrap + .eq-line{margin-top:8px;}
+.ptip{position:absolute;transform:translate(-50%,-135%);background:rgba(34,30,24,.94);color:#fff;
+  font-size:12px;font-weight:600;padding:5px 9px;border-radius:6px;white-space:nowrap;
+  pointer-events:none;z-index:6;box-shadow:0 2px 6px rgba(0,0,0,.18);}
+.pinstrip{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;}
+.pinstrip .pin{background:#f4f1ec;border:1px solid var(--line);border-radius:6px;
+  padding:2px 8px;font-size:11px;color:var(--ink);font-weight:600;}
+.pinstrip .pinclr{background:none;border:none;color:var(--sub);font-size:11px;cursor:pointer;
+  text-decoration:underline;font-family:inherit;padding:2px 4px;}
+#eqzoom{position:fixed;inset:0;z-index:120;background:rgba(20,18,15,.96);display:none;
+  align-items:center;justify-content:center;padding:14px;}
+#eqzoom.show{display:flex;}
+#eqzoom .inner{width:100%;max-width:1000px;max-height:92vh;overflow:auto;}
+#eqzoom svg{width:100%;height:auto;display:block;background:#fff;border-radius:10px;}
+#eqzoom .zclose{position:absolute;top:12px;right:18px;color:#e8e3da;font-size:28px;cursor:pointer;z-index:2;}
 /* 搜索框 + 查看更多 */
 .eq-bar{margin:2px 0 8px;}
 .eq-bar input{width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--line);
@@ -492,6 +520,11 @@ body.bare #exp-canvas{width:100vw;height:auto;display:block;}
   <div class="toast" id="toast"></div>
 </div>
 
+<!-- 走势图放大浮层（2026-11-05）：点图读数/连点多点，点空白关闭 -->
+<div id="eqzoom" onclick="eqZoomClose()">
+  <span class="zclose">×</span>
+  <div class="inner"><div id="eqzoom-body"></div></div>
+</div>
 <script src="data.js"></script>
 <script src="market-export.js"></script>
 <script>
@@ -1355,8 +1388,16 @@ function eqChartSVG(x, win, metric){
   };
   const refs = line(st.danger,'#b3261e',true) + line(st.median,'#2456b8',true)
     + line(st.opportunity,'#0b6b46',true);
+  /* 2026-11-05：① 线与 x 轴围成的面积填浅蓝（先填→再参考线→再主线）；
+     ② SVG 携带 data-s/几何属性供点选读数（attachPicker）；data-pad=0.08 与本图 padding 一致 */
+  const baseY = (H - B).toFixed(1);
+  const area = `${path} L ${X(mpts.length-1).toFixed(1)} ${baseY} L ${X(0).toFixed(1)} ${baseY} Z`;
   let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block"
-    role="img" aria-label="指数估值走势">
+    role="img" aria-label="指数估值走势"
+    data-s="${encodeURIComponent(JSON.stringify(mpts))}"${cpts.length>=2?` data-s2="${encodeURIComponent(JSON.stringify(cpts))}"`:''}
+    data-mode="eq" data-unit="${metric==='pb'?'PB':'PE-TTM'}" data-pad="0.08"
+    data-col="#f0a868" data-w="${W}" data-h="${H}" data-l="${L}" data-r="${R}" data-t="${T}" data-b="${B}">
+    <path d="${area}" fill="#d7e8fb" stroke="none"/>
     ${refs}
     <path d="${path}" fill="none" stroke="#f0a868" stroke-width="2" stroke-linejoin="round"/>`;
   // 指数点位（右轴）——按日期对齐 X（序列长度可与估值序列不同）
@@ -1389,6 +1430,123 @@ function eqChartSVG(x, win, metric){
   svg += '</svg>';
   return svg;
 }
+/* ==== 走势图点选读数（2026-11-05 用户拍板；移植自 market.html attachPicker）====
+   点/触图上任意处 → 年月 · 估值值(PE-TTM/PB) · 点位；放大浮层可连点多点（multi）。
+   data-pad 让焦点点位与本图 padding（0.08）一致；data-unit 槽位放指标名。 */
+function attachPicker(svg, box, opts){
+  opts = opts || {};
+  if(!svg || !box || svg.dataset.wired || !svg.getAttribute('data-s')) return;
+  svg.dataset.wired='1';
+  var multi = !!opts.multi;
+  var num=function(k,d){ var v=svg.getAttribute('data-'+k); return v==null?d:+v; };
+  var W=num('w',660),H=num('h',330),L=num('l',44),R=num('r',54),T=num('t',18),B=num('b',30);
+  var series=JSON.parse(decodeURIComponent(svg.getAttribute('data-s')));
+  var s2a=svg.getAttribute('data-s2');
+  var s2=s2a?JSON.parse(decodeURIComponent(s2a)):null;
+  var mode=svg.getAttribute('data-mode')||'';
+  var col=svg.getAttribute('data-col')||'#f0a868';
+  var unit=svg.getAttribute('data-unit')||'';
+  if(!series||series.length<2) return;
+  var vals=series.map(function(p){return +p[1];});
+  var mn=Math.min.apply(null,vals), mx=Math.max.apply(null,vals);
+  if(mode==='cmp'){ mn=0; mx=100; }
+  var padF=parseFloat(svg.getAttribute('data-pad')||'0.1');
+  var pad=(mx-mn||1)*padF; mn-=pad; mx+=pad;
+  var X=function(i){return L+(W-L-R)*(i/(series.length-1));};
+  var Y=function(v){return T+(H-T-B)*(1-(v-mn)/((mx-mn)||1));};
+  var NS='http://www.w3.org/2000/svg';
+  var guide=document.createElementNS(NS,'line');
+  guide.setAttribute('stroke','#b9b1a3'); guide.setAttribute('stroke-dasharray','3 3');
+  guide.setAttribute('stroke-width','1'); guide.setAttribute('visibility','hidden');
+  svg.appendChild(guide);
+  var dot=document.createElementNS(NS,'circle');
+  dot.setAttribute('r','4.5'); dot.setAttribute('stroke','#fff'); dot.setAttribute('stroke-width','1.5');
+  dot.setAttribute('visibility','hidden'); svg.appendChild(dot);
+  var tip=document.createElement('div'); tip.className='ptip'; tip.style.display='none';
+  box.appendChild(tip);
+  var pins=[], pg=document.createElementNS(NS,'g'); svg.appendChild(pg);
+  var strip=null;
+  svg.style.cursor='pointer';
+  if(multi){ strip=document.createElement('div'); strip.className='pinstrip'; strip.style.display='none'; box.appendChild(strip); }
+  function tipText(i){
+    if(mode==='eq'){
+      var pt=(s2 && s2[i]!=null)?+s2[i][1]:null;
+      var vv=vals[i];
+      return series[i][0]+' · '+(unit||'PE')+' '+(Math.abs(vv)>=100?vv.toFixed(0):vv.toFixed(2))
+        +(pt==null?'':' · 点位 '+Math.round(pt));
+    }
+    if(mode==='cmp'){
+      var pe=s2?+s2[i][1]:null;
+      return series[i][0]+' · 情绪分 '+Math.round(vals[i])+(pe==null?'':' · 点位 '+Math.round(pe));
+    }
+    var v=vals[i];
+    var body=Math.abs(v)>=100?v.toFixed(0)
+      :(v!==0&&Math.abs(v)<0.01?v.toFixed(4):v.toFixed(2));
+    return series[i][0]+' · '+body+unit;
+  }
+  function renderPins(){
+    while(pg.firstChild) pg.removeChild(pg.firstChild);
+    if(!strip) return;
+    if(!pins.length){ strip.style.display='none'; strip.innerHTML=''; return; }
+    strip.style.display='flex';
+    strip.innerHTML=pins.map(function(i,k){ return '<span class="pin">'+(k+1)+' '+tipText(i)+'</span>'; }).join('')
+      +'<button class="pinclr" type="button">清空</button>';
+    strip.querySelector('.pinclr').onclick=function(ev){ ev.stopPropagation(); pins=[]; renderPins(); hideTip(); };
+    pins.forEach(function(i,k){
+      var c=document.createElementNS(NS,'circle');
+      c.setAttribute('cx',X(i).toFixed(1)); c.setAttribute('cy',Y(vals[i]).toFixed(1));
+      c.setAttribute('r','6.5'); c.setAttribute('fill',col);
+      c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width','1.5');
+      pg.appendChild(c);
+      var t=document.createElementNS(NS,'text');
+      t.setAttribute('x',X(i).toFixed(1)); t.setAttribute('y',(Y(vals[i])+2.8).toFixed(1));
+      t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','8');
+      t.setAttribute('font-weight','700'); t.setAttribute('fill','#fff');
+      t.textContent=String(k+1); pg.appendChild(t);
+    });
+  }
+  function hideTip(){ tip.style.display='none'; guide.setAttribute('visibility','hidden'); dot.setAttribute('visibility','hidden'); }
+  function show(i, pin){
+    var px=X(i), py=Y(vals[i]);
+    guide.setAttribute('x1',px.toFixed(1)); guide.setAttribute('x2',px.toFixed(1));
+    guide.setAttribute('y1',T); guide.setAttribute('y2',H-B);
+    guide.setAttribute('visibility','visible');
+    dot.setAttribute('cx',px.toFixed(1)); dot.setAttribute('cy',py.toFixed(1));
+    dot.setAttribute('fill',col); dot.setAttribute('visibility','visible');
+    tip.textContent=tipText(i); tip.style.display='block';
+    tip.style.left=(px/((svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||W)*100)+'%';
+    tip.style.top=(py/H*100)+'%';
+    if(multi && pin){
+      var at=pins.indexOf(i);
+      if(at>=0){ pins.splice(at,1); } else { if(pins.length>=8) pins.shift(); pins.push(i); }
+      renderPins();
+    }
+  }
+  svg.onclick=function(ev){
+    var r=svg.getBoundingClientRect();
+    var vbW=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||W;
+    var x=(ev.clientX-r.left)/Math.max(1,r.width)*vbW;
+    var i=Math.round((x-L)/(W-L-R)*(series.length-1));
+    i=Math.max(0,Math.min(series.length-1,i));
+    show(i, multi);
+    if(ev.stopPropagation) ev.stopPropagation();
+  };
+  if(opts.showLast) show(series.length-1, false);
+}
+/* 走势图读数接线 + 放大浮层（2026-11-05 用户拍板：图要能放大、能点读数） */
+function eqWireChart(){
+  const svg = document.querySelector('#d-body .eq-chart svg');
+  if (svg) attachPicker(svg, svg.parentElement);   /* box=.eq-chart（position:relative 承载气泡） */
+}
+function eqZoomOpen(){
+  const x = EQ_CUR; if (!x) return;
+  const body = $('eqzoom-body');
+  body.innerHTML = eqChartSVG(x, EQ_WIN, EQ_METRIC);   /* 重建干净 svg（无 wired 标记） */
+  $('eqzoom').classList.add('show');
+  const s = body.querySelector('svg');
+  if (s) attachPicker(s, body, {multi:true});          /* 放大后可连点多点、编号对照 */
+}
+function eqZoomClose(){ $('eqzoom').classList.remove('show'); }
 function eqStat(l, v){ return `<div class="eq-stat"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
 /* 2026-11-05 详情卡重设计：一行 4 个大数（KPI） */
 function eqKpi(l, v){ return `<div class="eq-kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
@@ -1422,19 +1580,19 @@ function eqIndexBodyHTML(x){
   const winBtn = w => `<button class="${win===w?'on':''}" onclick="setEqWin('${w}')">${eqWinLabel(w)}</button>`;
   return `
   <div class="sec"><h3>估值结论<span class="hint">${x.history_label||eqWinLabel(win)} · ${x.method_label||'PE+PB'}</span></h3>
-    <div class="eq-summary">
-      <div class="tier big ${tierCls(tier)}">${tierTemp(tier)}</div>
-      <div class="eq-concl">${metric==='pb'?'PB':'PE'} 温度分位 ${st.pct==null?'—':st.pct.toFixed(1)+'%'}，综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
+    <div class="eqv-card">
+      <div class="lab"><i class="dot" style="background:${tierColor(tier)}"></i>${metric==='pb'?'PB':'PE-TTM'} 温度 · ${x.method_label||'PE+PB'} 口径</div>
+      <div class="val">${numPos(cur, 2)}<span class="u">倍</span></div>
+      <div class="pb"><span class="trk"><i style="width:${st.pct==null?0:st.pct.toFixed(1)}%;background:${tierColor(tier)}"></i></span><span class="pc" style="color:${tierColor(tier)}">${st.pct==null?'—':st.pct.toFixed(1)+'%'}</span></div>
+      <div class="cc" style="color:${tierColor(tier)}">${tierTemp(tier)} · 综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
     </div>
     <div class="eq-kpis">
-      ${eqKpi('综合分位', x.percentile==null?'—':x.percentile.toFixed(1)+'%')}
-      ${eqKpi('当前 ' + (metric==='pb'?'PB':'PE'), numPos(cur, 2))}
       ${eqKpi('危险 / 机会', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)}
       ${eqKpi('指数点位', num(closeLast,2))}
+      ${eqKpi('样本周数', st.weeks?st.weeks+' 周':'—')}
+      ${eqKpi('估值日期', String(x.valuation_date||'—').slice(5))}
     </div>
-    <div class="eq-line">综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见「指标说明」）；
-      ${x.pb==null?'PB 历史暂缺，按 PE 单一指标；':'PE 与 PB 同时参与；'}
-      样本 ${st.weeks?st.weeks+' 周':'—'}；估值日期 ${x.valuation_date||'—'}。</div>
+    <div class="eq-line">综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见「指标说明」）；${x.pb==null?'PB 历史暂缺，按 PE 单一指标；':'PE 与 PB 同时参与；'}仅作估值参考，不构成建议。</div>
     <details class="eq-meth"><summary>详细数据（分位口径 / 区间 / 统计量）</summary>
       <div class="eq-meth-body">
         <div class="eq-stats">
@@ -1451,7 +1609,8 @@ function eqIndexBodyHTML(x){
     ${eqMethodologyHTML(x)}
   </div>
   <div class="sec"><h3>估值走势<span class="hint">${metric==='pb'?'市净率 PB':'市盈率 PE'} · 点位${x.close_proxy?'（基金净值代理）':''}</span></h3>    <div class="eq-toggle">${winBtn('3y')}${winBtn('5y')}${winBtn('10y')}${winBtn('all')}
-      <span style="width:8px"></span>${metricBtn('pe')}${metricBtn('pb')}</div>
+      <span style="width:8px"></span>${metricBtn('pe')}${metricBtn('pb')}
+      <button onclick="eqZoomOpen()" title="放大走势图，点图读数、可连点多点">⤢ 放大</button></div>
     <div class="eq-chart-wrap">
       <div class="eq-chart">${eqChartSVG(x, win, metric)}</div>
       <div class="eq-legend2">
@@ -1498,6 +1657,7 @@ function openEqIndexDetail(code){
   eqWatchSyncPick();
   $('d-pick').onclick = () => eqToggleWatch(EQ_CUR.code);
   $('d-body').innerHTML = eqIndexBodyHTML(x);
+  eqWireChart();                                /* 点选读数（2026-11-05） */
   const el = $('detail'); el.style.display = 'block';
   requestAnimationFrame(() => el.classList.add('show'));
   el.scrollTop = 0;
@@ -1507,6 +1667,7 @@ function refreshEqDetail(){
   if (!EQ_CUR) return;
   const el = $('detail'); const st = el.scrollTop;
   $('d-body').innerHTML = eqIndexBodyHTML(EQ_CUR);
+  eqWireChart();                                /* 切窗口/指标后重新接读数 */
   el.scrollTop = st;
 }
 function setEqWin(w){ EQ_WIN = w; refreshEqDetail(); }

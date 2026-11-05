@@ -15,6 +15,7 @@ const mkEl = () => ({ innerHTML:'', textContent:'', style:{}, dataset:{}, onclic
 const els = {};
 global.document = {
   getElementById: id => els[id] ||= mkEl(),
+  querySelector: () => null,          /* eqWireChart 走不到读数（无 svg）——桩返回 null */
   querySelectorAll: () => [],
   body: { style:{} },
   addEventListener(){},
@@ -445,9 +446,13 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
         de.includes('估值结论') && de.includes('估值走势')
         && de.includes('方法口径') && de.includes('场外基金') && de.includes('<svg'));
     /* 2026-11-05 详情卡重设计 + 指数语境免责 + 自选 */
-    chk('指数详情卡：KPI 大行 + 明细折叠 + 图例在图下方（无均值±1σ/色带）',
-        de.includes('eq-kpis') && de.includes('详细数据') && de.includes('eq-legend2')
-        && !de.includes('均值±1σ') && !de.includes('六档区间'));
+    chk('指数详情卡：情绪风结论卡 + KPI + 明细折叠 + 图例在图下方（无均值±1σ/色带）',
+        de.includes('eqv-card') && de.includes('eq-kpis') && de.includes('详细数据')
+        && de.includes('eq-legend2') && !de.includes('均值±1σ') && !de.includes('六档区间'));
+    /* 2026-11-05 二轮：面积填充 + 点选读数 + 放大浮层 */
+    chk('走势图：浅蓝面积填充 + data-s 读数 + 放大浮层',
+        de.includes('#d7e8fb') && de.includes('data-mode="eq"') && de.includes('data-pad')
+        && html.includes('eqZoomOpen') && html.includes('id="eqzoom"'));
     chk('指数详情免责为温度版（禁心动值）且按钮为加自选',
         document.getElementById('d-disc').textContent === DISC_EQ
         && !document.getElementById('d-disc').textContent.includes('心动值')

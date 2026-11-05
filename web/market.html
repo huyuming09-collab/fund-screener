@@ -552,7 +552,8 @@ function attachPicker(svg, box, opts){
 function openZoom(cap, svg){
   document.getElementById('zcap').textContent=cap;
   var body=document.getElementById('zoom-body');
-  body.innerHTML=svg;
+  /* 剥掉 data-wired：box.innerHTML 带回已接线标记会让 attachPicker 直接 return（放大后读不到数） */
+  body.innerHTML=String(svg).replace(' data-wired="1"','');
   document.getElementById('zoom').classList.add('show');
   var s=body.querySelector('svg');
   if(s) attachPicker(s, body, {multi:true});   /* 放大后可连点多点、编号对照 */
