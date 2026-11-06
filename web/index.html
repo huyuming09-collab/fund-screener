@@ -2218,7 +2218,13 @@ function drawZonePoster(canvas, S, cfg){
     const bw = ctx.measureText(btxt).width + 24;
     ctx.fillStyle = z.color; rr(x + w - 12 - bw, y + 19, bw, 30, 15); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.fillText(btxt, x + w - 12 - bw + 12, y + 39);
+    /* 列位是相对卡宽的 → 平移到卡片绝对 x（2026-11-06 修复：否则行按绝对坐标画，
+       xhs 名称画到卡外、横版两列行互相覆盖——热区盖进冷区/雨区错进左列） */
     const px = z.cells(w);
+    ['nameX', 'badgeRight', 'pctR', 'peR', 'pbR', 'dyrR', 'refR', 'retR'].forEach(k => {
+      if (typeof px[k] === 'number') px[k] += x;
+    });
+    px.lab = px.lab.map(v => typeof v === 'number' ? v + x : v);
     ctx.fillStyle = '#a39a8c'; ctx.font = '600 ' + (wide ? 10.5 : 11.5) + 'px sans-serif';
     z.labels.forEach((L, i) => {
       if (!L || px.lab[i] == null) return;

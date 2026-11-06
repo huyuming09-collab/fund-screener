@@ -117,10 +117,17 @@ a{text-decoration:none;color:inherit;}
         + '<div class="top"><span class="ico">'+(ICO[x.weather]||'🌤️')+'</span>'
         + '<span class="nm">'+x.name+'</span></div>'
         + '<span class="wt" style="background:'+c[0]+';color:'+c[1]+'">'+x.weather+'</span>'
-        + '<div class="big" style="color:'+c[1]+'">'+(x.dyr==null?'—':x.dyr.toFixed(2))
-        + '<span class="u">% 股息率</span></div>'
-        + '<div class="meta"><span>分位 '+(x.dyr_pct==null?'—':x.dyr_pct.toFixed(1)+'%')+'</span>'
-        + '<span class="'+wCls+'">近1周 '+wTxt+'</span></div></a>';
+        + (x.score != null
+          /* 2026-11-06 用户：百分制综合分作大字、股息率数字变小（进 meta） */
+          ? '<div class="big" style="color:'+c[1]+'">'+(+x.score).toFixed(1)
+            + '<span class="u">/100</span></div>'
+            + '<div class="meta"><span>股息率 '+(x.dyr==null?'—':x.dyr.toFixed(2)+'%')+'</span>'
+            + '<span class="'+wCls+'">近1周 '+wTxt+'</span></div>'
+          : '<div class="big" style="color:'+c[1]+'">'+(x.dyr==null?'—':x.dyr.toFixed(2))
+            + '<span class="u">% 股息率</span></div>'
+            + '<div class="meta"><span>分位 '+(x.dyr_pct==null?'—':x.dyr_pct.toFixed(1)+'%')+'</span>'
+            + '<span class="'+wCls+'">近1周 '+wTxt+'</span></div>')
+        + '</a>';
     });
     html += '</div></div>';
   });
