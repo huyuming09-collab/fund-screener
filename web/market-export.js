@@ -42,9 +42,80 @@
   }
 
   var SIZES = { xhs:{w:1080,h:1620}, wide:{w:1200,h:800}, cover:{w:1200,h:510} };
-  var NAMES = ['market_score','market_core','market_ref','market_cover'];
+  var NAMES = ['market_score','market_core','market_ref','market_cover','market_weekly'];
   var BTN  = [['market_score','情绪大图'],['market_core','核心4详解'],['market_ref','参考4详解'],
-              ['market_cover','情绪封面']];
+              ['market_cover','情绪封面'],['market_weekly','市场周报']];
+
+  /* ---- 市场周报合并图（2026-11-06 拍板）：上 1/4 情绪数值 + 下 3/4 大众指数温度 ----
+     定位=引流图：只放大众叫得出名字的指数（小众的留在温度计详情），按分位升序
+     （冷的在前，一眼看到谁便宜）；情绪区只给数值+少量信息。 */
+  var MW_POOL = ['沪深300','上证50','创业板','中证500','科创50','上证综指',
+                 '恒生科技','纳指100','中证白酒','证券公司','半导体','中证银行',
+                 '中证消费50','光伏产业','中证农业主题','创新药','中证全指通信设备','绿色电力'];
+  var MW_TC = {'极低估':['#e3f5ec','#0b6b46'],'低估':['#e9f6ee','#1a7f37'],
+               '合理偏低':['#eef0f3','#4b5563'],'正常':['#eef0f3','#4b5563'],
+               '合理偏高':['#fff3e3','#a85100'],'高估':['#fdecea','#b3261e']};
+  function mwIndices(){
+    var EQ = window.CARD_DATA && window.CARD_DATA.eq_index;
+    var arr = (EQ && EQ.indices) || [];
+    var by = {}; arr.forEach(function(x){ by[x.name] = x; });
+    var out = [];
+    MW_POOL.forEach(function(n){ if (by[n]) out.push(by[n]); });
+    out.sort(function(a,b){
+      return (a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile); });
+    return out;
+  }
+  function buildWeekly(sizeKey){
+    var wide = sizeKey === 'wide';
+    var score = M.score, level = M.level;
+    /* 情绪数值区（只给数值+少量信息）：综合温度大数 + 核心4数值格 */
+    var stats = coreKeys().map(function(k){
+      var v = M.indicators[k]; if (!v) return '';
+      return '<div style="flex:1;min-width:0;background:#ffffff;border-radius:12px;padding:'
+        +(wide?'8px 8px':'10px 12px')+';">'
+        +'<div style="font-size:'+(wide?10.5:12)+'px;color:#8a8378;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+v.label+'</div>'
+        +'<div style="font-size:'+(wide?17:21)+'px;font-weight:800;color:#26231e;margin-top:2px;font-variant-numeric:tabular-nums;">'
+        + v.value + '<span style="font-size:'+(wide?10:12)+'px;font-weight:600;color:#8a8378;margin-left:1px;">'+(v.unit||'')+'</span></div>'
+        +'<div style="font-size:'+(wide?10:11.5)+'px;color:'+heatColor(v.pct)+';font-weight:650;">'
+        + (v.pct==null?'—':Math.round(v.pct)+'% 分位')+'</div></div>';
+    }).join('');
+    var mood = '<div style="background:#fff3e3;border-radius:16px;padding:'+(wide?'12px':'16px')+';margin:'
+      +(wide?'14px 14px 14px 14px':'12px 16px 10px 16px')+';">'
+      +'<div style="display:flex;align-items:baseline;gap:8px;">'
+      +'<b style="font-size:'+(wide?46:56)+'px;color:'+LV[level]+';line-height:1;font-variant-numeric:tabular-nums;">'+score+'</b>'
+      +'<span style="font-size:'+(wide?14:17)+'px;font-weight:700;color:'+LV[level]+';">· '+level+'</span>'
+      +'<span style="margin-left:auto;font-size:'+(wide?11:13)+'px;color:#8a8378;">市场温度（百分制）</span></div>'
+      +'<div style="display:flex;gap:'+(wide?6:8)+'px;margin-top:'+(wide?8:10)+'px;">'+stats+'</div>'
+      +'</div>';
+    /* 大众指数温度区 */
+    var cells = mwIndices().map(function(x){
+      var t = MW_TC[x.tier] || ['#eef0f3','#4b5563'];
+      return '<div style="background:#ffffff;border-radius:12px;padding:'+(wide?'8px 10px':'12px 12px')+';min-width:0;'
+        +'border-top:3px solid '+t[1]+';">'
+        +'<div style="font-size:'+(wide?14:17)+'px;font-weight:700;color:#26231e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+x.name+'</div>'
+        +'<div style="display:flex;align-items:center;gap:6px;margin-top:'+(wide?5:8)+'px;">'
+        +'<span style="background:'+t[0]+';color:'+t[1]+';border-radius:999px;padding:'+(wide?'2px 8px':'3px 10px')
+        +';font-size:'+(wide?10.5:12.5)+'px;font-weight:700;white-space:nowrap;">'+x.tier+'</span>'
+        +'<b style="margin-left:auto;font-size:'+(wide?18:24)+'px;color:'+t[1]+';font-variant-numeric:tabular-nums;">'
+        + (x.percentile==null?'—':x.percentile.toFixed(1)+'%')+'</b></div></div>';
+    }).join('');
+    var grid = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:'
+      +(wide?8:12)+'px;">'+cells+'</div>';
+    var idxBlock = '<div style="padding:'+(wide?'0 14px 6px 14px':'0 16px 12px 16px')+';">'
+      +'<div style="font-size:'+(wide?12:15)+'px;font-weight:700;color:#524c44;margin:'
+      +(wide?'2px 0 8px 0':'4px 0 10px 0')+';">大家最常问的指数 · 按分位排序（越低越便宜）</div>'
+      + grid + '</div>';
+    var body = wide
+      ? '<div style="display:flex;align-items:stretch;">'
+        +'<div style="flex:0 0 30%;">'+mood.replace('margin:14px 14px 14px 14px','margin:14px 0 14px 14px')+'</div>'
+        +'<div style="flex:1;min-width:0;padding-top:14px;">'+idxBlock.replace('padding:0 14px 6px 14px','padding:0 14px 6px 0')+'</div>'
+        +'</div>'
+      : mood + idxBlock;
+    return '<div class="mx s-'+sizeKey+'">'+head('班马日记本 · 市场周报')
+      + body
+      + foot('指数分位为历史数据自算的估值参考；情绪分与温度分位均不构成投资建议')
+      +'</div>';
+  }
 
   function coreKeys(){
     return (M.core_keys && M.core_keys.length) ? M.core_keys.slice() : ['erp','margin','ivix','m1m2'];
@@ -233,6 +304,7 @@
     ensureStyle();
     if (name==='market_score') return buildScore();                 /* 固定竖版 */
     if (name==='market_cover') return buildCover();                 /* 固定 1200×510 */
+    if (name==='market_weekly') return buildWeekly(sizeKey==='wide'?'wide':'xhs');
     if (name==='market_core' || name==='market_ref')
       return buildList(name, sizeKey==='wide'?'wide':'xhs');
     return '';
@@ -240,6 +312,8 @@
   function hint(name, sizeKey){
     if (name==='market_score') return '情绪周榜大图（环形+一句话解读，1080×1620）';
     if (name==='market_cover') return '公众号封面（1200×510，2.35:1）';
+    if (name==='market_weekly') return '市场周报合并图（上1/4情绪数值 + 下3/4大众指数温度'
+      + (sizeKey==='wide'?'，横版）':'，竖版）');
     return (name==='market_ref'?'参考 4 详解':'核心 4 详解')+'（'+(sizeKey==='wide'?'公众号横版，含常见范围':'小红书竖版')+'）';
   }
   function nameOf(id){

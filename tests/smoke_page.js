@@ -640,11 +640,12 @@ if (D.market && D.market.indicators) {
       /* 品牌口径（2026-11-04 用户定）："温度"一词留给指数温度计，市场情绪页禁用 */
       && !mktHtml.includes('温度'));
   /* 导出窗口（2026-11-04 拍板同址；2026-11-05 二修分组/缩放/情绪免责；三修删单指标卡） */
-  chk('市场情绪导出：index 引入模块 + 分组按钮 + 4 种图 + 情绪免责（无单指标卡）',
+  chk('市场情绪导出：index 引入模块 + 分组按钮 + 5 种图（含市场周报合并图）+ 情绪免责（无单指标卡）',
       html.includes('market-export.js') && html.includes('window.MktExport')
       && html.includes('<b>情绪</b>') && html.includes('#size-btns')
       && mktExpJs.includes("'market_score'") && mktExpJs.includes("'market_core'")
       && mktExpJs.includes("'market_ref'") && mktExpJs.includes("'market_cover'")
+      && mktExpJs.includes("'market_weekly'") && mktExpJs.includes('buildWeekly')
       && !mktExpJs.includes("'market_ind'")
       && mktExpJs.includes('function buildScore')
       && mktExpJs.includes('不构成任何投资建议或基金推介')

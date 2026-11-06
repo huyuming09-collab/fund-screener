@@ -650,13 +650,61 @@ def run(skip_refresh: bool = False, top: int | None = None,
         log.close()
 
 
+def run_index_only(log=print) -> int:
+    """段级更新（2026-11-06 周更排期拍板）：只刷指数估值 + 市场情绪。
+
+    沿用上期榜单 payload（data/top20.json）只替换 eq_index/market 两段后重写
+    web/data.js——不碰债基筛选、CSV、榜史（榜史仍只由周日全量写）。
+    触发：周五 18:00 `FundScreener-Index-Fri`（温度计/红利天气/市场情绪三内容共用
+    这一场拉取，周六不交易故周五统一拉）。
+    """
+    import json as _json
+    t0 = time.time()
+    if not JSON_PATH.exists():
+        log(f"[段级] 未找到 {JSON_PATH}，请先跑一次全量周更")
+        return 1
+    try:
+        payload = _json.loads(JSON_PATH.read_text(encoding="utf-8"))
+    except Exception as e:                          # noqa: BLE001
+        log(f"[段级] 上期 payload 读取失败：{type(e).__name__}: {e}")
+        return 1
+    # 指数估值（温度计 + 红利天气同属 eq_index 段；refresh=True 周五场真抓取）
+    if C.EQ_INDEX.get("enabled"):
+        try:
+            fresh = eqindex.build(log=log, refresh=True)
+            if fresh:
+                payload["eq_index"] = fresh
+        except Exception as e:                      # noqa: BLE001
+            log(f"[7][指数估值] 段级构建失败，沿用上期：{type(e).__name__}: {e}")
+    # 市场情绪
+    try:
+        from . import market as MK
+        mkt = MK.build_market(log=log)
+        if mkt:
+            payload["market"] = mkt
+    except Exception as e:                          # noqa: BLE001
+        log(f"[8][市场情绪] 段级构建失败，沿用上期：{type(e).__name__}: {e}")
+    cards.write_payload(payload, JSON_PATH, JS_PATH)
+    log(f"[段级] 完成：eq_index + market 已更新，web/data.js 已写出"
+        f"（耗时 {(time.time()-t0)/60:.1f}min，未动债基榜与榜史）")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="周更管线：逐池刷新→筛选→筛后评分→TOP_N→导出")
     ap.add_argument("--skip-refresh", action="store_true",
                     help="跳过数据抓取，用现有缓存重筛重评（调试）")
     ap.add_argument("--top", type=int, default=None, help="输出前 N 只（默认 config.TOP_N）")
     ap.add_argument("--asof", default=None, help="筛选基准日 YYYY-MM-DD（默认今天）")
+    ap.add_argument("--sections", default=None,
+                    help="段级更新：eq,market（周五指数系场，沿用上期榜单 payload；缺省=全量）")
     args = ap.parse_args(argv)
+    secs = {s.strip() for s in (args.sections or "").split(",") if s.strip()}
+    if secs:
+        if secs != {"eq", "market"}:
+            print(f"不支持的 --sections={args.sections}（当前仅支持 eq,market）")
+            return 2
+        return run_index_only()
     return run(skip_refresh=args.skip_refresh, top=args.top, asof=args.asof)
 
 
