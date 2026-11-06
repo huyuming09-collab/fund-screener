@@ -29,11 +29,12 @@ a{text-decoration:none;color:inherit;}
 .zone-hd{display:flex;align-items:center;gap:8px;padding:0 4px 8px;}
 .zone-hd .t{font-size:15px;font-weight:800;}
 .zone-hd .n{margin-left:auto;font-size:12px;color:var(--sub);font-weight:600;}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
-@media (max-width:380px){.grid{grid-template-columns:1fr;}}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+@media (max-width:380px){.grid{grid-template-columns:minmax(0,1fr);}}
 /* 指数卡 */
 .wcard{position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow);
-  padding:13px 14px 12px;border-top:4px solid transparent;transition:transform .12s;}
+  padding:13px 14px 12px;border-top:4px solid transparent;transition:transform .12s;
+  min-width:0;overflow:hidden;}
 .wcard:active{transform:scale(.97);}
 .wcard .top{display:flex;align-items:center;gap:7px;}
 .wcard .ico{font-size:19px;line-height:1;flex:0 0 auto;}
@@ -59,7 +60,7 @@ a{text-decoration:none;color:inherit;}
     <h1>红利天气</h1>
     <span class="pill" id="asof">—</span>
   </div>
-  <div class="sub">股息率分位越高 = 越便宜 = 天气越晴（与指数温度计方向相反）。<br>红利族独立观察，点卡片看详情与对应基金。</div>
+  <div class="sub">股息率越高 = 越便宜 = 天气越晴（按股息率绝对值定档，与指数温度计方向相反）。<br>红利族独立观察，点卡片看详情与对应基金。</div>
   <div class="chips" id="chips" hidden></div>
   <div id="wall"></div>
   <div class="ft">
@@ -93,11 +94,11 @@ a{text-decoration:none;color:inherit;}
     '<span class="chip" style="background:#fff1e8;color:#d84315">晴天系 <b>'+nSun+'</b> 只</span>' +
     '<span class="chip" style="background:#eef1f5;color:#475569">多云阴天 <b>'+nMid+'</b> 只</span>' +
     '<span class="chip" style="background:#e8eefc;color:#1e3a8a">雨系 <b>'+nRain+'</b> 只</span>';
-  var byPct = function(a,b){ return (b.dyr_pct||0) - (a.dyr_pct||0); };
+  var byDyr = function(a,b){ return (b.dyr||0) - (a.dyr||0); };
   var zones = [
-    {t:'阳光区', n:'酷暑 / 晴天 · 分位高 = 便宜', list: wx.filter(function(x){return x.weather==='酷暑'||x.weather==='晴天';}).sort(byPct)},
-    {t:'多云阴天', n:'中性区间', list: wx.filter(function(x){return x.weather==='多云'||x.weather==='阴天';}).sort(byPct)},
-    {t:'雨景区', n:'小雨 / 暴雨 · 分位低 = 贵', list: wx.filter(function(x){return x.weather==='小雨'||x.weather==='暴雨';}).sort(byPct)}
+    {t:'阳光区', n:'酷暑 / 晴天 · 股息率越高越晴', list: wx.filter(function(x){return x.weather==='酷暑'||x.weather==='晴天';}).sort(byDyr)},
+    {t:'多云阴天', n:'中性区间', list: wx.filter(function(x){return x.weather==='多云'||x.weather==='阴天';}).sort(byDyr)},
+    {t:'雨景区', n:'小雨 / 暴雨 · 股息率越低越贵', list: wx.filter(function(x){return x.weather==='小雨'||x.weather==='暴雨';}).sort(byDyr)}
   ].filter(function(z){ return z.list.length; });
   var html = '';
   zones.forEach(function(z){
@@ -116,9 +117,9 @@ a{text-decoration:none;color:inherit;}
         + '<div class="top"><span class="ico">'+(ICO[x.weather]||'🌤️')+'</span>'
         + '<span class="nm">'+x.name+'</span></div>'
         + '<span class="wt" style="background:'+c[0]+';color:'+c[1]+'">'+x.weather+'</span>'
-        + '<div class="big" style="color:'+c[1]+'">'+(x.dyr_pct==null?'—':x.dyr_pct.toFixed(1))
-        + '<span class="u">% 分位</span></div>'
-        + '<div class="meta"><span>股息率 '+(x.dyr==null?'—':x.dyr.toFixed(2)+'%')+'</span>'
+        + '<div class="big" style="color:'+c[1]+'">'+(x.dyr==null?'—':x.dyr.toFixed(2))
+        + '<span class="u">% 股息率</span></div>'
+        + '<div class="meta"><span>分位 '+(x.dyr_pct==null?'—':x.dyr_pct.toFixed(1)+'%')+'</span>'
         + '<span class="'+wCls+'">近1周 '+wTxt+'</span></div></a>';
     });
     html += '</div></div>';

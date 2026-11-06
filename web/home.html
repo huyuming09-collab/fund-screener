@@ -139,9 +139,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
       <span class="arrow">›</span>
     </a>
 
-    <!-- 指数温度计（测试中） -->
+    <!-- 指数温度计 -->
     <a class="card c-index" href="index.html?section=index">
-      <span class="badge testing">测试中</span>
       <div class="ic">🌡️</div>
       <div class="nm">指数温度计</div>
       <div class="ds">全市场指数估值温度，冷热一目了然</div>
@@ -201,7 +200,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
   var wx = (((D.eq_index || {}).indices) || []).filter(function(x){ return x.module === 'weather'; });
   var el = document.getElementById('div-card-ds');
   if (!el || !wx.length) return;
-  var top = wx.slice().sort(function(a,b){ return (b.dyr_pct||0) - (a.dyr_pct||0); })[0];
+  var top = wx.slice().sort(function(a,b){ return (b.dyr||0) - (a.dyr||0); })[0];
   var sun = wx.filter(function(x){ return x.weather==='酷暑' || x.weather==='晴天'; }).length;
   el.textContent = '最晴：' + top.name + ' ' + top.weather + ' · 晴天系 ' + sun + ' 只';
 })();

@@ -1090,30 +1090,37 @@ def _is_weather_index(name: str) -> bool:
     return any(k in name for k in ("红利", "股息", "高股息"))
 
 
-def _weather_of(pct: float | None) -> str | None:
-    """股息率分位 → 天气档位（用户定稿词表；分位越高=股息率越高=越便宜=天气越晴）。"""
-    if pct is None:
+def _weather_of(dyr: float | None) -> str | None:
+    """当前股息率(%) → 天气档位。
+
+    2026-11-06 用户改口径：**只按股息率绝对值定档，不用历史分位**。
+    阈值：≥6 酷暑、≥5 晴天、≥4.5 多云、≥4 阴天、≥3.5 小雨、其余暴雨。
+    """
+    if dyr is None:
         return None
-    if pct >= 70:
+    if dyr >= 6:
         return "酷暑"
-    if pct >= 55:
+    if dyr >= 5:
         return "晴天"
-    if pct >= 45:
+    if dyr >= 4.5:
         return "多云"
-    if pct >= 30:
+    if dyr >= 4:
         return "阴天"
-    if pct >= 15:
+    if dyr >= 3.5:
         return "小雨"
     return "暴雨"
 
 
 # 红利天气口径文案（结构同 _METHODOLOGY，详情折叠「指标说明」直接用）
 _METHODOLOGY_WEATHER = {
-    "caliber": "股息率分位为主",
-    "how": "取该指数当前股息率在近 N 年历史中的百分位（股息率=分红/价格，分位越高=分红性价比越高）。",
-    "why": "红利指数的回报核心是分红现金流，股息率直接衡量“每块钱能收多少息”，"
-           "是红利策略公认估值锚；与温度计方向相反——这里分位越高越便宜、天气越晴。",
-    "scientific": "是。股息率分位是红利指数估值的主流做法（且慢、中证指数估值、各家红利 ETF 均采用），"
+    "caliber": "股息率绝对值定档",
+    "how": "按当前股息率直接定天气档：≥6% 酷暑、5~6% 晴天、4.5~5% 多云、"
+           "4~4.5% 阴天、3.5~4% 小雨、<3.5% 暴雨；历史分位仅作参考展示。",
+    "why": "红利指数的回报核心是分红现金流，股息率=分红/价格，直接衡量“每块钱能收多少息”；"
+           "绝对值定档直观、不受历史窗口漂移影响，是红利策略最通用的估值锚"
+           "（与温度计方向相反——这里股息率越高越晴）。",
+    "scientific": "是。按股息率绝对值给红利指数分档是红利投资的主流做法"
+                  "（且慢、中证指数估值、各家红利 ETF 均以股息率为核心指标），"
                   "比 PE/PB 更贴近红利资产的现金流属性。",
 }
 
@@ -1229,7 +1236,7 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
                             if windows[k].get("dyr")), None))
         if dy_base and dy_base.get("pct") is not None:
             dyr_pct = round(float(dy_base["pct"]), 1)
-            weather = _weather_of(dyr_pct)
+            weather = _weather_of(cur_dy)            # 2026-11-06 改口径：按股息率绝对值定档
     default_metric = "pb" if (not pb_s.empty and entry.get("default_metric") == "pb") else "pe"
     if default_metric == "pb" and windows["10y"]["pb"] is None:
         default_metric = "pe"
