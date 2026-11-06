@@ -1663,8 +1663,10 @@ function eqIndexBodyHTML(x){
   const cTint = wx ? wc[0] : (TIER_BG[tier] || '#f6f7f9');
   const cTier = wx ? x.weather : tierTemp(tier);
   const cTierCol = wx ? wc[1] : tierColor(tier);
-  const cScore = wx ? wxScore(x.dyr) : (x.percentile == null ? null : Math.round(x.percentile));
-  const cTicks = wx ? [20, 40, 55, 70, 90] : [10, 30, 45, 55, 70];
+  const cScore = wx
+    ? (x.score != null ? Math.round(x.score) : (x.dyr == null ? null : wxScore(x.dyr)))
+    : (x.percentile == null ? null : Math.round(x.percentile));
+  const cTicks = wx ? [15, 30, 45, 70, 85] : [10, 30, 45, 55, 70];
   const cCc = wx ? `股息率 ${x.dyr==null?'—':x.dyr+'%'} · 越高越晴`
     : `温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'} · 越低越便宜`;
   const fmtPct = v => v==null ? '—' : (+v).toFixed(1) + '%';
@@ -1687,11 +1689,15 @@ function eqIndexBodyHTML(x){
       <div class="cc" style="color:${cTierCol}">${cCc}</div>
     </div>
     <div class="eq-line">${wx
-      ? `天气档位按当前股息率绝对值：≥6% 酷暑、5~6% 晴天、4.5~5% 多云、4~4.5% 阴天、3.5~4% 小雨、<3.5% 暴雨；卡片分数=按档位折算的百分制（xx/100），股息率分位 ${fmtPct(st.pct)} 仅作参考。仅作估值参考，不构成建议。`
+      ? `综合分 = 股息率水平×50% + 点位位置×25% + 股息率分位×25%（百分制）；天气档位按综合分：≥85 酷暑、70~85 晴天、45~70 多云、30~45 阴天、15~30 小雨、<15 暴雨；近5年股息率分位 ${fmtPct(st.pct)} 仅作参考。仅作估值参考，不构成建议。`
       : `综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见「指标说明」）；卡片分数=温度分位取整（xx/100）；${x.pb==null?'PB 历史暂缺，按 PE 单一指标；':'PE 与 PB 同时参与；'}仅作估值参考，不构成建议。`}</div>
     <details class="eq-meth"><summary>详细数据（${wx?'PE/PB 参考 / 区间 / 统计量':'分位口径 / 区间 / 统计量'}）</summary>
       <div class="eq-meth-body">
         <div class="eq-stats">
+          ${wx && (x.score_detail||[]).length
+            ? x.score_detail.map(d => eqStat(d.k, d.s + ' ×' + d.w + ' → ' + d.c)).join('')
+              + eqStat('综合分', x.score == null ? '—' : x.score + ' /100')
+            : ''}
           ${wx ? eqStat('股息率分位', fmtPct(st.pct))
                : eqStat((metric==='pb'?'PB':'PE')+' 温度分位', fmtPct(st.pct))}
           ${wx ? eqStat('PE 分位（参考）', fmtPct(stPE.pct)) : eqStat('中位数', num(st.median,2))}
@@ -1708,7 +1714,7 @@ function eqIndexBodyHTML(x){
               + eqStat('估值日期', String(x.valuation_date||'—').slice(5))}
         </div>
         <div class="eq-line">${wx
-          ? '天气档位按当前股息率绝对值：≥6% 酷暑、5~6% 晴天、4.5~5% 多云、4~4.5% 阴天、3.5~4% 小雨、<3.5% 暴雨；分位、PE/PB 分位仅作参考。'
+          ? '综合分三因子：股息率水平 50%（绝对值分段）、点位位置 25%（5 年点位分位取反）、股息率分位 25%；档位按综合分（85/70/45/30/15 分界）；分数高=性价比高，不代表马上涨。PE/PB 分位仅作参考。'
           : '体感温度 = 该指数在历史区间中的冷热位置，越冷越便宜、越热越贵；仅作估值参考，不构成建议。'}</div>
       </div>
     </details>
@@ -1722,11 +1728,11 @@ function eqIndexBodyHTML(x){
       <div class="eq-legend2">
         ${wx ? `<span class="lg"><i class="ln dy"></i>股息率</span>
         ${(closePts&&closePts.length>=2)?'<span class="lg"><i class="ln dark"></i>指数点位</span>':''}
-        <span class="lg"><i class="ln q70"></i>酷暑线 6%</span>
-        <span class="lg"><i class="ln q55"></i>晴天线 5%</span>
-        <span class="lg"><i class="ln q45"></i>多云线 4.5%</span>
-        <span class="lg"><i class="ln q30"></i>阴天线 4%</span>
-        <span class="lg"><i class="ln q15"></i>小雨线 3.5%</span>`
+        <span class="lg"><i class="ln q70"></i>参考 6%</span>
+        <span class="lg"><i class="ln q55"></i>参考 5%</span>
+        <span class="lg"><i class="ln q45"></i>参考 4.5%</span>
+        <span class="lg"><i class="ln q30"></i>参考 4%</span>
+        <span class="lg"><i class="ln q15"></i>参考 3.5%</span>`
       : `<span class="lg"><i class="ln"></i>${metric==='pb'?'PB 估值':'PE 估值'}原值</span>
         ${(closePts&&closePts.length>=2)?'<span class="lg"><i class="ln dark"></i>指数点位</span>':''}
         <span class="lg"><i class="ln red"></i>危险值(70)</span>
@@ -1735,7 +1741,7 @@ function eqIndexBodyHTML(x){
       </div>
     </div>
     <div class="eq-line">${wx
-      ? '浅色线 = 股息率（%，越高越晴），深色线 = 指数点位（右轴）；五条虚线 = 天气分档线（6/5/4.5/4/3.5% 阈值）。'
+      ? '浅色线 = 股息率（%），深色线 = 指数点位（右轴）；五条虚线 = 股息率参考刻度（6/5/4.5/4/3.5%），天气档位由综合分决定。'
       : '浅色粗线 = 估值口径原值（左轴），深色线 = 指数点位（右轴）；红 / 蓝 / 绿虚线 = 危险(70分位) / 中位(50) / 机会(10) 参考线。'}</div>
   </div>
   <div class="sec"><details class="eq-meth"><summary>方法口径与说明</summary><div class="eq-meth-body">

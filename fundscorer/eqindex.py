@@ -1127,11 +1127,7 @@ def _is_weather_index(name: str) -> bool:
 
 
 def _weather_of(dyr: float | None) -> str | None:
-    """当前股息率(%) → 天气档位。
-
-    2026-11-06 用户改口径：**只按股息率绝对值定档，不用历史分位**。
-    阈值：≥6 酷暑、≥5 晴天、≥4.5 多云、≥4 阴天、≥3.5 小雨、其余暴雨。
-    """
+    """当前股息率(%) → 天气档位（2026-11-06 上午口径：绝对值六档；现为因子不全时的回退）。"""
     if dyr is None:
         return None
     if dyr >= 6:
@@ -1147,17 +1143,45 @@ def _weather_of(dyr: float | None) -> str | None:
     return "暴雨"
 
 
+def _yield_score(v: float) -> float:
+    """股息率(%) → 0-10 分（打分方案B 的 F1；段点与十分制策略锚 3/5/7 对齐）。"""
+    pts = [(3.0, 0.0), (3.5, 1.5), (4.0, 3.0), (4.5, 4.5), (5.0, 7.0), (6.0, 8.5), (7.0, 10.0)]
+    if v <= pts[0][0]:
+        return 0.0
+    for i in range(len(pts) - 1):
+        (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+        if v <= x1:
+            return y0 + (v - x0) / (x1 - x0) * (y1 - y0)
+    return 10.0
+
+
+def _weather_of_score(score: float | None) -> str | None:
+    """综合分（百分制）→ 天气档位（2026-11-06 拍板：方案B 三因子综合分定档）。"""
+    if score is None:
+        return None
+    if score >= 85:
+        return "酷暑"
+    if score >= 70:
+        return "晴天"
+    if score >= 45:
+        return "多云"
+    if score >= 30:
+        return "阴天"
+    if score >= 15:
+        return "小雨"
+    return "暴雨"
+
+
 # 红利天气口径文案（结构同 _METHODOLOGY，详情折叠「指标说明」直接用）
 _METHODOLOGY_WEATHER = {
-    "caliber": "股息率绝对值定档",
-    "how": "按当前股息率直接定天气档：≥6% 酷暑、5~6% 晴天、4.5~5% 多云、"
-           "4~4.5% 阴天、3.5~4% 小雨、<3.5% 暴雨；历史分位仅作参考展示。",
-    "why": "红利指数的回报核心是分红现金流，股息率=分红/价格，直接衡量“每块钱能收多少息”；"
-           "绝对值定档直观、不受历史窗口漂移影响，是红利策略最通用的估值锚"
-           "（与温度计方向相反——这里股息率越高越晴）。",
-    "scientific": "是。按股息率绝对值给红利指数分档是红利投资的主流做法"
-                  "（且慢、中证指数估值、各家红利 ETF 均以股息率为核心指标），"
-                  "比 PE/PB 更贴近红利资产的现金流属性。",
+    "caliber": "综合分定档（百分制）",
+    "how": "综合分 = 股息率水平×50% + 点位位置×25% + 股息率分位×25%（各因子换算 0-10 后加权、×10 转百分制）；"
+           "天气档位按综合分：≥85 酷暑、70~85 晴天、45~70 多云、30~45 阴天、15~30 小雨、<15 暴雨。",
+    "why": "三因子由历史前瞻收益校准（9 只红利指数 × 10 年周频，前瞻 12 个月：暴雨带均值 -8.1%、"
+           "晴天带 +9.3%，正收益占比 23%→82% 单调；纯股息率口径带间乱跳、区分度弱）。"
+           "股息率衡量分红性价比，点位位置捕捉情绪过热，股息率分位确认历史低位——"
+           "分数高代表性价比高，不代表马上涨；分数低也不代表马上下跌。",
+    "scientific": "是。三因子均为红利估值的公认维度，权重经历史回测校准（回测记录见 docs/19）。",
 }
 
 
@@ -1264,15 +1288,32 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
         return None
     pct = base["comp_pct"]
     tier = _tier_of(pct)
-    # 红利天气：以股息率分位定档（10y 优先，缺则依次回退；分位/天气为 None 时退回温度计口径）
-    weather, dyr_pct = None, None
+    # 红利天气（2026-11-06 三段口径演进 → 终版：方案B 综合分百分制定档）
+    weather, dyr_pct, score, score_detail = None, None, None, None
     if is_weather:
-        dy_base = (base.get("dyr")
-                   or next((windows[k].get("dyr") for k in ("5y", "3y", "all")
-                            if windows[k].get("dyr")), None))
-        if dy_base and dy_base.get("pct") is not None:
-            dyr_pct = round(float(dy_base["pct"]), 1)
-            weather = _weather_of(cur_dy)            # 2026-11-06 改口径：按股息率绝对值定档
+        dy5 = windows["5y"].get("dyr")
+        if dy5 and dy5.get("pct") is not None:
+            dyr_pct = round(float(dy5["pct"]), 1)          # 展示参考（近5年股息率分位）
+        # 综合分 = 股息率水平×0.50 + 点位位置×0.25 + 股息率分位×0.25（因子0-10，×10 → 百分制）
+        # 回测校准（9 只×10 年周频·前瞻12月）：暴雨 -8.1% / 晴天 +9.3%，正收益 23%→82% 单调
+        if cur_dy is not None and not close_s.empty and dy5 and dy5.get("pct") is not None:
+            f1 = _yield_score(cur_dy)
+            _c = float(close_s.iloc[-1])
+            _w5 = close_s[close_s.index >= close_s.index.max() - pd.DateOffset(years=5)]
+            f2 = None
+            if len(_w5) >= 100:
+                f2 = 10 * (1 - float((_w5 <= _c).mean()))   # 点位5年分位取反
+            f3 = float(dy5["pct"]) / 10
+            if f2 is not None:
+                score = round((0.50 * f1 + 0.25 * f2 + 0.25 * f3) * 10, 1)
+                weather = _weather_of_score(score)
+                score_detail = [
+                    {"k": "股息率水平", "w": 0.50, "s": round(f1, 1), "c": round(f1 * 5.0, 1)},
+                    {"k": "点位位置", "w": 0.25, "s": round(f2, 1), "c": round(f2 * 2.5, 1)},
+                    {"k": "股息率分位", "w": 0.25, "s": round(f3, 1), "c": round(f3 * 2.5, 1)},
+                ]
+        if weather is None:
+            weather = _weather_of(cur_dy)                   # 因子不全 → 回退绝对值带
     default_metric = "pb" if (not pb_s.empty and entry.get("default_metric") == "pb") else "pe"
     if default_metric == "pb" and windows["10y"]["pb"] is None:
         default_metric = "pe"
@@ -1333,8 +1374,10 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
     if weather:
         out["module"] = "weather"
         out["weather"] = weather
+        out["score"] = score                          # 综合分百分制（方案B；因子不全=None→回退绝对值档）
+        out["score_detail"] = score_detail            # 因子/权重/得分/贡献（同偏债心动值明细结构）
         out["dyr"] = _round(cur_dy, 2)                 # 当前股息率（%，如 5.82）
-        out["dyr_pct"] = dyr_pct                       # 股息率历史分位（越高越便宜）
+        out["dyr_pct"] = dyr_pct                       # 近5年股息率分位（参考展示）
         out["method_label"] = _METHODOLOGY_WEATHER["caliber"]
         out["methodology"] = _METHODOLOGY_WEATHER
         out["why"] = _METHODOLOGY_WEATHER["why"]
