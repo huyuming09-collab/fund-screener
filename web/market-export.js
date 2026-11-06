@@ -84,7 +84,7 @@
       +'<div style="display:flex;align-items:baseline;gap:8px;">'
       +'<b style="font-size:'+(wide?46:56)+'px;color:'+LV[level]+';line-height:1;font-variant-numeric:tabular-nums;">'+score+'</b>'
       +'<span style="font-size:'+(wide?14:17)+'px;font-weight:700;color:'+LV[level]+';">· '+level+'</span>'
-      +'<span style="margin-left:auto;font-size:'+(wide?11:13)+'px;color:#8a8378;">市场温度（百分制）</span></div>'
+      +'<span style="margin-left:auto;font-size:'+(wide?11:13)+'px;color:#8a8378;">情绪分（百分制）</span></div>'
       +'<div style="display:flex;gap:'+(wide?6:8)+'px;margin-top:'+(wide?8:10)+'px;">'+stats+'</div>'
       +'</div>';
     /* 大众指数温度区 */
