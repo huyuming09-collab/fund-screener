@@ -857,20 +857,29 @@ def _lx_code(code: str) -> str:
     return code
 
 
-def load_lx_pb(code: str, refresh: bool) -> list | None:
-    """理杏仁指数**等权 PB** 日频近 10 年（open API ``cn/index/fundamental``，metric=pb.ew）。
+def load_lx_metric(code: str, metric: str, refresh: bool) -> list | None:
+    """理杏仁 open API 指数等权指标日频近 10 年（``cn/index/fundamental``）。
 
-    实测 2026-11-05：单码请求（stockCodes 批量上限=1）、日频含当日、10 年 2433 行、
-    覆盖 166/187（海外/港股与冷门主题无 → 回退单 PE）；限流 1000 次/分。
-    缓存 20h；网络失败沿用旧缓存；空结果也入缓存（负缓存，避免反复打无数据指数）。
+    metric 示例：``pb.ew``（市净率，2026-11-05 接入）、``dyr.ew``（股息率 %，
+    2026-11-06 红利天气接入）。缓存键按指标名分桶（lxpb_v1_* 沿用旧键）。
+    实测：单码请求（批量上限=1）、日频含当日、10 年 2433 行、限流 1000 次/分。
+    缓存 20h；网络失败沿用旧缓存；空结果也入缓存（负缓存）。
     """
     tok = _lx_token()
     if not tok:
         return None
-    key = f"lxpb_v1_{code}"
+    key = f"lx{metric.split('.')[0]}_v1_{code}"
     cached = D._load_cache(key, C.EQ_INDEX["cache_hours"])
     if cached is not None:
-        return cached or None
+        if cached:
+            return cached
+        # 空结果=负缓存（海外/冷门无数据），但只锁 1 小时：首拉偶发瞬时空数据
+        # 若按 20h 锁会把真有数据的指数锁死（2026-11-06 中证红利实测踩过）
+        try:
+            if (time.time() - D._cache_path(key).stat().st_mtime) / 3600 < 1:
+                return None
+        except Exception:                      # noqa: BLE001
+            return None
     if not refresh:
         try:
             p = D._cache_path(key)
@@ -882,7 +891,7 @@ def load_lx_pb(code: str, refresh: bool) -> list | None:
         return gzip.decompress(b) if "gzip" in (enc or "") else b
 
     body = json.dumps({"token": tok, "stockCodes": [_lx_code(code)],
-                       "metricsList": ["pb.ew"],
+                       "metricsList": [metric],
                        "startDate": "2016-01-01",
                        "endDate": time.strftime("%Y-%m-%d")}).encode("utf-8")
     req = urllib.request.Request(
@@ -894,8 +903,8 @@ def load_lx_pb(code: str, refresh: bool) -> list | None:
         resp = urllib.request.urlopen(req, timeout=30)
         txt = _dec(resp.read(), resp.headers.get("Content-Encoding")).decode("utf-8", "ignore")
         rows = (json.loads(txt).get("data")) or []
-        pairs = [[r["date"][:10], r["pb.ew"]] for r in rows
-                 if r.get("pb.ew") is not None]
+        pairs = [[r["date"][:10], r[metric]] for r in rows
+                 if r.get(metric) is not None]
         pairs.reverse()                        # 接口按日期降序 → 改升序
         D._save_cache(key, pairs)              # 空列表也存（负缓存）
         return pairs or None
@@ -930,8 +939,8 @@ def _win_stats(s: pd.Series, cur: float | None, years: float | None) -> dict | N
     w = s if years is None else s[s.index >= end - pd.DateOffset(years=int(years))]
     if len(w) < 8:
         return None
-    # v2.0 六档对齐：分位点取 10/30/45/50(中位)/55/70，与 tiers 阈值一致
-    q = w.quantile([0.1, 0.3, 0.45, 0.5, 0.55, 0.7]).tolist()
+    # v2.0 六档对齐：分位点取 10/15/30/45/50(中位)/55/70——15 为红利天气"暴雨/小雨"档界（2026-11-06）
+    q = w.quantile([0.1, 0.15, 0.3, 0.45, 0.5, 0.55, 0.7]).tolist()
     mean, std = float(w.mean()), float(w.std(ddof=0) or 0)
     return {
         "pct": round(float((w <= cur).mean() * 100), 2),
@@ -939,12 +948,12 @@ def _win_stats(s: pd.Series, cur: float | None, years: float | None) -> dict | N
         "min": round(float(w.min()), 4), "max": round(float(w.max()), 4),
         "mean": round(mean, 4), "std": round(std, 4),
         "z": round((cur - mean) / std, 2) if std else None,
-        "q10": round(q[0], 4), "q30": round(q[1], 4), "q45": round(q[2], 4),
-        "q55": round(q[4], 4), "q70": round(q[5], 4),
+        "q10": round(q[0], 4), "q15": round(q[1], 4), "q30": round(q[2], 4),
+        "q45": round(q[3], 4), "q55": round(q[5], 4), "q70": round(q[6], 4),
         # 兼容旧键名（q50=中位数；danger/opp 对齐新档位边界 70/10）
-        "q20": round(q[0], 4), "q40": round(q[1], 4), "q50": round(q[3], 4),
-        "q60": round(q[4], 4), "q80": round(q[5], 4),
-        "danger": round(q[5], 4), "median": round(q[3], 4), "opportunity": round(q[0], 4),
+        "q20": round(q[0], 4), "q40": round(q[2], 4), "q50": round(q[4], 4),
+        "q60": round(q[5], 4), "q80": round(q[6], 4),
+        "danger": round(q[6], 4), "median": round(q[4], 4), "opportunity": round(q[0], 4),
         "start": w.index.min().strftime("%Y-%m-%d"),
         "end": w.index.max().strftime("%Y-%m-%d"),
     }
@@ -1075,6 +1084,40 @@ _METHODOLOGY = {
 
 # 定投倍数（v1.2 删除：用户要求去掉“几倍定投”内容，档位只做展示）
 
+# ---- 红利天气（2026-11-06 用户拍板：红利族从温度计拆出，改股息率天气口径） ----
+def _is_weather_index(name: str) -> bool:
+    """红利族判定（拆出范围 A=严格族）：名字含 红利/股息/高股息 即入（约15只）。"""
+    return any(k in name for k in ("红利", "股息", "高股息"))
+
+
+def _weather_of(pct: float | None) -> str | None:
+    """股息率分位 → 天气档位（用户定稿词表；分位越高=股息率越高=越便宜=天气越晴）。"""
+    if pct is None:
+        return None
+    if pct >= 70:
+        return "酷暑"
+    if pct >= 55:
+        return "晴天"
+    if pct >= 45:
+        return "多云"
+    if pct >= 30:
+        return "阴天"
+    if pct >= 15:
+        return "小雨"
+    return "暴雨"
+
+
+# 红利天气口径文案（结构同 _METHODOLOGY，详情折叠「指标说明」直接用）
+_METHODOLOGY_WEATHER = {
+    "caliber": "股息率分位为主",
+    "how": "取该指数当前股息率在近 N 年历史中的百分位（股息率=分红/价格，分位越高=分红性价比越高）。",
+    "why": "红利指数的回报核心是分红现金流，股息率直接衡量“每块钱能收多少息”，"
+           "是红利策略公认估值锚；与温度计方向相反——这里分位越高越便宜、天气越晴。",
+    "scientific": "是。股息率分位是红利指数估值的主流做法（且慢、中证指数估值、各家红利 ETF 均采用），"
+                  "比 PE/PB 更贴近红利资产的现金流属性。",
+}
+
+
 # 无中证点位数据的指数（深交所/海外）：用对应场外基金净值做“点位代理”，只用于画图/近1年
 _CLOSE_PROXY = {"SZ399006": "110026", "HKHSTECH": "012348", "NDX": "006479",
                 "SP500": "161125", "HKHSI": "000071"}
@@ -1104,9 +1147,16 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
             pb_s = pd.Series(dtype=float)
     if pb_s.empty:
         # 雪球未覆盖（半导体等 21+10 只实测缺口）→ 理杏仁等权 PB 回退（2026-11-05 接入）
-        lx = load_lx_pb(entry["code"], refresh)
+        lx = load_lx_metric(entry["code"], "pb.ew", refresh)
         if lx:
             pb_s = _pairs_series(lx)
+    # 红利天气（2026-11-06）：红利族拉理杏仁等权股息率 dyr.ew，统一转成“百分数”单位
+    dy_s = pd.Series(dtype=float)
+    is_weather = _is_weather_index(entry.get("name", ""))
+    if is_weather:
+        dys = load_lx_metric(entry["code"], "dyr.ew", refresh)
+        if dys:
+            dy_s = _pairs_series(dys) * 100.0          # 0.045 → 4.5（%）
     close_s = _pairs_series(close_pairs)
     close_proxy = False
     if close_s.empty and entry["code"] in _CLOSE_PROXY:
@@ -1128,12 +1178,15 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
             pe_s = pe_s[pe_s.index >= start]
             pb_s = pb_s[pb_s.index >= start]
             close_s = close_s[close_s.index >= start]
+            if not dy_s.empty:
+                dy_s = dy_s[dy_s.index >= start]
         except Exception:                          # noqa: BLE001
             pass
     if pe_s.empty and pb_s.empty:
         return None
     cur_pe = float(pe_s.iloc[-1]) if not pe_s.empty else None
     cur_pb = float(pb_s.iloc[-1]) if not pb_s.empty else None
+    cur_dy = float(dy_s.iloc[-1]) if not dy_s.empty else None
     # v2.0 按指数特点选主口径（用户 2026-11-01）：不再一律 PE+PB 平均。
     vstyle = _valuation_style(entry)
     def _comp_of(pe_w, pb_w):
@@ -1156,17 +1209,27 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
     for label, years in (("3y", 3), ("5y", 5), ("10y", 10), ("all", None)):
         pe_w = _win_stats(pe_s, cur_pe, years)
         pb_w = _win_stats(pb_s, cur_pb, years)
+        dy_w = _win_stats(dy_s, cur_dy, years) if not dy_s.empty else None
         comp = _comp_of(pe_w, pb_w)
         windows[label] = {"label": {"3y": "近3年", "5y": "近5年",
                                     "10y": "近10年", "all": "上市以来"}[label],
                           "comp_pct": comp, "tier": _tier_of(comp),
-                          "pe": pe_w, "pb": pb_w}
+                          "pe": pe_w, "pb": pb_w, "dyr": dy_w}
     base = windows["10y"] if windows["10y"]["comp_pct"] is not None else next(
         (windows[k] for k in ("5y", "3y", "all") if windows[k]["comp_pct"] is not None), None)
     if base is None:
         return None
     pct = base["comp_pct"]
     tier = _tier_of(pct)
+    # 红利天气：以股息率分位定档（10y 优先，缺则依次回退；分位/天气为 None 时退回温度计口径）
+    weather, dyr_pct = None, None
+    if is_weather:
+        dy_base = (base.get("dyr")
+                   or next((windows[k].get("dyr") for k in ("5y", "3y", "all")
+                            if windows[k].get("dyr")), None))
+        if dy_base and dy_base.get("pct") is not None:
+            dyr_pct = round(float(dy_base["pct"]), 1)
+            weather = _weather_of(dyr_pct)
     default_metric = "pb" if (not pb_s.empty and entry.get("default_metric") == "pb") else "pe"
     if default_metric == "pb" and windows["10y"]["pb"] is None:
         default_metric = "pe"
@@ -1200,7 +1263,7 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
                 ret_1w = round(float(close_s.iloc[-1]) / _prev - 1, 4)
         except Exception:                          # noqa: BLE001
             ret_1w = None
-    return {
+    out = {
         "code": entry["code"], "name": entry["name"], "type": entry["type"],
         "group": entry["group"], "cs": entry.get("cs"),
         "tier": tier, "percentile": pct,
@@ -1222,6 +1285,18 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
         "series": {"pe": _monthly_pairs(pe_s), "pb": _monthly_pairs(pb_s),
                    "close": _monthly_pairs(close_s)},
     }
+    # 红利天气（2026-11-06 拍板）：红利族挂天气口径——module 标记供前端把它们从
+    # 温度计列表/导出中剔除，并按天气渲染；股息率序列/分位/档位齐全才挂（缺数据回退温度计）
+    if weather:
+        out["module"] = "weather"
+        out["weather"] = weather
+        out["dyr"] = _round(cur_dy, 2)                 # 当前股息率（%，如 5.82）
+        out["dyr_pct"] = dyr_pct                       # 股息率历史分位（越高越便宜）
+        out["method_label"] = _METHODOLOGY_WEATHER["caliber"]
+        out["methodology"] = _METHODOLOGY_WEATHER
+        out["why"] = _METHODOLOGY_WEATHER["why"]
+        out["series"]["dyr"] = _monthly_pairs(dy_s)
+    return out
 
 
 # ---------------------------------------------------------------- 5. 基金建库（F10）
@@ -1539,7 +1614,7 @@ def build(log=print, refresh: bool = True, budget_s: float | None = None) -> dic
         + "、".join(f"{k}{v}" for k, v in tier_cnt.items())
         + f"；耗时 {time.time() - t0:.1f}s")
     return {"version": cfg["version"], "asof": asof,
-            "source": "中证指数官网 PE/点位 + 雪球基金 PB + 理杏仁等权 PB 回退（分位为程序自算）",
+            "source": "中证指数官网 PE/点位 + 雪球基金 PB + 理杏仁等权 PB/股息率（分位为程序自算）",
             "catalog_n": len(CATALOG),
             "mainstream_n": sum(1 for c in CATALOG if c.get("mainstream") and not c.get("defer")),
             "hot_per_group": cfg["hot_per_group"],

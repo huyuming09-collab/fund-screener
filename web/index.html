@@ -237,6 +237,13 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eq-legend2 .ln.blue{border-top:1.5px dashed #2456b8;}
 .eq-legend2 .ln.red{border-top:1.5px dashed #b3261e;}
 .eq-legend2 .ln.green{border-top:1.5px dashed #0b6b46;}
+/* 红利天气图例线（2026-11-06）：股息率暖线 + 五条天气分档虚线 */
+.eq-legend2 .ln.dy{border-top:2px solid #d97706;}
+.eq-legend2 .ln.q70{border-top:1.5px dashed #d84315;}
+.eq-legend2 .ln.q55{border-top:1.5px dashed #d97706;}
+.eq-legend2 .ln.q45{border-top:1.5px dashed #64748b;}
+.eq-legend2 .ln.q30{border-top:1.5px dashed #475569;}
+.eq-legend2 .ln.q15{border-top:1.5px dashed #2563eb;}
 /* ==== 2026-11-05 二轮：结论卡（参考市场情绪卡片）+ 点读数气泡 + 放大浮层 + 图例不挤 ==== */
 /* 三轮微调：体感温度词=卡内最大元素（72px），当前倍数退到标签行右侧（30px） */
 .eqv-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin:8px 0 4px;}
@@ -1135,6 +1142,15 @@ function openEqIndexDetail(code){
 
 /* v1.2 指数估值 · v1.4 搜索图标化 + 全量页（问题7/8/9） */
 const EQ_GROUPS = ['宽基','行业','策略','海外'];
+/* 红利天气（2026-11-06 用户拍板）：红利族从温度计拆出，改股息率天气口径。
+   档位词定稿：酷暑/晴天/多云/阴天/小雨/暴雨；配色按天气特点（暖热→冷雨渐变）。 */
+const WEATHER_TC = {'酷暑':['#ffe3d6','#d84315'],'晴天':['#fef3c7','#d97706'],
+                    '多云':['#eaeff4','#64748b'],'阴天':['#e2e8f0','#475569'],
+                    '小雨':['#e0ebfd','#2563eb'],'暴雨':['#dbe6fb','#1e3a8a']};
+const WEATHER_ICO = {'酷暑':'🥵','晴天':'☀️','多云':'⛅','阴天':'☁️','小雨':'🌦️','暴雨':'⛈️'};
+const isWeatherIdx = x => !!(x && x.module === 'weather');
+const DISC_WEATHER = '天气与股息率分位均为历史数据自算的分析参考，不构成任何投资建议或基金推介；'
+  + '数据来自公开渠道，可能存在延迟与错误。历史业绩不代表未来，不构成投资建议。';
 let EQ_FILTER = 'all', EQ_SEARCH = '', EQ_SEARCH_OPEN = false;
 let EQ_FULL_GROUP = null, EQ_FULL_SEARCH = '';
 let EQ_SORT_ASC = true;   /* v1.5 当前温度排序方向：true=从低到高（越便宜越前），false=从高到低 */
@@ -1173,18 +1189,26 @@ function eqToggleWatch(code, ev){
    行内只显示数字（不重复列名，列名由 .eqi-head 表头统一给）；温度按档位着色（冷→热），
    近一周涨跌幅红涨绿跌（ret_1w 来自 build 周频 close 末两点）。 */
 function eqRowHTML(x, withGroup){
-  const tcol = tierColor(x.tier);
+  const wx = isWeatherIdx(x);
+  const wcol = wx ? (WEATHER_TC[x.weather] || ['#eef0f3','#4b5563']) : null;
+  const tcol = wx ? wcol[1] : tierColor(x.tier);
   const w = x.ret_1w;
   const wTxt = (w==null) ? '—' : (w>=0?'+':'') + (w*100).toFixed(2) + '%';
   const wCol = (w==null) ? 'var(--sub)' : (w>=0 ? 'var(--up)' : 'var(--down)');
+  const badge = wx
+    ? `<div class="tier" style="background:${wcol[0]};color:${wcol[1]}">${x.weather}</div>`
+    : `<div class="tier ${tierCls(x.tier)}">${x.tier}</div>`;
+  const pctTxt = wx
+    ? (x.dyr_pct==null ? '—' : x.dyr_pct.toFixed(1) + '%')
+    : (x.percentile==null?'—':x.percentile.toFixed(1)+'%');
   return `<div class="eqi" onclick='openEqIndexDetail(${JSON.stringify(x.code)})'>
     <div class="eqi-l">
-      <div class="tier ${tierCls(x.tier)}">${x.tier}</div>
+      ${badge}
       <div class="eqi-name"><b>${x.name}</b>
         <span class="eqi-code">${withGroup ? x.group + ' · ' : ''}${x.code}</span></div>
     </div>
     <div class="eqi-chg" style="color:${wCol}">${wTxt}</div>
-    <div class="eqi-pct" style="color:${tcol}">${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}</div>
+    <div class="eqi-pct" style="color:${tcol}">${pctTxt}</div>
     <div class="eqi-w${eqIsWatch(x.code) ? ' on' : ''}" title="加入/移出自选"
       onclick="eqToggleWatch('${x.code}', event)">★</div>
   </div>`;
@@ -1204,8 +1228,8 @@ function eqSearch(v){ EQ_SEARCH = v; eqRenderResults(); }
 function eqFiltered(qOverride){
   const q = (qOverride !== undefined ? qOverride : EQ_SEARCH || '').trim().toLowerCase();
   if (!q) return null;
-  return eqIndices().filter(x => (x.name||'').toLowerCase().includes(q)
-    || (x.code||'').toLowerCase().includes(q));
+  return eqIndices().filter(x => !isWeatherIdx(x)
+    && ((x.name||'').toLowerCase().includes(q) || (x.code||'').toLowerCase().includes(q)));
 }
 /* 组内排序：统一按估值分位从低到高（越便宜越靠前），不搞主流优先。
    主流/非主流只决定「直接展示 vs 更多里展示」，不决定排序（用户 2026-10-31）。 */
@@ -1214,7 +1238,8 @@ function eqGroupSorted(g, mainstreamOnly){
   if (g === '自选'){
     a = eqIndices().filter(x => eqIsWatch(x.code));   /* 自选=视图分组：全量显示、不按主流截断 */
   } else {
-    a = eqIndices().filter(x => x.group === g);
+    /* 红利天气拆出（2026-11-06）：红利族不进温度计各组（在天气模块/自选里仍可见） */
+    a = eqIndices().filter(x => x.group === g && !isWeatherIdx(x));
     if (mainstreamOnly) a = a.filter(x => x.mainstream);
   }
   const dir = EQ_SORT_ASC ? 1 : -1;
@@ -1369,6 +1394,10 @@ function eqChartSVG(x, win, metric){
   const mpts = eqSeriesInWindow((x.series||{})[metric], win);
   if (mpts.length < 2) return '<div class="eq-line">该指标历史数据不足，无法画图。</div>';
   const cpts = eqSeriesInWindow((x.series||{}).close, win);
+  /* 红利天气（2026-11-06）：dyr=股息率曲线（暖色线+浅暖面积），五条天气分档虚线 */
+  const isDy = metric === 'dyr';
+  const lineCol = isDy ? '#d97706' : '#1c5fd0';
+  const areaCol = isDy ? '#fde9c8' : '#d7e8fb';
   /* 2026-11-05 走势图重画（用户拍板）：图加高 270→330、删六档色带、删均值±1σ、
      估值线改浅色粗线、指数点位改深色实线、中位线改蓝（红/蓝/绿三色区分） */
   const W = 660, H = 330, L = 44, R = 54, T = 18, B = 30;
@@ -1389,8 +1418,12 @@ function eqChartSVG(x, win, metric){
     return `<line x1="${L}" y1="${y.toFixed(1)}" x2="${W-R}" y2="${y.toFixed(1)}"
       stroke="${color}" stroke-width="1.1" ${dash?'stroke-dasharray="4 4"':''}/>`;
   };
-  const refs = line(st.danger,'#b3261e',true) + line(st.median,'#2456b8',true)
-    + line(st.opportunity,'#0b6b46',true);
+  /* 红利天气分档线：五条虚线=70/55/45/30/15 分位（天气色）；温度计仍用危险/中位/机会 */
+  const refs = isDy
+    ? line(st.q70,'#d84315',true) + line(st.q55,'#d97706',true) + line(st.q45,'#64748b',true)
+      + line(st.q30,'#475569',true) + line(st.q15,'#2563eb',true)
+    : line(st.danger,'#b3261e',true) + line(st.median,'#2456b8',true)
+      + line(st.opportunity,'#0b6b46',true);
   /* 2026-11-05：① 线与 x 轴围成的面积填浅蓝（先填→再参考线→再主线）；
      ② SVG 携带 data-s/几何属性供点选读数（attachPicker）；data-pad=0.08 与本图 padding 一致 */
   const baseY = (H - B).toFixed(1);
@@ -1398,11 +1431,11 @@ function eqChartSVG(x, win, metric){
   let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block"
     role="img" aria-label="指数估值走势"
     data-s="${encodeURIComponent(JSON.stringify(mpts))}"${cpts.length>=2?` data-s2="${encodeURIComponent(JSON.stringify(cpts))}"`:''}
-    data-mode="eq" data-unit="${metric==='pb'?'PB':'PE-TTM'}" data-pad="0.08"
-    data-col="#1c5fd0" data-w="${W}" data-h="${H}" data-l="${L}" data-r="${R}" data-t="${T}" data-b="${B}">
-    <path d="${area}" fill="#d7e8fb" stroke="none"/>
+    data-mode="eq" data-unit="${isDy?'股息率':(metric==='pb'?'PB':'PE-TTM')}" data-pad="0.08"
+    data-col="${lineCol}" data-w="${W}" data-h="${H}" data-l="${L}" data-r="${R}" data-t="${T}" data-b="${B}">
+    <path d="${area}" fill="${areaCol}" stroke="none"/>
     ${refs}
-    <path d="${path}" fill="none" stroke="#1c5fd0" stroke-width="2" stroke-linejoin="round"/>`;
+    <path d="${path}" fill="none" stroke="${lineCol}" stroke-width="2" stroke-linejoin="round"/>`;
   // 指数点位（右轴）——按日期对齐 X（序列长度可与估值序列不同）
   if (cpts.length >= 2){
     const cv = cpts.map(p => +p[1]);
@@ -1415,7 +1448,7 @@ function eqChartSVG(x, win, metric){
     svg += `<text x="${W-R+4}" y="${T+10}" font-size="10" fill="#1f2937">指数点位</text>`;
   }
   svg += `<circle cx="${X(mpts.length-1).toFixed(1)}" cy="${Y(+mpts[mpts.length-1][1]).toFixed(1)}"
-      r="3.6" fill="#1c5fd0" stroke="#fff" stroke-width="1.2"/>`;
+      r="3.6" fill="${lineCol}" stroke="#fff" stroke-width="1.2"/>`;
   svg += `<text x="${L}" y="${T+10}" font-size="10" fill="#6b7280">${num(mx,2)}</text>`;
   svg += `<text x="${L}" y="${H-B-2}" font-size="10" fill="#6b7280">${num(mn,2)}</text>`;
   /* v1.3 横轴多刻度：起/25%/50%/75%/末（年月），不再只有首尾两个 */
@@ -1429,7 +1462,7 @@ function eqChartSVG(x, win, metric){
     svg += `<text x="${t.x.toFixed(1)}" y="${H-8}" font-size="10" fill="#9aa0a6"`
       + ` text-anchor="${t.first?'start':(t.last?'end':'middle')}">${t.s}</text>`;
   });
-  svg += `<text x="${W-R+4}" y="${H-B-2}" font-size="10" fill="#1c5fd0">${num(+mpts[mpts.length-1][1],2)}</text>`;
+  svg += `<text x="${W-R+4}" y="${H-B-2}" font-size="10" fill="${lineCol}">${num(+mpts[mpts.length-1][1],2)}</text>`;
   svg += '</svg>';
   return svg;
 }
@@ -1476,6 +1509,7 @@ function attachPicker(svg, box, opts){
       var pt=(s2 && s2[i]!=null)?+s2[i][1]:null;
       var vv=vals[i];
       return series[i][0]+' · '+(unit||'PE')+' '+(Math.abs(vv)>=100?vv.toFixed(0):vv.toFixed(2))
+        +(unit==='股息率'?'%':'')
         +(pt==null?'':' · 点位 '+Math.round(pt));
     }
     if(mode==='cmp'){
@@ -1570,69 +1604,107 @@ function eqMethodologyHTML(x){
 function eqIndexBodyHTML(x){
   const metric = EQ_METRIC, win = EQ_WIN;
   const st = eqWindowStats(x, win, metric) || {};
-  const cur = metric === 'pb' ? x.pb : x.pe;
+  const wx = metric === 'dyr';                       /* 红利天气（2026-11-06 拆出） */
+  const wc = wx ? (WEATHER_TC[x.weather] || ['#eef0f3','#4b5563']) : null;
+  const cur = wx ? x.dyr : (metric === 'pb' ? x.pb : x.pe);
   const closePts = x.series && x.series.close || [];
   const closeLast = closePts.length ? +closePts[closePts.length-1][1] : null;
   const comp = ((x.windows||{})[win]||{}).comp_pct;
   const tier = x.tier;                           /* 档位/倍数固定按 10Y；图表窗口只切图 */
+  const stPE = wx ? (eqWindowStats(x, win, 'pe') || {}) : null;
+  const stPB = wx ? (eqWindowStats(x, win, 'pb') || {}) : null;
   const metricBtn = m => {
+    if (wx) return '';                           /* 天气只看股息率走势，不给 PE/PB 切换 */
     const has = (x.series||{})[m] && (x.series[m]||[]).length > 1;
     return `<button class="${metric===m?'on':''}" ${has?'':'disabled'} onclick="setEqMetric('${m}')">`
       + (m==='pe'?'市盈率 PE':'市净率 PB') + '</button>';
   };
   const winBtn = w => `<button class="${win===w?'on':''}" onclick="setEqWin('${w}')">${eqWinLabel(w)}</button>`;
+  /* 结论卡参数：温度/天气两套口径共用同一模板 */
+  const cDot = wx ? wc[1] : tierColor(tier);
+  const cLab = wx ? '红利天气 · 股息率口径'
+    : `${metric==='pb'?'PB':'PE-TTM'} 温度 · ${x.method_label||'PE+PB'} 口径`;
+  const cVal = wx ? `${x.dyr==null?'—':x.dyr}<span class="u">%</span>`
+    : `${numPos(cur, 2)}<span class="u">倍</span>`;
+  const cBarPct = wx ? x.dyr_pct : st.pct;
+  const cBarCol = wx ? wc[1] : tierColor(tier);
+  const cTier = wx ? x.weather : tierTemp(tier);
+  const cTierCol = wx ? wc[1] : tierColor(tier);
+  const cCc = wx ? '与温度计相反：股息率分位越高越便宜'
+    : `综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'} · 越低越便宜`;
+  const fmtPct = v => v==null ? '—' : (+v).toFixed(1) + '%';
   return `
-  <div class="sec"><h3>估值结论<span class="hint">${x.history_label||eqWinLabel(win)} · ${x.method_label||'PE+PB'}</span></h3>
+  <div class="sec"><h3>${wx?'天气结论':'估值结论'}<span class="hint">${wx?'股息率口径 · 越高越便宜':(x.history_label||eqWinLabel(win))+' · '+(x.method_label||'PE+PB')}</span></h3>
     <div class="eqv-card">
-      <div class="lab"><i class="dot" style="background:${tierColor(tier)}"></i>${metric==='pb'?'PB':'PE-TTM'} 温度 · ${x.method_label||'PE+PB'} 口径
-        <span class="cur">${numPos(cur, 2)}<span class="u">倍</span></span></div>
-      <div class="eqv-tier" style="color:${tierColor(tier)}">${tierTemp(tier)}</div>
-      <div class="pb"><span class="trk"><i style="width:${st.pct==null?0:st.pct.toFixed(1)}%;background:${tierColor(tier)}"></i></span><span class="pc" style="color:${tierColor(tier)}">${st.pct==null?'—':st.pct.toFixed(1)+'%'}</span></div>
-      <div class="cc" style="color:${tierColor(tier)}">综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'} · 越低越便宜</div>
+      <div class="lab"><i class="dot" style="background:${cDot}"></i>${cLab}
+        <span class="cur">${cVal}</span></div>
+      <div class="eqv-tier" style="color:${cTierCol}">${cTier}</div>
+      <div class="pb"><span class="trk"><i style="width:${cBarPct==null?0:cBarPct.toFixed(1)}%;background:${cBarCol}"></i></span><span class="pc" style="color:${cBarCol}">${cBarPct==null?'—':cBarPct.toFixed(1)+'%'}</span></div>
+      <div class="cc" style="color:${cTierCol}">${cCc}</div>
     </div>
     <div class="eq-kpis">
-      ${eqKpi('危险 / 机会', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)}
-      ${eqKpi('指数点位', num(closeLast,2))}
-      ${eqKpi('样本周数', st.weeks?st.weeks+' 周':'—')}
+      ${wx ? eqKpi('当前股息率', x.dyr==null?'—':x.dyr+'%')
+           : eqKpi('危险 / 机会', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)}
+      ${wx ? eqKpi('近1周', x.ret_1w==null?'—':(x.ret_1w>=0?'+':'')+(x.ret_1w*100).toFixed(2)+'%')
+           : eqKpi('指数点位', num(closeLast,2))}
+      ${wx ? eqKpi('10年中位股息率', num(st.median,2)+'%')
+           : eqKpi('样本周数', st.weeks?st.weeks+' 周':'—')}
       ${eqKpi('估值日期', String(x.valuation_date||'—').slice(5))}
     </div>
-    <div class="eq-line">综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见「指标说明」）；${x.pb==null?'PB 历史暂缺，按 PE 单一指标；':'PE 与 PB 同时参与；'}仅作估值参考，不构成建议。</div>
-    <details class="eq-meth"><summary>详细数据（分位口径 / 区间 / 统计量）</summary>
+    <div class="eq-line">${wx
+      ? `股息率分位 = 当前股息率在${eqWinLabel(win)}历史中的百分位（越高越便宜）；参考 PE ${numPos(x.pe,2)}（分位 ${fmtPct(stPE.pct)}）、PB ${numPos(x.pb,2)}（分位 ${fmtPct(stPB.pct)}）。仅作估值参考，不构成建议。`
+      : `综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见「指标说明」）；${x.pb==null?'PB 历史暂缺，按 PE 单一指标；':'PE 与 PB 同时参与；'}仅作估值参考，不构成建议。`}</div>
+    <details class="eq-meth"><summary>详细数据（${wx?'PE/PB 参考 / 区间 / 统计量':'分位口径 / 区间 / 统计量'}）</summary>
       <div class="eq-meth-body">
         <div class="eq-stats">
-          ${eqStat((metric==='pb'?'PB':'PE')+' 温度分位', st.pct==null?'—':st.pct.toFixed(1)+'%')}
-          ${eqStat('中位数', num(st.median,2))}
-          ${eqStat('最大 / 最小', `${num(st.max,2)} / ${num(st.min,2)}`)}
-          ${eqStat('均值 / 标准差', `${num(st.mean,2)} / ${num(st.std,2)}`)}
+          ${wx ? eqStat('股息率分位', fmtPct(st.pct))
+               : eqStat((metric==='pb'?'PB':'PE')+' 温度分位', fmtPct(st.pct))}
+          ${wx ? eqStat('PE 分位（参考）', fmtPct(stPE.pct)) : eqStat('中位数', num(st.median,2))}
+          ${wx ? eqStat('PB 分位（参考）', fmtPct(stPB.pct)) : eqStat('最大 / 最小', `${num(st.max,2)} / ${num(st.min,2)}`)}
+          ${wx ? eqStat('股息率 中位/区间', `${num(st.median,2)}% (${num(st.min,2)}~${num(st.max,2)}%)`)
+               : eqStat('均值 / 标准差', `${num(st.mean,2)} / ${num(st.std,2)}`)}
           ${eqStat('z 分数', st.z==null?'—':st.z.toFixed(2))}
           ${eqStat('样本周数', st.weeks?st.weeks+' 周':'—')}
         </div>
-        <div class="eq-line">体感温度 = 该指数在历史区间中的冷热位置，越冷越便宜、越热越贵；仅作估值参考，不构成建议。</div>
+        <div class="eq-line">${wx
+          ? '天气档位按股息率分位：≥70 酷暑、55~70 晴天、45~55 多云、30~45 阴天、15~30 小雨、<15 暴雨——与温度计方向相反，分位越高越便宜。'
+          : '体感温度 = 该指数在历史区间中的冷热位置，越冷越便宜、越热越贵；仅作估值参考，不构成建议。'}</div>
       </div>
     </details>
     ${eqMethodologyHTML(x)}
   </div>
-  <div class="sec"><h3>估值走势<span class="hint">${metric==='pb'?'市净率 PB':'市盈率 PE'} · 点位${x.close_proxy?'（基金净值代理）':''}</span></h3>    <div class="eq-toggle">${winBtn('3y')}${winBtn('5y')}${winBtn('10y')}${winBtn('all')}
+  <div class="sec"><h3>${wx?'股息率走势':'估值走势'}<span class="hint">${wx?'越高越便宜 · 深色线为点位'+(x.close_proxy?'（基金净值代理）':''):(metric==='pb'?'市净率 PB':'市盈率 PE')+' · 点位'+(x.close_proxy?'（基金净值代理）':'')}</span></h3>    <div class="eq-toggle">${winBtn('3y')}${winBtn('5y')}${winBtn('10y')}${winBtn('all')}
       <span style="width:8px"></span>${metricBtn('pe')}${metricBtn('pb')}
       <button onclick="eqZoomOpen()" title="放大走势图，点图读数、可连点多点">⤢ 放大</button></div>
     <div class="eq-chart-wrap">
       <div class="eq-chart">${eqChartSVG(x, win, metric)}</div>
       <div class="eq-legend2">
-        <span class="lg"><i class="ln"></i>${metric==='pb'?'PB 估值':'PE 估值'}原值</span>
+        ${wx ? `<span class="lg"><i class="ln dy"></i>股息率</span>
+        ${(closePts&&closePts.length>=2)?'<span class="lg"><i class="ln dark"></i>指数点位</span>':''}
+        <span class="lg"><i class="ln q70"></i>酷暑线 70</span>
+        <span class="lg"><i class="ln q55"></i>晴天线 55</span>
+        <span class="lg"><i class="ln q45"></i>多云线 45</span>
+        <span class="lg"><i class="ln q30"></i>阴天线 30</span>
+        <span class="lg"><i class="ln q15"></i>小雨线 15</span>`
+      : `<span class="lg"><i class="ln"></i>${metric==='pb'?'PB 估值':'PE 估值'}原值</span>
         ${(closePts&&closePts.length>=2)?'<span class="lg"><i class="ln dark"></i>指数点位</span>':''}
         <span class="lg"><i class="ln red"></i>危险值(70)</span>
         <span class="lg"><i class="ln blue"></i>中位数(50)</span>
-        <span class="lg"><i class="ln green"></i>机会值(10)</span>
+        <span class="lg"><i class="ln green"></i>机会值(10)</span>`}
       </div>
     </div>
-    <div class="eq-line">浅色粗线 = 估值口径原值（左轴），深色线 = 指数点位（右轴）；
-      红 / 蓝 / 绿虚线 = 危险(70分位) / 中位(50) / 机会(10) 参考线。</div>
+    <div class="eq-line">${wx
+      ? '浅色线 = 股息率（%，越高越便宜），深色线 = 指数点位（右轴）；五条虚线 = 天气分档线（70/55/45/30/15 分位）。'
+      : '浅色粗线 = 估值口径原值（左轴），深色线 = 指数点位（右轴）；红 / 蓝 / 绿虚线 = 危险(70分位) / 中位(50) / 机会(10) 参考线。'}</div>
   </div>
   <div class="sec"><details class="eq-meth"><summary>方法口径与说明</summary><div class="eq-meth-body">
     <div class="mgr-sub">${x.why||''}<br>
-      当前体感温度 = ${x.pb!=null?'PE+PB':'PE'} 的 ${x.history_label||eqWinLabel('10y')}综合温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}；
+      ${wx
+        ? `当前天气 = ${eqWinLabel(win)}股息率分位 ${fmtPct(st.pct)}（越高越便宜）；天气是<b>历史分红性价比参考</b>，不代表未来涨跌，也不构成投资建议。<br>数据：理杏仁等权股息率${x.pe!=null?' + 中证 PE/点位参考':''}；估值日期 ${x.valuation_date||'—'}。`
+        : `当前体感温度 = ${x.pb!=null?'PE+PB':'PE'} 的 ${x.history_label||eqWinLabel('10y')}综合温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}；
       温度分位是<b>历史冷热位置参考</b>，不代表未来涨跌，也不构成投资建议。<br>
-      数据：中证指数官网 PE(TTM)/点位${x.pb!=null?' + 雪球基金 PB':''}；估值日期 ${x.valuation_date||'—'}。</div>
+      数据：中证指数官网 PE(TTM)/点位${x.pb!=null?' + 雪球基金 PB':''}；估值日期 ${x.valuation_date||'—'}。`}
+    </div>
   </div></details>
   </div>
   <div class="sec"><h3>场外基金<span class="hint">按综合费率升序 · 已剔场内 ETF 与增强型</span></h3>
@@ -1648,15 +1720,20 @@ function openEqIndexDetail(code){
   CUR = null;
   EQ_CUR = x;
   EQ_WIN = '10y';
-  EQ_METRIC = (x.default_metric === 'pb' && (x.series||{}).pb && (x.series.pb||[]).length > 1) ? 'pb' : 'pe';
+  const wx = isWeatherIdx(x);
+  EQ_WIN = '10y';
+  EQ_METRIC = wx ? 'dyr'
+    : ((x.default_metric === 'pb' && (x.series||{}).pb && (x.series.pb||[]).length > 1) ? 'pb' : 'pe');
   $('d-name').textContent = x.name;
-  $('d-score-label').textContent = '体感温度';
-  $('d-score').textContent = tierTemp(x.tier);
+  $('d-score-label').textContent = wx ? '红利天气' : '体感温度';
+  $('d-score').textContent = wx ? x.weather : tierTemp(x.tier);
   $('d-score').style.color = '#fff';
   $('d-code-inline').textContent = x.code;
-  $('d-rank').textContent = `${x.history_label||eqWinLabel('10y')}综合温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}`;
+  $('d-rank').textContent = wx
+    ? `股息率分位 ${x.dyr_pct==null?'—':x.dyr_pct+'%'}（越高越便宜）`
+    : `${x.history_label||eqWinLabel('10y')}综合温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'}`;
   $('d-code').textContent = `${x.group} · 可选基金${x.fund_count||0}只 · ${x.valuation_date||'—'}`;
-  $('d-disc').textContent = DISC_EQ;      /* 指数语境用温度版免责（2026-11-05 拍板） */
+  $('d-disc').textContent = wx ? DISC_WEATHER : DISC_EQ;   /* 红利=天气版免责（2026-11-06） */
   $('d-pick').style.display = '';         /* EQ 详情复用该按钮 = 加自选 */
   eqWatchSyncPick();
   $('d-pick').onclick = () => eqToggleWatch(EQ_CUR.code);
@@ -1951,9 +2028,19 @@ const EXPORT_SIZES = {
 };
 function exportRows(pool, rows){
   if (pool === 'eq_index'){
-    const list = ((D && D.eq_index && D.eq_index.indices) || []).slice()
+    const list = ((D && D.eq_index && D.eq_index.indices) || [])
+      .filter(x => !isWeatherIdx(x))              /* 红利族已拆到天气模块（2026-11-06） */
+      .slice()
       .sort((a,b) => (EQ_GROUP_ORDER.indexOf(a.group) - EQ_GROUP_ORDER.indexOf(b.group))
         || (a.percentile - b.percentile));
+    return rows ? list.slice(0, rows) : list;
+  }
+  if (pool === 'div_weather'){
+    /* 红利天气导出：按股息率分位从高到低（越晴越前） */
+    const list = ((D && D.eq_index && D.eq_index.indices) || [])
+      .filter(x => isWeatherIdx(x))
+      .slice()
+      .sort((a,b) => (b.dyr_pct||0) - (a.dyr_pct||0));
     return rows ? list.slice(0, rows) : list;
   }
   const list = ((D && D.funds) || [])
@@ -2182,8 +2269,154 @@ function _drawEqExport(canvas, S, rowsLimit){
   return {width: W, height: H, rows: cold.length + hot.length};
 }
 
+/* 红利天气导出（2026-11-06 拍板）：按股息率分位降序、晴→雨三区分段、
+   天气徽章配色随档位；列=指数/天气/股息率分位/当前股息率/近1周。 */
+function _drawWeatherExport(canvas, S, rowsLimit){
+  const W = S.w, H = S.h, PAD = 44;
+  const wide = W > H;
+  const foot = Math.round(H * (wide ? 0.19 : 0.14));
+  const rowsBot = H - foot - 6;
+  const rowsTop = wide ? 170 : 194;
+  const headH = wide ? 28 : 34;
+  const rowH = wide ? 26 : 32;
+  const all = exportRows('div_weather');
+  const zones = [
+    {t:'阳光区 · 酷暑 / 晴天（分位高 = 便宜）', n:['酷暑','晴天'], c:'#d84315', bg:'#fff1e8', keep:'head'},
+    {t:'多云阴天 · 中性',                      n:['多云','阴天'], c:'#475569', bg:'#eef1f5', keep:'tail'},
+    {t:'雨景区 · 小雨 / 暴雨（分位低 = 贵）',   n:['小雨','暴雨'], c:'#1e3a8a', bg:'#e8eefc', keep:'tail'},
+  ];
+  let used = zones.map(z => ({...z, list: all.filter(x => z.n.includes(x.weather))}))
+    .filter(z => z.list.length);
+  /* 容量自适应：两端（阳光/雨）优先，中性先裁；雨区从头部裁、阳光区从尾部裁，保住极端档 */
+  let fit = Math.max(3, Math.floor((rowsBot - rowsTop - used.length * headH - 46) / rowH));
+  if (rowsLimit) fit = Math.min(fit, rowsLimit);
+  const total = used.reduce((s, z) => s + z.list.length, 0);
+  if (total > fit) {
+    let over = total - fit;
+    const order = [1, 2, 0];                     /* 中性 → 雨 → 阳光 */
+    for (const i of order) {
+      if (!used[i] || over <= 0) continue;
+      const cut = Math.min(over, Math.max(0, used[i].list.length - 2));
+      used[i].list = used[i].keep === 'head'
+        ? used[i].list.slice(cut) : used[i].list.slice(0, used[i].list.length - cut);
+      over -= cut;
+    }
+    used = used.filter(z => z.list.length);
+  }
+
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const rr = (x,y,w,h,r) => {
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  };
+  ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
+  /* 头部 */
+  ctx.fillStyle = '#ff6a00'; rr(PAD, wide ? 30 : 34, 10, wide ? 40 : 44, 5); ctx.fill();
+  ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 34 : 40) + 'px sans-serif';
+  ctx.fillText('班马日记本 · 红利天气', PAD + 24, wide ? 66 : 74);
+  const pill = '估值日期 ' + ((D.eq_index && D.eq_index.asof) || '—');
+  ctx.font = (wide ? 16 : 18) + 'px sans-serif';
+  const pw = ctx.measureText(pill).width + 32, ph = wide ? 32 : 36;
+  ctx.fillStyle = '#ffe9d9'; rr(W - PAD - pw, wide ? 34 : 38, pw, ph, ph/2); ctx.fill();
+  ctx.fillStyle = '#b3541e'; ctx.fillText(pill, W - PAD - pw + 16, (wide ? 34 : 38) + ph * 0.68);
+  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 16) + 'px sans-serif';
+  ctx.fillText('股息率分位越高 = 越便宜 = 天气越晴 · 红利族独立于温度计', PAD, wide ? 98 : 108);
+  /* 概览 chip */
+  const nSun = all.filter(x => x.weather==='酷暑'||x.weather==='晴天').length;
+  const nMid = all.filter(x => x.weather==='多云'||x.weather==='阴天').length;
+  const nRain = all.filter(x => x.weather==='小雨'||x.weather==='暴雨').length;
+  const chips = [
+    {t:'晴天系', n:nSun, c:'#d84315', bg:'#fff1e8'},
+    {t:'多云阴天', n:nMid, c:'#475569', bg:'#eef1f5'},
+    {t:'雨系', n:nRain, c:'#1e3a8a', bg:'#e8eefc'},
+  ];
+  let cx = PAD;
+  const cy = wide ? 112 : 128, ch = wide ? 34 : 38;
+  chips.forEach(cp => {
+    ctx.font = '600 ' + (wide ? 15 : 17) + 'px sans-serif';
+    const label = cp.t + '  ' + cp.n + ' 只';
+    const cw = ctx.measureText(label).width + 36;
+    ctx.fillStyle = cp.bg; rr(cx, cy, cw, ch, ch/2); ctx.fill();
+    ctx.fillStyle = cp.c; ctx.fillText(label, cx + 18, cy + ch * 0.68);
+    cx += cw + 12;
+  });
+  /* 列头 */
+  const fData = wide ? 13 : 16, fName = wide ? 18 : 23;
+  const colName = PAD + 16;
+  const colBadge = wide ? PAD + 300 : PAD + 250;
+  const colPct = wide ? PAD + 440 : PAD + 372;
+  const colDyr = wide ? W - PAD - 240 : W - PAD - 208;
+  const colRet = W - PAD - 16;
+  const HEAD = ['指数','天气','股息率分位','当前股息率','近1周'];
+  ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + fData + 'px sans-serif';
+  ctx.fillText(HEAD[0], colName, rowsTop - 8);
+  ctx.fillText(HEAD[1], colBadge, rowsTop - 8);
+  ctx.fillText(HEAD[2], colPct, rowsTop - 8);
+  ctx.textAlign = 'right';
+  ctx.fillText(HEAD[3], colDyr, rowsTop - 8);
+  ctx.fillText(HEAD[4], colRet, rowsTop - 8);
+  ctx.textAlign = 'left';
+  /* 分区卡片 */
+  const hRow = Math.max(18, rowH - 3);
+  const drawSec = (y, z) => {
+    const barH = headH - 8;
+    ctx.fillStyle = z.bg; rr(PAD, y, W - PAD*2, barH, 9); ctx.fill();
+    ctx.fillStyle = z.c; ctx.font = '700 ' + (wide ? 15 : 17) + 'px sans-serif';
+    ctx.fillText(z.t, PAD + 16, y + barH - 9);
+    ctx.textAlign = 'right';
+    ctx.fillText(z.list.length + ' 只', W - PAD - 16, y + barH - 9);
+    ctx.textAlign = 'left';
+    y += headH;
+    const bodyH = z.list.length * rowH + 10;
+    ctx.save();
+    ctx.shadowColor = 'rgba(38,35,30,.06)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+    ctx.fillStyle = '#ffffff'; rr(PAD, y, W - PAD*2, bodyH, 12); ctx.fill();
+    ctx.restore();
+    z.list.forEach((x, i) => {
+      const ry = y + i * rowH;
+      if (i % 2 === 1) { ctx.fillStyle = '#fbfaf7'; rr(PAD+2, ry, W-PAD*2-4, rowH, 6); ctx.fill(); }
+      const l1 = ry + Math.round((rowH + fData * 0.7) / 2);
+      const wc = WEATHER_TC[x.weather] || ['#eef0f3','#4b5563'];
+      ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
+      ctx.fillText(_fitText(ctx, x.name, colBadge - colName - 14), colName, l1);
+      /* 天气徽章 */
+      const bw = Math.max(58, ctx.measureText(x.weather).width + 34);
+      const bh = Math.max(20, hRow * 0.64);
+      ctx.fillStyle = wc[0]; rr(colBadge, ry + Math.round((rowH - bh)/2), bw, bh, bh/2); ctx.fill();
+      ctx.fillStyle = wc[1]; ctx.font = '700 ' + Math.round(fData * 1.05) + 'px sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(x.weather, colBadge + bw/2, ry + rowH/2 + fData*0.36);
+      ctx.textAlign = 'left';
+      /* 股息率分位（档位色） */
+      ctx.fillStyle = wc[1]; ctx.font = '700 ' + Math.round(fData * 1.12) + 'px sans-serif';
+      ctx.fillText(x.dyr_pct==null?'—':x.dyr_pct.toFixed(1)+'%', colPct, l1);
+      /* 当前股息率 / 近1周 */
+      ctx.fillStyle = '#524c44'; ctx.font = fData + 'px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(x.dyr==null?'—':x.dyr.toFixed(2)+'%', colDyr, l1);
+      ctx.fillStyle = x.ret_1w == null ? '#9aa0a6' : (x.ret_1w >= 0 ? '#0b6b46' : '#b3261e');
+      ctx.fillText(x.ret_1w == null ? '—' : (x.ret_1w>=0?'+':'') + (x.ret_1w*100).toFixed(2) + '%', colRet, l1);
+      ctx.textAlign = 'left';
+    });
+    return y + bodyH + 12;
+  };
+  let y = rowsTop + 4;
+  used.forEach(z => { y = drawSec(y, z); });
+  /* 页脚 */
+  const fy = H - foot;
+  ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 19 : 21) + 'px sans-serif';
+  ctx.fillText('详细天气数据在班马日记本「红利天气」卡片中查看', PAD, fy + 24);
+  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
+  _wrapText(ctx, DISC_WEATHER, W - PAD * 2, 3).forEach((ln, i) => ctx.fillText(ln, PAD, fy + 54 + i * 19));
+  ctx.textAlign = 'right'; ctx.fillStyle = '#9aa0a6';
+  ctx.fillText('@班马成长日记', W - PAD, fy + 24); ctx.textAlign = 'left';
+  return {width: W, height: H, rows: used.reduce((s,z)=>s+z.list.length, 0)};
+}
+
 function drawExport(canvas, pool, sizeKey, rows){
   const S = EXPORT_SIZES[sizeKey] || EXPORT_SIZES.xhs;
+  if (pool === 'div_weather') return _drawWeatherExport(canvas, S, rows);
   if (pool === 'eq_index') return _drawEqExport(canvas, S, rows);
   const ps = (D && D.pools && D.pools[pool]) || {};
   const hasPrev = ps.has_prev != null ? !!ps.has_prev : !!(D && D.has_prev);
@@ -2460,19 +2693,23 @@ function initExport(){
   if (tgtSizes().indexOf(sizeKey) < 0) sizeKey = tgtSizes()[0];
   const pools = mktNow() ? [] : exportPools();
   if (!mktNow()) {
-    if (!pools.length) return false;
-    if (!pools.some(p => p.id === pool)) pool = pools[0].id;      // all/缺省/未知 → 首个可用池
+    if (!pools.length && pool !== 'div_weather') return false;
+    const okDiv = pool === 'div_weather' && D.eq_index && exportRows('div_weather').length > 0;
+    if (!okDiv && !pools.some(p => p.id === pool)) pool = pools[0].id;   // all/缺省/未知 → 首个可用池
   }
   document.body.innerHTML = '';
   document.body.classList.add('exp');
   if (bare) document.body.classList.add('bare');
   const poolBtns = pools.map(p => '<button data-pool="' + p.id + '">' + p.name + '</button>').join('');
+  /* 红利天气导出入口（2026-11-06）：非分类池，单独按钮 */
+  const divBtn = (D.eq_index && exportRows('div_weather').length)
+    ? '<button data-pool="div_weather">红利天气</button>' : '';
   const mktBtns = (ME && ME.available) ? ME.buttons() : '';
   const wrap = document.createElement('div'); wrap.className = 'exp-wrap';
   const SIZE_LABEL = {xhs:'小红书 3:4', wide:'公众号宽图 3:2', cover:'封面 2.35:1'};
   wrap.innerHTML = '<div class="exp-bar"><span class="t"></span></div>'
     + '<div class="exp-bar exp-opts">'
-    + '<span class="grp"><b>榜单</b>' + poolBtns + '</span>'
+    + '<span class="grp"><b>榜单</b>' + poolBtns + divBtn + '</span>'
     + '<span class="grp"><b>情绪</b>' + mktBtns + '</span>'
     + '<span style="flex:1 0 0"></span>'
     + '<span class="grp"><b>尺寸</b><span id="size-btns"></span></span>'
@@ -2506,9 +2743,12 @@ function initExport(){
       stage.style.zoom = bare ? 1 : (bw / ME.sizes[sizeKey].w);
     } else {
       const info = drawExport(cv, pool, sizeKey, rows);
-      title.textContent = nameOf(pool) + '心动榜 · 班马日记本导出'
+      title.textContent = (pool === 'div_weather' ? '红利天气' : nameOf(pool) + '心动榜')
+        + ' · 班马日记本导出'
         + (pools.length > 1 ? '（共 ' + pools.length + ' 个分类，页签切换）' : '');
-      hint.textContent = (pool === 'index'
+      hint.textContent = (pool === 'div_weather'
+        ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '红利天气·股息率口径')
+        : pool === 'index'
         ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '全量分组')   /* v5.17 债指不分 TOP 截断 */
         : pool === 'eq_index'
         ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '指数估值·按尺寸行数')
@@ -2567,7 +2807,7 @@ if (initExport()){
   /* v1.8 进入网址默认到主界面（用户 2026-10-31）：无 section/cat/group 参数时跳 home.html。
      smoke 测试无 location（typeof undefined）→ 不跳，正常渲染。 */
   let _hasParam = false;
-  try { _hasParam = !!(location.search && /section=|cat=|group=/.test(location.search)); } catch(e){}
+  try { _hasParam = !!(location.search && /section=|cat=|group=|eqdetail=/.test(location.search)); } catch(e){}
   if (!_hasParam && typeof location !== 'undefined' && location.replace){
     location.replace('home.html');
   } else {
@@ -2595,6 +2835,13 @@ if (initExport()){
     }catch(e){}
     ACTIVE = want || (inSec[0] && inSec[0].id) || D.category || 'short_bond';
     renderTabs(ACTIVE); renderList(); renderPick();
+  })();
+  /* 红利天气深链（2026-11-06）：?eqdetail=CODE → 打开该指数详情（配合 weather.html 卡片墙） */
+  (function(){
+    try{
+      const c = new URLSearchParams(location.search).get('eqdetail');
+      if (c) openEqIndexDetail(c);
+    }catch(e){}
   })();
   }
 }

@@ -487,6 +487,16 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     SECTION = 'bond'; switchTab('short_bond');   /* v1.7 回偏债区 */
     chk('切回榜单后底部免责恢复 data.js 版（含心动值）',
         document.getElementById('p-disc').textContent === D.disclaimer);
+    /* 红利天气（2026-11-06 从温度计拆出）：字段/剔除/双导出池/深链入口 */
+    const wxs = ((D.eq_index||{}).indices||[]).filter(x => x.module==='weather');
+    const w0 = wxs[0] || {};
+    const w10d = (((w0.windows||{})['10y']||{}).dyr) || {};
+    chk('红利天气：≥10只挂天气字段（含q15分档线）+ 温度计导出剔红利 + 双池导出',
+        html.includes('div_weather') && html.includes('WEATHER_TC') && html.includes('eqdetail')
+        && wxs.length >= 10 && !!w0.weather && w0.dyr != null && w0.dyr_pct != null
+        && w10d.q15 != null
+        && exportRows('eq_index').every(x => x.module !== 'weather')
+        && exportRows('div_weather').length === wxs.length);
   } else {
     console.log('· 无指数估值数据（旧 data.js / 未建库）');
   }
@@ -537,8 +547,9 @@ if (D.eq_index && (D.eq_index.indices||[]).length) {
   const eqRows = exportRows('eq_index');
   const infoE = drawExport(cv2, 'eq_index', 'xhs');
   const infoW = drawExport(cv2, 'eq_index', 'wide');
-  chk('指数估值导出：画布尺寸正确 + 容量自适应（高估/低估都在图上）',
-      eqRows.length === D.eq_index.indices.length
+  chk('指数温度计导出：画布尺寸正确 + 只含非红利（红利已拆到天气池，2026-11-06）',
+      eqRows.length === D.eq_index.indices.filter(x => x.module !== 'weather').length
+      && eqRows.every(x => x.module !== 'weather')
       && infoE.rows >= 1 && infoW.rows >= 1
       && infoE.rows <= eqRows.length && infoW.rows <= eqRows.length
       && cv2.width === 1200 && cv2.height === 800);

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="cmn_hans_cn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>红利天气 · 班马日记本</title>
+<style>
+:root{
+  --bg:#f4efe7; --card:#fffefb; --ink:#26231e; --sub:#8a8378; --line:#e9e4da;
+  --accent:#ff6a00; --radius:18px;
+  --shadow:0 6px 22px rgba(90,70,50,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;padding:22px 16px 40px;max-width:560px;margin:0 auto;}
+a{text-decoration:none;color:inherit;}
+.hd{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+.hd .back{width:34px;height:34px;border-radius:11px;background:var(--card);box-shadow:var(--shadow);
+  display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--sub);flex:0 0 auto;}
+.hd h1{font-size:24px;font-weight:800;letter-spacing:.5px;}
+.pill{margin-left:auto;background:#ffe9d9;color:#b3541e;border-radius:999px;padding:6px 12px;
+  font-size:12px;font-weight:650;white-space:nowrap;}
+.sub{color:var(--sub);font-size:12.5px;line-height:1.6;margin:2px 0 14px 44px;}
+/* 概览 chips */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+.chip{border-radius:999px;padding:8px 14px;font-size:13px;font-weight:650;display:flex;gap:6px;align-items:center;}
+.chip b{font-size:17px;font-weight:800;}
+/* 分区 */
+.zone{margin-bottom:18px;}
+.zone-hd{display:flex;align-items:center;gap:8px;padding:0 4px 8px;}
+.zone-hd .t{font-size:15px;font-weight:800;}
+.zone-hd .n{margin-left:auto;font-size:12px;color:var(--sub);font-weight:600;}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+@media (max-width:380px){.grid{grid-template-columns:1fr;}}
+/* 指数卡 */
+.wcard{position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow);
+  padding:13px 14px 12px;border-top:4px solid transparent;transition:transform .12s;}
+.wcard:active{transform:scale(.97);}
+.wcard .top{display:flex;align-items:center;gap:7px;}
+.wcard .ico{font-size:19px;line-height:1;flex:0 0 auto;}
+.wcard .nm{font-size:14px;font-weight:700;line-height:1.3;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.wcard .wt{display:inline-block;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;margin-top:9px;}
+.wcard .big{font-size:30px;font-weight:800;line-height:1.1;margin-top:8px;font-variant-numeric:tabular-nums;}
+.wcard .big .u{font-size:14px;font-weight:650;margin-left:2px;}
+.wcard .meta{display:flex;justify-content:space-between;gap:8px;margin-top:7px;font-size:11.5px;color:var(--sub);
+  font-variant-numeric:tabular-nums;}
+.wcard .meta .up{color:#0b6b46;font-weight:650;}
+.wcard .meta .down{color:#b3261e;font-weight:650;}
+.wcard .arrow{position:absolute;right:12px;top:12px;color:#c9c2b6;font-size:14px;}
+.empty{background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:28px 18px;
+  text-align:center;color:var(--sub);font-size:13.5px;line-height:1.7;}
+.ft{margin-top:26px;color:var(--sub);font-size:11.5px;line-height:1.7;}
+.ft .acc{font-size:12.5px;color:var(--ink);font-weight:650;margin-bottom:6px;}
+</style>
+</head>
+<body>
+  <div class="hd">
+    <a class="back" href="home.html">‹</a>
+    <h1>红利天气</h1>
+    <span class="pill" id="asof">—</span>
+  </div>
+  <div class="sub">股息率分位越高 = 越便宜 = 天气越晴（与指数温度计方向相反）。<br>红利族独立观察，点卡片看详情与对应基金。</div>
+  <div class="chips" id="chips" hidden></div>
+  <div id="wall"></div>
+  <div class="ft">
+    <div class="acc">＠班马成长日记 · 班马日记本每周更新</div>
+    <div>天气与股息率分位均为历史数据自算的分析参考，不构成任何投资建议或基金推介；数据来自公开渠道，可能存在延迟与错误。历史业绩不代表未来，不构成投资建议。</div>
+  </div>
+
+<script src="data.js"></script>
+<script>
+(function(){
+  var D = window.CARD_DATA || {};
+  var idx = ((D.eq_index || {}).indices) || [];
+  var wx = idx.filter(function(x){ return x.module === 'weather'; });
+  var asofEl = document.getElementById('asof');
+  asofEl.textContent = (D.eq_index && D.eq_index.asof) || '—';
+  var wall = document.getElementById('wall');
+  if (!wx.length){
+    wall.innerHTML = '<div class="empty">红利天气数据未生成：<br>跑一次管线后这里会显示各红利指数的股息率天气。</div>';
+    return;
+  }
+  var TC = {'酷暑':['#ffe3d6','#d84315'],'晴天':['#fef3c7','#d97706'],
+            '多云':['#eaeff4','#64748b'],'阴天':['#e2e8f0','#475569'],
+            '小雨':['#e0ebfd','#2563eb'],'暴雨':['#dbe6fb','#1e3a8a']};
+  var ICO = {'酷暑':'🥵','晴天':'☀️','多云':'⛅','阴天':'☁️','小雨':'🌦️','暴雨':'⛈️'};
+  var nSun = wx.filter(function(x){return x.weather==='酷暑'||x.weather==='晴天';}).length;
+  var nMid = wx.filter(function(x){return x.weather==='多云'||x.weather==='阴天';}).length;
+  var nRain = wx.filter(function(x){return x.weather==='小雨'||x.weather==='暴雨';}).length;
+  var chips = document.getElementById('chips');
+  chips.hidden = false;
+  chips.innerHTML =
+    '<span class="chip" style="background:#fff1e8;color:#d84315">晴天系 <b>'+nSun+'</b> 只</span>' +
+    '<span class="chip" style="background:#eef1f5;color:#475569">多云阴天 <b>'+nMid+'</b> 只</span>' +
+    '<span class="chip" style="background:#e8eefc;color:#1e3a8a">雨系 <b>'+nRain+'</b> 只</span>';
+  var byPct = function(a,b){ return (b.dyr_pct||0) - (a.dyr_pct||0); };
+  var zones = [
+    {t:'阳光区', n:'酷暑 / 晴天 · 分位高 = 便宜', list: wx.filter(function(x){return x.weather==='酷暑'||x.weather==='晴天';}).sort(byPct)},
+    {t:'多云阴天', n:'中性区间', list: wx.filter(function(x){return x.weather==='多云'||x.weather==='阴天';}).sort(byPct)},
+    {t:'雨景区', n:'小雨 / 暴雨 · 分位低 = 贵', list: wx.filter(function(x){return x.weather==='小雨'||x.weather==='暴雨';}).sort(byPct)}
+  ].filter(function(z){ return z.list.length; });
+  var html = '';
+  zones.forEach(function(z){
+    var dot = z.t==='阳光区' ? '#d84315' : (z.t==='雨景区' ? '#1e3a8a' : '#475569');
+    html += '<div class="zone"><div class="zone-hd">'
+      + '<span class="t" style="color:'+dot+'">'+z.t+'</span>'
+      + '<span class="n">'+z.n+' · '+z.list.length+' 只</span></div><div class="grid">';
+    z.list.forEach(function(x){
+      var c = TC[x.weather] || ['#eef0f3','#4b5563'];
+      var w = x.ret_1w;
+      var wCls = w==null ? '' : (w>=0 ? 'up' : 'down');
+      var wTxt = w==null ? '—' : (w>=0?'+':'') + (w*100).toFixed(2) + '%';
+      html += '<a class="wcard" style="border-top-color:'+c[1]+'" '
+        + 'href="index.html?section=index&cat=eq_index&eqdetail='+encodeURIComponent(x.code)+'">'
+        + '<span class="arrow">›</span>'
+        + '<div class="top"><span class="ico">'+(ICO[x.weather]||'🌤️')+'</span>'
+        + '<span class="nm">'+x.name+'</span></div>'
+        + '<span class="wt" style="background:'+c[0]+';color:'+c[1]+'">'+x.weather+'</span>'
+        + '<div class="big" style="color:'+c[1]+'">'+(x.dyr_pct==null?'—':x.dyr_pct.toFixed(1))
+        + '<span class="u">% 分位</span></div>'
+        + '<div class="meta"><span>股息率 '+(x.dyr==null?'—':x.dyr.toFixed(2)+'%')+'</span>'
+        + '<span class="'+wCls+'">近1周 '+wTxt+'</span></div></a>';
+    });
+    html += '</div></div>';
+  });
+  wall.innerHTML = html;
+})();
+</script>
+</body>
+</html>
