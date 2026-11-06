@@ -96,7 +96,9 @@ a{text-decoration:none;color:inherit;}
     '<span class="chip" style="background:#fff1e8;color:#d84315">晴天系 <b>'+nSun+'</b> 只</span>' +
     '<span class="chip" style="background:#eef1f5;color:#475569">多云阴天 <b>'+nMid+'</b> 只</span>' +
     '<span class="chip" style="background:#e8eefc;color:#1e3a8a">雨系 <b>'+nRain+'</b> 只</span>';
-  var byDyr = function(a,b){ return (b.dyr||0) - (a.dyr||0); };
+  var byDyr = function(a,b){ /* 按综合分从高到低（2026-11-06 与导出排序一致） */
+    var sa = (a.score==null?-1:a.score), sb = (b.score==null?-1:b.score);
+    return sb - sa; };
   var zones = [
     {t:'阳光区', n:'酷暑 / 晴天 · 股息率越高越晴', list: wx.filter(function(x){return x.weather==='酷暑'||x.weather==='晴天';}).sort(byDyr)},
     {t:'多云阴天', n:'中性区间', list: wx.filter(function(x){return x.weather==='多云'||x.weather==='阴天';}).sort(byDyr)},

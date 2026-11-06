@@ -2089,11 +2089,12 @@ function exportRows(pool, rows){
     return rows ? list.slice(0, rows) : list;
   }
   if (pool === 'div_weather'){
-    /* 红利天气导出：按当前股息率从高到低（2026-11-06 改口径：档位=股息率绝对值） */
+    /* 红利天气导出：按综合分从高到低（2026-11-06 用户：排序按分数高低；分空回退股息率） */
+    const sOf = x => (x.score != null ? x.score : (x.dyr != null ? x.dyr : -1));
     const list = ((D && D.eq_index && D.eq_index.indices) || [])
       .filter(x => isWeatherIdx(x))
       .slice()
-      .sort((a,b) => (b.dyr||0) - (a.dyr||0));
+      .sort((a, b) => sOf(b) - sOf(a));
     return rows ? list.slice(0, rows) : list;
   }
   const list = ((D && D.funds) || [])
@@ -2231,7 +2232,8 @@ function drawZonePoster(canvas, S, cfg){
     });
     px.lab = px.lab.map(v => typeof v === 'number' ? v + x : v);
     ctx.fillStyle = '#a39a8c'; ctx.font = '600 ' + (wide ? 11.5 : 12.5) + 'px sans-serif';
-    z.labels.forEach((L, i) => {
+    const labels = px.labels || z.labels;        /* 横版天气少一列（分位参考） */
+    labels.forEach((L, i) => {
       if (!L || px.lab[i] == null) return;
       if (px.labAlign[i] === 'r') {
         ctx.textAlign = 'right'; ctx.fillText(L, px.lab[i], y + 92); ctx.textAlign = 'left';
@@ -2386,11 +2388,22 @@ function _drawEqExport(canvas, S, rowsLimit){
 function _drawWeatherExport(canvas, S, rowsLimit){
   const all = exportRows('div_weather');   /* 按当前股息率降序；版面由海报骨架自适应 */
   const cellsWx = w => {
-    /* 列：指数 | 天气徽章 | 分数 | 股息率 | 分位参考 | 近1周（2026-11-06 加分数列） */
-    const retR = w - 16, refR = retR - 92, dyrR = refR - 68, scoreR = dyrR - 64;
-    return {nameX: 16, nameW: Math.max(56, scoreR - 150), badgeRight: scoreR - 74,
+    /* 列：指数 | 天气徽章 | 分数 | 股息率 | 分位参考 | 近1周；列距拉开（2026-11-06 用户：
+       分数/股息率/分位参考太挤）——横版卡窄（<700）去掉分位参考列换间距，竖版保留6列 */
+    const wide = w < 700;
+    const retR = w - 16;
+    if (wide) {
+      const dyrR = retR - 104, scoreR = dyrR - 86, badgeRight = scoreR - 78;
+      return {nameX: 16, nameW: Math.max(56, badgeRight - 96), badgeRight: badgeRight,
+              scoreR: scoreR, dyrR: dyrR, refR: null, retR: retR,
+              lab: [16, null, scoreR, dyrR, retR], labAlign: ['l', null, 'r', 'r', 'r'],
+              labels: ['指数', '', '分数', '股息率', '近1周']};
+    }
+    const refR = retR - 104, dyrR = refR - 86, scoreR = dyrR - 86, badgeRight = scoreR - 78;
+    return {nameX: 16, nameW: Math.max(56, badgeRight - 96), badgeRight: badgeRight,
             scoreR: scoreR, dyrR: dyrR, refR: refR, retR: retR,
-            lab: [16, null, scoreR, dyrR, refR, retR], labAlign: ['l', null, 'r', 'r', 'r', 'r']};
+            lab: [16, null, scoreR, dyrR, refR, retR], labAlign: ['l', null, 'r', 'r', 'r', 'r'],
+            labels: ['指数', '', '分数', '股息率', '分位参考', '近1周']};
   };
   const renderWx = (ctx, rr, ry, x, w, rowH, px, wide) => {
     const fN = wide ? 17.5 : 23, fD = wide ? 13.5 : 17;
@@ -2409,8 +2422,10 @@ function _drawWeatherExport(canvas, S, rowsLimit){
     ctx.fillText(x.score == null ? '—' : (+x.score).toFixed(1), px.scoreR, l1);
     ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 15 : 18.5) + 'px sans-serif';
     ctx.fillText(x.dyr == null ? '—' : x.dyr.toFixed(2) + '%', px.dyrR, l1);
-    ctx.fillStyle = '#9a938a'; ctx.font = (wide ? 13 : 16) + 'px sans-serif';
-    ctx.fillText(x.dyr_pct == null ? '—' : x.dyr_pct.toFixed(1) + '%', px.refR, l1);
+    if (px.refR != null) {                       /* 横版无分位参考列 */
+      ctx.fillStyle = '#9a938a'; ctx.font = (wide ? 13 : 16) + 'px sans-serif';
+      ctx.fillText(x.dyr_pct == null ? '—' : x.dyr_pct.toFixed(1) + '%', px.refR, l1);
+    }
     ctx.fillStyle = x.ret_1w == null ? '#9aa0a6' : (x.ret_1w >= 0 ? '#b3261e' : '#0b6b46');
     ctx.font = (wide ? 13 : 16) + 'px sans-serif';
     ctx.fillText(x.ret_1w == null ? '—' : (x.ret_1w >= 0 ? '+' : '') + (x.ret_1w * 100).toFixed(2) + '%', px.retR, l1);
