@@ -1707,7 +1707,11 @@ function eqIndexBodyHTML(x){
           ${eqStat('z 分数', st.z==null?'—':st.z.toFixed(2))}
           ${eqStat('样本周数', st.weeks?st.weeks+' 周':'—')}
           ${wx
-            ? eqStat('近1周', x.ret_1w==null?'—':(x.ret_1w>=0?'+':'')+(x.ret_1w*100).toFixed(2)+'%')
+            ? eqStat('近1周', '<span style="color:'
+                + (x.ret_1w == null ? '#9aa0a6' : (x.ret_1w >= 0 ? '#b3261e' : '#0b6b46'))
+                + ';font-weight:700">'
+                + (x.ret_1w == null ? '—' : (x.ret_1w >= 0 ? '+' : '') + (x.ret_1w * 100).toFixed(2) + '%')
+                + '</span>')
               + eqStat('估值日期', String(x.valuation_date||'—').slice(5))
             : eqStat('危险 / 机会', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)
               + eqStat('指数点位', num(closeLast,2))
@@ -2155,20 +2159,20 @@ function drawZonePoster(canvas, S, cfg){
   ctx.fillStyle = g; rr(PAD, gy, W - PAD * 2, 6, 3); ctx.fill();
 
   /* 副标题 */
-  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 13 : 15) + 'px sans-serif';
+  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 16) + 'px sans-serif';
   ctx.fillText(cfg.subtitle, PAD, gy + (wide ? 24 : 27));
 
   /* 三张 stat 卡（拍板②：大数字 + 小标签） */
-  const stY = gy + (wide ? 34 : 40), stH = wide ? 54 : 64;
+  const stY = gy + (wide ? 34 : 40), stH = wide ? 56 : 66;
   const sgap = wide ? 10 : 12, scw = (W - PAD * 2 - sgap * 2) / 3;
   cfg.stats.forEach((s, i) => {
     const x = PAD + i * (scw + sgap);
     ctx.save(); ctx.shadowColor = 'rgba(38,35,30,.05)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
     ctx.fillStyle = '#ffffff'; rr(x, stY, scw, stH, 12); ctx.fill(); ctx.restore();
-    ctx.fillStyle = s.c; ctx.font = '800 ' + (wide ? 25 : 30) + 'px sans-serif';
-    ctx.fillText(String(s.n), x + 16, stY + (wide ? 33 : 40));
-    ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + (wide ? 11.5 : 13.5) + 'px sans-serif';
-    ctx.fillText(s.t, x + 16, stY + (wide ? 49 : 57));
+    ctx.fillStyle = s.c; ctx.font = '800 ' + (wide ? 27 : 32) + 'px sans-serif';
+    ctx.fillText(String(s.n), x + 16, stY + (wide ? 35 : 42));
+    ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + (wide ? 12.5 : 14.5) + 'px sans-serif';
+    ctx.fillText(s.t, x + 16, stY + (wide ? 51 : 60));
   });
 
   /* 分区布局：竖版单列堆叠；横版双栏（cfg.twoCol → cfg.cols） */
@@ -2178,8 +2182,8 @@ function drawZonePoster(canvas, S, cfg){
   const cols = (wide && cfg.twoCol) ? cfg.cols : [cfg.zones];
   const colGap = (wide && cfg.twoCol) ? 16 : 0;
   const colW = (W - PAD * 2 - (cols.length - 1) * colGap) / cols.length;
-  let rowH = wide ? 23 : 36;
-  const rowHMin = wide ? 20 : 26;
+  let rowH = wide ? 26 : 40;
+  const rowHMin = wide ? 22 : 28;
 
   /* 自适应：放不下先降行高，到下限仍放不下则从列尾（末区）截断并标注 */
   cols.forEach(zs => {
@@ -2189,7 +2193,7 @@ function drawZonePoster(canvas, S, cfg){
     const fh = Math.floor((avail - fixed) / Math.max(1, rows));
     if (fh >= rowHMin) { rowH = Math.min(rowH, fh); return; }
     rowH = rowHMin;
-    const rem = Math.floor((avail - fixed) / rowHMin);
+    const rem = Math.floor((avail - fixed - 30) / rowHMin);   /* 预留截断注释行 */
     for (let zi = zs.length - 1; zi >= 0; zi--) {
       const z = zs[zi];
       const otherRows = zs.reduce((s, q, i) => i === zi ? s : s + q.list.length, 0);
@@ -2203,17 +2207,18 @@ function drawZonePoster(canvas, S, cfg){
   });
 
   /* 整卡带色头（拍板③）：白卡 + 色头条（图标+区名+数量徽章）+ 列标签 + 行 */
-  const drawCard = (x, y, w, z, fixedH) => {
+  const drawCard = (x, y, w, z) => {
     const n = z.list.length;
-    const rowsY = 104;
-    const h = fixedH != null ? fixedH : (rowsY + n * rowH + (z.note ? 30 : 18));
+    const rowsY = 108;
+    /* 自然高度：双栏定高会在行少的卡下留大片白块（2026-11-06 雨景区反馈） */
+    const h = rowsY + n * rowH + (z.note ? 30 : 18);
     ctx.save(); ctx.shadowColor = 'rgba(38,35,30,.06)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
     ctx.fillStyle = '#ffffff'; rr(x, y, w, h, 14); ctx.fill(); ctx.restore();
     ctx.fillStyle = z.tint; rr(x + 12, y + 12, w - 24, 44, 10); ctx.fill();
-    ctx.font = '18px sans-serif'; ctx.fillText(z.icon, x + 26, y + 41);
-    ctx.fillStyle = z.color; ctx.font = '700 ' + (wide ? 14.5 : 16.5) + 'px sans-serif';
+    ctx.font = '19px sans-serif'; ctx.fillText(z.icon, x + 26, y + 42);
+    ctx.fillStyle = z.color; ctx.font = '700 ' + (wide ? 15.5 : 17.5) + 'px sans-serif';
     ctx.fillText(z.t, x + 52, y + 40);
-    ctx.font = '700 ' + (wide ? 12 : 13) + 'px sans-serif';
+    ctx.font = '700 ' + (wide ? 13 : 14) + 'px sans-serif';
     const btxt = '共 ' + z.n + ' 只';
     const bw = ctx.measureText(btxt).width + 24;
     ctx.fillStyle = z.color; rr(x + w - 12 - bw, y + 19, bw, 30, 15); ctx.fill();
@@ -2221,11 +2226,11 @@ function drawZonePoster(canvas, S, cfg){
     /* 列位是相对卡宽的 → 平移到卡片绝对 x（2026-11-06 修复：否则行按绝对坐标画，
        xhs 名称画到卡外、横版两列行互相覆盖——热区盖进冷区/雨区错进左列） */
     const px = z.cells(w);
-    ['nameX', 'badgeRight', 'pctR', 'peR', 'pbR', 'dyrR', 'refR', 'retR'].forEach(k => {
+    ['nameX', 'badgeRight', 'pctR', 'peR', 'pbR', 'scoreR', 'dyrR', 'refR', 'retR'].forEach(k => {
       if (typeof px[k] === 'number') px[k] += x;
     });
     px.lab = px.lab.map(v => typeof v === 'number' ? v + x : v);
-    ctx.fillStyle = '#a39a8c'; ctx.font = '600 ' + (wide ? 10.5 : 11.5) + 'px sans-serif';
+    ctx.fillStyle = '#a39a8c'; ctx.font = '600 ' + (wide ? 11.5 : 12.5) + 'px sans-serif';
     z.labels.forEach((L, i) => {
       if (!L || px.lab[i] == null) return;
       if (px.labAlign[i] === 'r') {
@@ -2238,7 +2243,7 @@ function drawZonePoster(canvas, S, cfg){
       z.render(ctx, rr, ry, item, w, rowH, px, wide);
     });
     if (z.note) {
-      ctx.fillStyle = '#a39a8c'; ctx.font = (wide ? 11 : 12.5) + 'px sans-serif';
+      ctx.fillStyle = '#a39a8c'; ctx.font = (wide ? 12 : 13.5) + 'px sans-serif';
       ctx.fillText(z.note, x + 16, y + rowsY + n * rowH + (wide ? 18 : 22));
     }
     return h;
@@ -2338,20 +2343,20 @@ function _drawEqExport(canvas, S, rowsLimit){
             lab: [16, null, pctR, peR, pbR], labAlign: ['l', null, 'r', 'r', 'r']};
   };
   const renderEq = (ctx, rr, ry, x, w, rowH, px, wide) => {
-    const fN = wide ? 16 : 21, fD = wide ? 12.5 : 15.5;
+    const fN = wide ? 17.5 : 23, fD = wide ? 13.5 : 17;
     const l1 = ry + Math.round(rowH / 2 + fN * 0.36);
     ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fN + 'px sans-serif';
     ctx.fillText(_fitText(ctx, x.name, px.nameW), px.nameX, l1);
     const tc = EQ_TC[x.tier] || ['#eef0f3', '#4b5563'];
-    const bw = Math.max(wide ? 46 : 58, ctx.measureText(x.tier).width + (wide ? 16 : 22));
-    const bh = Math.max(18, Math.round(rowH * 0.58));
+    const bw = Math.max(wide ? 50 : 64, ctx.measureText(x.tier).width + (wide ? 18 : 24));
+    const bh = Math.max(19, Math.round(rowH * 0.56));
     ctx.fillStyle = tc[0]; rr(px.badgeRight - bw, ry + Math.round((rowH - bh) / 2), bw, bh, bh / 2); ctx.fill();
-    ctx.fillStyle = tc[1]; ctx.font = '700 ' + (wide ? 12 : 13.5) + 'px sans-serif';
-    ctx.textAlign = 'center'; ctx.fillText(x.tier, px.badgeRight - bw / 2, ry + rowH / 2 + (wide ? 4 : 5));
+    ctx.fillStyle = tc[1]; ctx.font = '700 ' + (wide ? 13 : 15) + 'px sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText(x.tier, px.badgeRight - bw / 2, ry + rowH / 2 + (wide ? 5 : 6));
     ctx.textAlign = 'right';
-    ctx.font = '700 ' + (wide ? 15 : 19) + 'px sans-serif';
+    ctx.font = '700 ' + (wide ? 16.5 : 21) + 'px sans-serif';
     ctx.fillText(x.percentile == null ? '—' : x.percentile.toFixed(1) + '%', px.pctR, l1);
-    ctx.fillStyle = '#524c44'; ctx.font = (wide ? 12 : 14.5) + 'px sans-serif';
+    ctx.fillStyle = '#524c44'; ctx.font = (wide ? 13 : 16) + 'px sans-serif';
     ctx.fillText(numPos(x.pe, 1), px.peR, l1);
     ctx.fillText(numPos(x.pb, 2), px.pbR, l1);
     ctx.textAlign = 'left';
@@ -2381,36 +2386,40 @@ function _drawEqExport(canvas, S, rowsLimit){
 function _drawWeatherExport(canvas, S, rowsLimit){
   const all = exportRows('div_weather');   /* 按当前股息率降序；版面由海报骨架自适应 */
   const cellsWx = w => {
-    const retR = w - 16, refR = retR - 96, dyrR = refR - 64;
-    return {nameX: 16, nameW: Math.max(60, dyrR - 212), badgeRight: dyrR - 84,
-            dyrR: dyrR, refR: refR, retR: retR,
-            lab: [16, null, dyrR, refR, retR], labAlign: ['l', null, 'r', 'r', 'r']};
+    /* 列：指数 | 天气徽章 | 分数 | 股息率 | 分位参考 | 近1周（2026-11-06 加分数列） */
+    const retR = w - 16, refR = retR - 92, dyrR = refR - 68, scoreR = dyrR - 64;
+    return {nameX: 16, nameW: Math.max(56, scoreR - 150), badgeRight: scoreR - 74,
+            scoreR: scoreR, dyrR: dyrR, refR: refR, retR: retR,
+            lab: [16, null, scoreR, dyrR, refR, retR], labAlign: ['l', null, 'r', 'r', 'r', 'r']};
   };
   const renderWx = (ctx, rr, ry, x, w, rowH, px, wide) => {
-    const fN = wide ? 16 : 21, fD = wide ? 12.5 : 15.5;
+    const fN = wide ? 17.5 : 23, fD = wide ? 13.5 : 17;
     const l1 = ry + Math.round(rowH / 2 + fN * 0.36);
     ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fN + 'px sans-serif';
     ctx.fillText(_fitText(ctx, x.name, px.nameW), px.nameX, l1);
     const wc = WEATHER_TC[x.weather] || ['#eef0f3', '#4b5563'];
-    const bw = Math.max(wide ? 48 : 60, ctx.measureText(x.weather).width + (wide ? 16 : 24));
-    const bh = Math.max(18, Math.round(rowH * 0.58));
+    const bw = Math.max(wide ? 52 : 64, ctx.measureText(x.weather).width + (wide ? 18 : 26));
+    const bh = Math.max(19, Math.round(rowH * 0.56));
     ctx.fillStyle = wc[0]; rr(px.badgeRight - bw, ry + Math.round((rowH - bh) / 2), bw, bh, bh / 2); ctx.fill();
-    ctx.fillStyle = wc[1]; ctx.font = '700 ' + (wide ? 12 : 13.5) + 'px sans-serif';
-    ctx.textAlign = 'center'; ctx.fillText(x.weather, px.badgeRight - bw / 2, ry + rowH / 2 + (wide ? 4 : 5));
+    ctx.fillStyle = wc[1]; ctx.font = '700 ' + (wide ? 13 : 15) + 'px sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText(x.weather, px.badgeRight - bw / 2, ry + rowH / 2 + (wide ? 5 : 6));
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 14.5 : 18) + 'px sans-serif';
+    /* 分数（百分制综合分，档位色）→ 股息率（墨色加粗）→ 分位参考（灰）→ 近1周（涨红跌绿） */
+    ctx.fillStyle = wc[1]; ctx.font = '700 ' + (wide ? 16 : 20) + 'px sans-serif';
+    ctx.fillText(x.score == null ? '—' : (+x.score).toFixed(1), px.scoreR, l1);
+    ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 15 : 18.5) + 'px sans-serif';
     ctx.fillText(x.dyr == null ? '—' : x.dyr.toFixed(2) + '%', px.dyrR, l1);
-    ctx.fillStyle = '#9a938a'; ctx.font = (wide ? 12 : 14.5) + 'px sans-serif';
+    ctx.fillStyle = '#9a938a'; ctx.font = (wide ? 13 : 16) + 'px sans-serif';
     ctx.fillText(x.dyr_pct == null ? '—' : x.dyr_pct.toFixed(1) + '%', px.refR, l1);
-    ctx.fillStyle = x.ret_1w == null ? '#9aa0a6' : (x.ret_1w >= 0 ? '#0b6b46' : '#b3261e');
-    ctx.font = (wide ? 12 : 14.5) + 'px sans-serif';
+    ctx.fillStyle = x.ret_1w == null ? '#9aa0a6' : (x.ret_1w >= 0 ? '#b3261e' : '#0b6b46');
+    ctx.font = (wide ? 13 : 16) + 'px sans-serif';
     ctx.fillText(x.ret_1w == null ? '—' : (x.ret_1w >= 0 ? '+' : '') + (x.ret_1w * 100).toFixed(2) + '%', px.retR, l1);
     ctx.textAlign = 'left';
   };
   const mk = (t, icon, tint, color, ws) => {
     const list = all.filter(x => ws.includes(x.weather));
     return {t, icon, tint, color, n: list.length, list, note: '',
-            labels: ['指数', '', '股息率', '分位参考', '近1周'], cells: cellsWx, render: renderWx};
+            labels: ['指数', '', '分数', '股息率', '分位参考', '近1周'], cells: cellsWx, render: renderWx};
   };
   const sunZ  = mk('阳光区 · 越高越晴', '🌞', '#fef3c7', '#d97706', ['酷暑', '晴天']);
   const midZ  = mk('多云阴天 · 中性', '⛅', '#eaeff4', '#64748b', ['多云', '阴天']);
