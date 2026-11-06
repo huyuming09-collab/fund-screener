@@ -258,6 +258,27 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .eqv-card .trk i{display:block;height:100%;border-radius:8px;}
 .eqv-card .pc{font-size:24px;font-weight:800;min-width:88px;text-align:right;}
 .eqv-card .cc{font-size:23px;font-weight:700;margin-top:12px;}
+/* ---- 结论卡 v2（2026-11-06 拍板）：分数/100 主视觉 + 图标 + 色徽章 + 模块特色刻度条 ---- */
+.eqv-card .cv-row1{display:flex;align-items:center;gap:10px;}
+.eqv-card .cv-ico{font-size:26px;line-height:1;flex:0 0 auto;}
+.eqv-card .cv-badge{border-radius:999px;padding:6px 16px;font-size:19px;font-weight:800;
+  color:#fff;letter-spacing:2px;box-shadow:0 2px 6px rgba(38,35,30,.12);}
+.eqv-card .cv-now{margin-left:auto;font-size:14.5px;font-weight:650;color:#5c564c;
+  font-variant-numeric:tabular-nums;white-space:nowrap;}
+.eqv-card .cv-score{display:flex;align-items:baseline;gap:7px;margin-top:14px;}
+.eqv-card .cv-score b{font-size:62px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
+.eqv-card .cv-score .den{font-size:24px;font-weight:650;color:#9a938a;}
+.eqv-card .cv-gauge{position:relative;height:16px;margin-top:18px;}
+.gtrack{position:absolute;inset:0;border-radius:8px;overflow:hidden;}
+.gtrack.tmp{background:linear-gradient(90deg,#dff0fb 0 10%,#e3f5ec 10% 30%,#e9f6ee 30% 45%,
+  #eef0f3 45% 55%,#fff3e3 55% 70%,#fdecea 70% 100%);}
+.gtrack.wx{background:linear-gradient(90deg,#dbe6fb 0 20%,#e0ebfd 20% 40%,#e2e8f0 40% 55%,
+  #eaeff4 55% 70%,#fef3c7 70% 90%,#ffe3d6 90% 100%);}
+.gticks i{position:absolute;top:-5px;height:26px;width:2px;background:rgba(38,35,30,.30);
+  transform:translateX(-1px);}
+.gptr{position:absolute;top:-8px;width:0;height:0;border-left:7px solid transparent;
+  border-right:7px solid transparent;border-bottom:12px solid #26231e;
+  transform:translateX(-7px);filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));}
 .eq-chart{position:relative;}
 .eq-legend2{gap:10px 16px;row-gap:12px;justify-content:flex-start;padding:12px 2px 4px;}
 .eq-chart-wrap + .eq-line{margin-top:8px;}
@@ -1589,6 +1610,22 @@ function eqZoomClose(){ $('eqzoom').classList.remove('show'); }
 function eqStat(l, v){ return `<div class="eq-stat"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
 /* 2026-11-05 详情卡重设计：一行 4 个大数（KPI） */
 function eqKpi(l, v){ return `<div class="eq-kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
+/* ---- 结论卡 v2（2026-11-06 用户设计拍板）：分数 xx/100 为主视觉 + 图标 + 模块特色刻度条；
+   档位不靠超大字，靠色徽章/图标底色/浅底卡凸显；KPI 精简进折叠 ---- */
+const TIER_BG = {'极低估':'#dff0fb','低估':'#e3f5ec','合理偏低':'#e9f6ee',
+                 '正常':'#eef0f3','合理偏高':'#fff3e3','高估':'#fdecea'};
+/* 天气分数：股息率(%) 按六档阈值折算百分制（与档位严格对齐，越高越晴） */
+function wxScore(dyr){
+  if (dyr == null) return null;
+  const B = [[0,3.5,0,20],[3.5,4,20,40],[4,4.5,40,55],[4.5,5,55,70],[5,6,70,90],[6,7,90,100]];
+  for (const b of B){
+    if (dyr < b[1] || b[1] === 7){
+      const t = Math.max(0, Math.min(1, (dyr - b[0]) / (b[1] - b[0])));
+      return Math.round(b[2] + t * (b[3] - b[2]));
+    }
+  }
+  return 100;
+}
 /* v2.0 折叠「指标说明」：按指数特点的估值口径 + 怎么算 + 为什么 + 是否科学（用户要求折叠展示） */
 function eqMethodologyHTML(x){
   const m = x.methodology;
@@ -1622,42 +1659,36 @@ function eqIndexBodyHTML(x){
       + (m==='pe'?'市盈率 PE':'市净率 PB') + '</button>';
   };
   const winBtn = w => `<button class="${win===w?'on':''}" onclick="setEqWin('${w}')">${eqWinLabel(w)}</button>`;
-  /* 结论卡参数：温度/天气两套口径共用同一模板 */
-  const cDot = wx ? wc[1] : tierColor(tier);
-  const cLab = wx ? '红利天气 · 股息率口径'
-    : `${metric==='pb'?'PB':'PE-TTM'} 温度 · ${x.method_label||'PE+PB'} 口径`;
-  const cVal = wx ? `${x.dyr==null?'—':x.dyr}<span class="u">%</span>`
-    : `${numPos(cur, 2)}<span class="u">倍</span>`;
-  const cBarPct = wx ? Math.min(100, ((x.dyr || 0) / 7) * 100) : st.pct;   /* 天气条=股息率 0~7% 刻度 */
-  const cBarTxt = wx ? (x.dyr == null ? '—' : x.dyr.toFixed(2) + '%')
-                     : (st.pct == null ? '—' : st.pct.toFixed(1) + '%');
-  const cBarCol = wx ? wc[1] : tierColor(tier);
+  /* 结论卡 v2 参数：分数/100 主视觉 + 图标 + 色徽章 + 模块特色刻度条 */
+  const cTint = wx ? wc[0] : (TIER_BG[tier] || '#f6f7f9');
   const cTier = wx ? x.weather : tierTemp(tier);
   const cTierCol = wx ? wc[1] : tierColor(tier);
-  const cCc = wx ? '与温度计相反：股息率越高越晴'
-    : `综合分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'} · 越低越便宜`;
+  const cScore = wx ? wxScore(x.dyr) : (x.percentile == null ? null : Math.round(x.percentile));
+  const cTicks = wx ? [20, 40, 55, 70, 90] : [10, 30, 45, 55, 70];
+  const cCc = wx ? `股息率 ${x.dyr==null?'—':x.dyr+'%'} · 越高越晴`
+    : `温度分位 ${x.percentile==null?'—':x.percentile.toFixed(1)+'%'} · 越低越便宜`;
   const fmtPct = v => v==null ? '—' : (+v).toFixed(1) + '%';
   return `
   <div class="sec"><h3>${wx?'天气结论':'估值结论'}<span class="hint">${wx?'股息率绝对值定档 · 越高越晴':(x.history_label||eqWinLabel(win))+' · '+(x.method_label||'PE+PB')}</span></h3>
-    <div class="eqv-card">
-      <div class="lab"><i class="dot" style="background:${cDot}"></i>${cLab}
-        <span class="cur">${cVal}</span></div>
-      <div class="eqv-tier" style="color:${cTierCol}">${cTier}</div>
-      <div class="pb"><span class="trk"><i style="width:${cBarPct==null?0:cBarPct.toFixed(1)}%;background:${cBarCol}"></i></span><span class="pc" style="color:${cBarCol}">${cBarTxt}</span></div>
+    <div class="eqv-card${wx?' wthr':' temp'}" style="background:${cTint}">
+      <div class="cv-row1">
+        <span class="cv-ico">${wx ? (WEATHER_ICO[x.weather] || '🌤️') : '🌡️'}</span>
+        <span class="cv-badge" style="background:${cTierCol}">${cTier}</span>
+        <span class="cv-now">${wx
+          ? (x.dyr==null ? '—' : '当前股息率 ' + x.dyr + '%')
+          : (cur==null ? '—' : (metric==='pb' ? '当前 PB ' : '当前 PE ') + numPos(cur,2) + (metric==='pb' ? '' : ' 倍'))}</span>
+      </div>
+      <div class="cv-score"><b style="color:${cTierCol}">${cScore==null?'—':cScore}</b><span class="den">/100</span></div>
+      <div class="cv-gauge">
+        <div class="gtrack ${wx?'wx':'tmp'}"></div>
+        <div class="gticks">${cTicks.map(p => '<i style="left:'+p+'%"></i>').join('')}</div>
+        <div class="gptr" style="left:${cScore==null?0:cScore}%;border-bottom-color:${cTierCol}"></div>
+      </div>
       <div class="cc" style="color:${cTierCol}">${cCc}</div>
     </div>
-    <div class="eq-kpis">
-      ${wx ? eqKpi('当前股息率', x.dyr==null?'—':x.dyr+'%')
-           : eqKpi('危险 / 机会', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)}
-      ${wx ? eqKpi('近1周', x.ret_1w==null?'—':(x.ret_1w>=0?'+':'')+(x.ret_1w*100).toFixed(2)+'%')
-           : eqKpi('指数点位', num(closeLast,2))}
-      ${wx ? eqKpi('股息率分位（参考）', fmtPct(st.pct))
-           : eqKpi('样本周数', st.weeks?st.weeks+' 周':'—')}
-      ${eqKpi('估值日期', String(x.valuation_date||'—').slice(5))}
-    </div>
     <div class="eq-line">${wx
-      ? `天气档位按当前股息率绝对值：≥6% 酷暑、5~6% 晴天、4.5~5% 多云、4~4.5% 阴天、3.5~4% 小雨、<3.5% 暴雨；股息率分位 ${fmtPct(st.pct)} 仅作参考。仅作估值参考，不构成建议。`
-      : `综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见「指标说明」）；${x.pb==null?'PB 历史暂缺，按 PE 单一指标；':'PE 与 PB 同时参与；'}仅作估值参考，不构成建议。`}</div>
+      ? `天气档位按当前股息率绝对值：≥6% 酷暑、5~6% 晴天、4.5~5% 多云、4~4.5% 阴天、3.5~4% 小雨、<3.5% 暴雨；卡片分数=按档位折算的百分制（xx/100），股息率分位 ${fmtPct(st.pct)} 仅作参考。仅作估值参考，不构成建议。`
+      : `综合温度分位 = ${x.method_label||'PE+PB'}（按指数特点选主口径，见「指标说明」）；卡片分数=温度分位取整（xx/100）；${x.pb==null?'PB 历史暂缺，按 PE 单一指标；':'PE 与 PB 同时参与；'}仅作估值参考，不构成建议。`}</div>
     <details class="eq-meth"><summary>详细数据（${wx?'PE/PB 参考 / 区间 / 统计量':'分位口径 / 区间 / 统计量'}）</summary>
       <div class="eq-meth-body">
         <div class="eq-stats">
@@ -1669,6 +1700,12 @@ function eqIndexBodyHTML(x){
                : eqStat('均值 / 标准差', `${num(st.mean,2)} / ${num(st.std,2)}`)}
           ${eqStat('z 分数', st.z==null?'—':st.z.toFixed(2))}
           ${eqStat('样本周数', st.weeks?st.weeks+' 周':'—')}
+          ${wx
+            ? eqStat('近1周', x.ret_1w==null?'—':(x.ret_1w>=0?'+':'')+(x.ret_1w*100).toFixed(2)+'%')
+              + eqStat('估值日期', String(x.valuation_date||'—').slice(5))
+            : eqStat('危险 / 机会', `${num(st.danger,2)} / ${num(st.opportunity,2)}`)
+              + eqStat('指数点位', num(closeLast,2))
+              + eqStat('估值日期', String(x.valuation_date||'—').slice(5))}
         </div>
         <div class="eq-line">${wx
           ? '天气档位按当前股息率绝对值：≥6% 酷暑、5~6% 晴天、4.5~5% 多云、4~4.5% 阴天、3.5~4% 小雨、<3.5% 暴雨；分位、PE/PB 分位仅作参考。'

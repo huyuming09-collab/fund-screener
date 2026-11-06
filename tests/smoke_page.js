@@ -445,10 +445,12 @@ if (D.pools && D.pools.long_bond && longFunds.length) {
     chk('指数详情含估值结论/走势/方法口径/场外基金',
         de.includes('估值结论') && de.includes('估值走势')
         && de.includes('方法口径') && de.includes('场外基金') && de.includes('<svg'));
-    /* 2026-11-05 详情卡重设计 + 指数语境免责 + 自选 */
-    chk('指数详情卡：情绪风结论卡 + KPI + 明细折叠 + 图例在图下方（无均值±1σ/色带）',
-        de.includes('eqv-card') && de.includes('eq-kpis') && de.includes('详细数据')
-        && de.includes('eq-legend2') && !de.includes('均值±1σ') && !de.includes('六档区间'));
+    /* 2026-11-05 详情卡重设计 + 指数语境免责 + 自选；2026-11-06 v2：分数/100 主视觉+刻度条、KPI 进折叠 */
+    chk('指数详情卡：分数/100 + 色徽章 + 模块刻度条 + 明细折叠 + 图例在图下方（无均值±1σ/色带）',
+        de.includes('eqv-card') && de.includes('cv-score') && de.includes('cv-badge')
+        && de.includes('gtrack') && de.includes('详细数据')
+        && de.includes('eq-legend2') && !de.includes('eq-kpis')
+        && !de.includes('均值±1σ') && !de.includes('六档区间'));
     /* 2026-11-05 二轮：面积填充 + 点选读数 + 放大浮层 */
     chk('走势图：浅蓝面积填充 + data-s 读数 + 放大浮层',
         de.includes('#d7e8fb') && de.includes('data-mode="eq"') && de.includes('data-pad')
