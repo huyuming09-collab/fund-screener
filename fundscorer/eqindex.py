@@ -1175,7 +1175,7 @@ def _weather_of_score(score: float | None) -> str | None:
 # 红利天气口径文案（结构同 _METHODOLOGY，详情折叠「指标说明」直接用）
 _METHODOLOGY_WEATHER = {
     "caliber": "综合分定档（百分制）",
-    "how": "综合分 = 股息率水平×50% + 点位位置×25% + 股息率分位×25%（各因子换算 0-10 后加权、×10 转百分制）；"
+    "how": "综合分 = 股息率水平×50% + 点位位置×25% + 股息率分位×25%（三个因子均直接按百分制打分，加权求和）；"
            "天气档位按综合分：≥85 酷暑、70~85 晴天、45~70 多云、30~45 阴天、15~30 小雨、<15 暴雨。",
     "why": "三因子由历史前瞻收益校准（9 只红利指数 × 10 年周频，前瞻 12 个月：暴雨带均值 -8.1%、"
            "晴天带 +9.3%，正收益占比 23%→82% 单调；纯股息率口径带间乱跳、区分度弱）。"
@@ -1297,20 +1297,21 @@ def build_index_valuation_v2(entry: dict, refresh: bool) -> dict | None:
         # 综合分 = 股息率水平×0.50 + 点位位置×0.25 + 股息率分位×0.25（因子0-10，×10 → 百分制）
         # 回测校准（9 只×10 年周频·前瞻12月）：暴雨 -8.1% / 晴天 +9.3%，正收益 23%→82% 单调
         if cur_dy is not None and not close_s.empty and dy5 and dy5.get("pct") is not None:
-            f1 = _yield_score(cur_dy)
+            # 三因子直接按百分制打分（2026-11-06 用户：不做"0-10 再 ×10"的绕法）
+            f1 = _yield_score(cur_dy) * 10                 # 股息率水平 0-100
             _c = float(close_s.iloc[-1])
             _w5 = close_s[close_s.index >= close_s.index.max() - pd.DateOffset(years=5)]
             f2 = None
             if len(_w5) >= 100:
-                f2 = 10 * (1 - float((_w5 <= _c).mean()))   # 点位5年分位取反
-            f3 = float(dy5["pct"]) / 10
+                f2 = 100 * (1 - float((_w5 <= _c).mean()))  # 点位5年分位取反 0-100
+            f3 = float(dy5["pct"])                          # 股息率分位本身 0-100
             if f2 is not None:
-                score = round((0.50 * f1 + 0.25 * f2 + 0.25 * f3) * 10, 1)
+                score = round(0.50 * f1 + 0.25 * f2 + 0.25 * f3, 1)
                 weather = _weather_of_score(score)
                 score_detail = [
-                    {"k": "股息率水平", "w": 0.50, "s": round(f1, 1), "c": round(f1 * 5.0, 1)},
-                    {"k": "点位位置", "w": 0.25, "s": round(f2, 1), "c": round(f2 * 2.5, 1)},
-                    {"k": "股息率分位", "w": 0.25, "s": round(f3, 1), "c": round(f3 * 2.5, 1)},
+                    {"k": "股息率水平", "w": 0.50, "s": round(f1, 1), "c": round(f1 * 0.50, 1)},
+                    {"k": "点位位置", "w": 0.25, "s": round(f2, 1), "c": round(f2 * 0.25, 1)},
+                    {"k": "股息率分位", "w": 0.25, "s": round(f3, 1), "c": round(f3 * 0.25, 1)},
                 ]
         if weather is None:
             weather = _weather_of(cur_dy)                   # 因子不全 → 回退绝对值带

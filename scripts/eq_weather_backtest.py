@@ -80,11 +80,12 @@ def trailing_pct(s, t, win_days=1825):
 def factors_at(dyr, close, t):
     if t not in dyr.index or t not in close.index:
         return None
-    f1 = yield_score(float(dyr[t]))
+    # 三因子直接百分制（与 eqindex 打分同口径，2026-11-06 去掉 ×10 绕法）
+    f1 = yield_score(float(dyr[t])) * 10
     pos = trailing_pct(close, t)
-    f2 = None if pos is None else 10 * (1 - pos / 100)
+    f2 = None if pos is None else 100 * (1 - pos / 100)
     yp = trailing_pct(dyr, t)
-    f3 = None if yp is None else yp / 10
+    f3 = yp
     if f2 is None or f3 is None:
         return None
     return {"F1_yield": f1, "F2_pos": f2, "F3_ypct": f3}
@@ -112,7 +113,7 @@ def main():
             if not len(fut):
                 continue
             fwd = float(fut.iloc[0] / c[t] - 1)
-            total = sum(W[k] * f[k] for k in W) * 10     # → 百分制
+            total = sum(W[k] * f[k] for k in W)          # 直接百分制加权求和
             rows.append({**{"name": it["name"], "fwd12": fwd}, **f,
                          "score": total, "yield_only": yield_score(float(d[t])) * 10})
 
