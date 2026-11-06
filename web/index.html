@@ -1989,38 +1989,77 @@ function _drawEqExport(canvas, S, rowsLimit){
   const EQ_TC = {'极低估':['#e3f5ec','#0b6b46'],'低估':['#e9f6ee','#1a7f37'],
                  '合理偏低':['#eef0f3','#4b5563'],'合理偏高':['#fff3e3','#a85100'],
                  '高估':['#fdecea','#b3261e']};
-  /* 自用导出：一张温度表，按温度分位升序；低估区/合理区/高估区分段上色。
-     容量自适应：画布装不下时两端（最冷/最热）保底 + 中段抽稀，确保「高估/低估」都在图上。 */
-  const W = S.w, H = S.h, PAD = 48;
+  /* 指数温度计导出（2026-11-06 用户拍板重设计）：
+     ① 删 近1年 / 可选基金 / 最低费率 三列；② 表头"温度表"→"温度计"；
+     ③ 删"估值冷热不是买卖信号"；④ 只标冷热两端——大众精选 + 同族去重
+       （族内按大众优先取第一个命中本温区的，例：证券公司与中证申万证券行业只出一个）；
+     ⑤ 标注"详细温度数据在班马日记本「指数温度计」卡片中查看"；⑥ UI 重排：
+       概览 chip + 分区卡片（左色条/斑马纹/圆角阴影）。 */
+  const W = S.w, H = S.h, PAD = 44;
   const wide = W > H;
-  const foot = Math.round(H * (wide ? 0.19 : 0.13));
+  const foot = Math.round(H * (wide ? 0.19 : 0.14));
   const rowsBot = H - foot - 6;
-  const rowsTop = wide ? 150 : 160;
-  const headH = wide ? 26 : 30;
-  const rowH = wide ? 24 : 22;
-  const all = ((D.eq_index && D.eq_index.indices) || []).slice()
-    .sort((a,b) => (a.percentile==null?999:a.percentile) - (b.percentile==null?999:b.percentile));
-  const fitCap = Math.max(6, Math.floor((rowsBot - rowsTop - 3 * headH) / rowH));
-  let cap = Math.min(fitCap, rowsLimit || fitCap);
-  let list = all;
-  if (all.length > cap) {
-    const ends = Math.min(Math.max(1, Math.floor(cap * 0.4)), Math.floor(all.length / 2));
-    const cheap = all.slice(0, ends);
-    const dear = all.slice(all.length - ends);
-    const midAll = all.slice(ends, all.length - ends);
-    const midCap = Math.max(0, cap - ends * 2);
-    let mid = midAll;
-    if (midCap < midAll.length) {                       /* 中段等距抽稀 */
-      const step = midAll.length / midCap;
-      mid = Array.from({length: midCap}, (_, i) => midAll[Math.floor(i * step)]);
-    }
-    list = cheap.concat(mid, dear).slice(0, cap);
-  }
-  const zones = [
-    {t:'低估区（越冷越便宜）', c:'#0b6b46', bg:'#f1faf5', n:['极低估','低估']},
-    {t:'合理区（中性）',      c:'#4b5563', bg:'#f6f7f9', n:['合理偏低','合理偏高']},
-    {t:'高估区（越热越贵）',   c:'#b3261e', bg:'#fdf3f2', n:['高估']},
+  const rowsTop = wide ? 166 : 184;
+  const headH = wide ? 30 : 38;
+  const rowH = wide ? 26 : 35;   /* 竖版行加高：精选行少，填满版面避免下半页留白 */
+  const all = ((D.eq_index && D.eq_index.indices) || []);
+
+  /* ---- 大众精选：族（按大众优先排序，同族去重）+ 独立名单 ---- */
+  const EQ_FAMS = [
+    ['中证国有企业改革','中证央企创新驱动','中证央企结构调整','中证国企一带一路'],
+    ['证券公司','中证申万证券行业','中证证券公司30','中证800证券保险','中证证券保险领先'],
+    ['800地产','国证地产','中证全指房地产'],
+    ['中概互联50','中国互联','港股通互联网','中证沪港深互联网','中证移动互联网'],
+    ['全指医药','中证医药卫生','中证医药50','医药100','中证生物医药','中证医疗',
+     '中证医药健康100策略','中证800制药与生物科技'],
+    ['创新药','港股通创新药','香港创新药','沪港深创新药'],
+    ['半导体','中证半导体产业','中证芯片产业','中证半导体材料设备主题'],
+    ['中证军工','中证国防','中证空天一体军工'],
+    ['新能源汽车','中证新能源','新能源车','中证电池','中证内地低碳经济主题'],
+    ['绿色电力','中证全指电力公用事业','中证全指公用事业'],
+    ['中证煤炭','中证煤炭等权','中证上游资源产业','中证A股资源产业','中证800有色金属',
+     '中证申万有色金属','中证有色金属矿业主题','中证工业有色金属主题','中证稀有金属主题',
+     '中证细分有色金属产业主题'],
+    ['中证红利','中证红利低波动100','中证央企红利50','上证红利','深证红利','标普红利',
+     '300红利LV','红利成长LV','红利低波','消费红利','中证港股通高股息投资',
+     '中证港股通高股息精选','中证港股通央企红利','中证国新港股通央企红利'],
+    ['中证全指自由现金流','中证800自由现金流'],
+    ['主要消费','中证消费50','沪港深消费50','中证全指食品','国证食品',
+     '中证细分食品饮料产业主题','港股通大消费','中证港股通消费主题'],
+    ['恒生科技','中证港股通科技','香港科技'],
+    ['中证畜牧养殖','中证畜牧养殖产业'],
   ];
+  const EQ_SOLO = ['中证白酒','光伏产业','科技龙头','人工智能','5G通讯','中证动漫游戏',
+    '中证中药','中证家电龙头','创业板','纳指100','中证A500','沪深300','上证50','中证500',
+    '中证1000','科创50','上证综指','深证成指','恒生指数','标普500','中证100','中证银行',
+    '机器人','中证沪深港黄金产业股票'];
+  const pick = (tiers) => {
+    const by = new Map(all.map(x => [x.name, x]));
+    const out = [], seen = new Set();
+    EQ_FAMS.forEach(fam => {
+      const hit = fam.map(n => by.get(n)).find(x => x && tiers.includes(x.tier));
+      if (hit && !seen.has(hit.name)) { out.push(hit); seen.add(hit.name); }
+    });
+    EQ_SOLO.forEach(n => {
+      const x = by.get(n);
+      if (x && tiers.includes(x.tier) && !seen.has(x.name)) { out.push(x); seen.add(x.name); }
+    });
+    return out;
+  };
+  const coldAll = pick(['极低估','低估']).sort((a, b) => a.percentile - b.percentile);
+  const hotAll  = pick(['高估']).sort((a, b) => b.percentile - a.percentile);
+  const nMid = Math.max(0, all.length - coldAll.length - hotAll.length);
+
+  /* 容量：冷区优先、热区保底；截断时标注省略 */
+  const fit = Math.max(4, Math.floor((rowsBot - rowsTop - 2 * headH - 56) / rowH));
+  const coldCap = wide ? Math.min(9, Math.ceil(fit * 0.7)) : coldAll.length;
+  const hotCap  = wide ? Math.min(4, Math.floor(fit * 0.3)) : hotAll.length;
+  let cold = coldAll.slice(0, coldCap), hot = hotAll.slice(0, hotCap);
+  if (rowsLimit) {
+    cold = cold.slice(0, Math.max(3, Math.ceil(rowsLimit * 0.7)));
+    hot  = hot.slice(0, Math.max(2, Math.floor(rowsLimit * 0.3)));
+  }
+
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
   const rr = (x,y,w,h,r) => {
@@ -2029,80 +2068,118 @@ function _drawEqExport(canvas, S, rowsLimit){
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   };
   ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
+
+  /* ---- 头部：橙条 + 标题（温度计）+ 日期胶囊 ---- */
   ctx.fillStyle = '#ff6a00'; rr(PAD, wide ? 30 : 34, 10, wide ? 40 : 44, 5); ctx.fill();
   ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 34 : 40) + 'px sans-serif';
-  ctx.fillText('班马日记本 · 指数温度表', PAD + 24, wide ? 66 : 74);
+  ctx.fillText('班马日记本 · 指数温度计', PAD + 24, wide ? 66 : 74);
   const pill = '估值日期 ' + ((D.eq_index && D.eq_index.asof) || '—');
   ctx.font = (wide ? 16 : 18) + 'px sans-serif';
   const pw = ctx.measureText(pill).width + 32, ph = wide ? 32 : 36;
   ctx.fillStyle = '#ffe9d9'; rr(W - PAD - pw, wide ? 34 : 38, pw, ph, ph/2); ctx.fill();
   ctx.fillStyle = '#b3541e'; ctx.fillText(pill, W - PAD - pw + 16, (wide ? 34 : 38) + ph * 0.68);
+
+  /* ---- 副标题 + 概览 chip（冷/中/热） ---- */
   ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 16) + 'px sans-serif';
-  ctx.fillText('按温度分位升序 · 分区看高估 / 低估 · 温度分位不是买卖信号', PAD, rowsTop - 42);
-  if (list.length < all.length) {
-    ctx.fillStyle = '#a39a8c'; ctx.font = (wide ? 12 : 14) + 'px sans-serif';
-    ctx.fillText('共 ' + all.length + ' 个指数 · 本图取 ' + list.length
-      + '（两端保底 + 中段抽稀，高估/低估都在）', PAD, rowsTop - 22);
-  }
-
-  const usedZones = zones.map(z => ({...z, list: list.filter(x => z.n.includes(x.tier))}))
-    .filter(z => z.list.length);
-  const nRows = usedZones.reduce((s, z) => s + z.list.length, 0) || 1;
-  const h = Math.max(18, rowH - 3);
-  const fName = Math.min(wide ? 18 : 21, Math.round(h * 0.46) + 8);
-  const fData = Math.max(10, Math.min(wide ? 12 : 13, Math.round(h * 0.30) + 6));
-  const cols = wide
-    ? [PAD + 8, PAD + 300, PAD + 392, PAD + 486, PAD + 560, PAD + 636, PAD + 726, W - PAD - 8]
-    : [PAD + 8, PAD + 220, PAD + 300, PAD + 382, PAD + 452, PAD + 524, PAD + 616, W - PAD - 8];
-  /* 列头 */
-  const HEAD = ['指数','温度','温度分位','PE','PB','近1年','可选基金','最低费率'];
-  const colX = [cols[0], cols[1] + 8, cols[2], cols[3], cols[4], cols[5], cols[6], cols[7]];
-  ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + fData + 'px sans-serif';
-  HEAD.forEach((t,i) => { if (i===7) { ctx.textAlign='right'; ctx.fillText(t, cols[7], rowsTop - 2); ctx.textAlign='left'; } else ctx.fillText(t, colX[i], rowsTop - 2); });
-
-  let y = rowsTop + 6;
-  usedZones.forEach(z => {
-    /* 分区标题条 */
-    ctx.fillStyle = z.bg; rr(PAD + 2, y + 2, W - PAD * 2 - 4, headH - 8, 7); ctx.fill();
-    ctx.fillStyle = z.c; ctx.font = '700 ' + (wide ? 13 : 15) + 'px sans-serif';
-    ctx.fillText(z.t + ' · ' + z.list.length + ' 个', cols[0] + 2, y + headH - 11);
-    y += headH;
-    z.list.forEach((x, i) => {
-      const ty = y + Math.round((rowH - h) / 2);
-      if (i < z.list.length - 1) { ctx.fillStyle = '#eceae5'; ctx.fillRect(PAD + 12, y + rowH - 1, W - PAD * 2 - 24, 1); }
-      const l1 = ty + Math.round(h * 0.44);
-      ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
-      ctx.fillText(_fitText(ctx, x.name, cols[1] - cols[0] - 92), cols[0], l1);
-      /* 温度徽标 */
-      const tc = EQ_TC[x.tier] || ['#eef0f3','#4b5563'];
-      const bw = Math.max(50, ctx.measureText(x.tier).width + 20);
-      ctx.fillStyle = tc[0]; rr(cols[1] - bw - 6, ty + Math.round((h - h * 0.62) / 2), bw, Math.max(16, h * 0.62), 6); ctx.fill();
-      ctx.fillStyle = tc[1]; ctx.font = '700 ' + Math.round(fData * 1.02) + 'px sans-serif';
-      ctx.textAlign = 'center'; ctx.fillText(x.tier, cols[1] - bw / 2 - 6, ty + h * 0.62); ctx.textAlign = 'left';
-      /* 温度分位（按温度上色） */
-      ctx.fillStyle = tc[1]; ctx.font = '700 ' + Math.round(fData * 1.1) + 'px sans-serif';
-      ctx.fillText(x.percentile.toFixed(1) + '%', cols[2], l1);
-      ctx.fillStyle = '#44403a'; ctx.font = fData + 'px sans-serif';
-      ctx.fillText(numPos(x.pe, 1), cols[3], l1);
-      ctx.fillText(numPos(x.pb, 2), cols[4], l1);
-      ctx.fillStyle = x.ret_1y == null ? '#9aa0a6' : (x.ret_1y >= 0 ? '#0b6b46' : '#b3261e');
-      ctx.fillText(x.ret_1y == null ? '—' : pct(x.ret_1y), cols[5], l1);
-      ctx.fillStyle = '#5273b8'; ctx.fillText(String(x.fund_count), cols[6], l1);
-      ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + fData + 'px sans-serif';
-      ctx.textAlign = 'right'; ctx.fillText(fpct(x.min_fee_total), cols[7], l1); ctx.textAlign = 'left';
-      y += rowH;
-    });
+  ctx.fillText('大众指数精选 · 同族只列其一 · 只标冷热两端', PAD, wide ? 98 : 108);
+  const chips = [
+    {t:'冷端 · 极低估/低估', n:coldAll.length, c:'#0b6b46', bg:'#e9f6ee'},
+    {t:'中性',              n:nMid,           c:'#4b5563', bg:'#f1f2f4'},
+    {t:'热端 · 高估',        n:hotAll.length,  c:'#b3261e', bg:'#fdecea'},
+  ];
+  let cx = PAD;
+  const cy = wide ? 112 : 126, ch = wide ? 34 : 38;
+  chips.forEach(cp => {
+    ctx.font = '600 ' + (wide ? 15 : 17) + 'px sans-serif';
+    const label = cp.t + '  ' + cp.n + ' 只';
+    const cw = ctx.measureText(label).width + 36;
+    ctx.fillStyle = cp.bg; rr(cx, cy, cw, ch, ch / 2); ctx.fill();
+    ctx.fillStyle = cp.c; ctx.fillText(label, cx + 18, cy + ch * 0.68);
+    cx += cw + 12;
   });
 
+  /* ---- 列头（5 列：指数/温度/温度分位/PE/PB） ---- */
+  const fData = wide ? 13 : 16;
+  const fName = wide ? 18 : 24;
+  const colName = PAD + 16;
+  const colBadge = wide ? PAD + 330 : PAD + 236;
+  const colPct = wide ? PAD + 470 : PAD + 352;
+  const colPE = wide ? W - PAD - 190 : W - PAD - 168;
+  const colPB = W - PAD - 16;
+  const HEAD = ['指数','温度','温度分位','PE','PB'];
+  ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + fData + 'px sans-serif';
+  ctx.fillText(HEAD[0], colName, rowsTop - 8);
+  ctx.fillText(HEAD[1], colBadge, rowsTop - 8);
+  ctx.fillText(HEAD[2], colPct, rowsTop - 8);
+  ctx.textAlign = 'right'; ctx.fillText(HEAD[3], colPE, rowsTop - 8);
+  ctx.fillText(HEAD[4], colPB, rowsTop - 8); ctx.textAlign = 'left';
+
+  /* ---- 分区卡片 ---- */
+  const hRow = Math.max(18, rowH - 3);
+  const drawSec = (y, title, list, color, tint, omittedNote) => {
+    const barH = headH - 8;
+    ctx.fillStyle = tint; rr(PAD, y, W - PAD * 2, barH, 9); ctx.fill();
+    ctx.fillStyle = color; ctx.font = '700 ' + (wide ? 15 : 17) + 'px sans-serif';
+    ctx.fillText(title, PAD + 16, y + barH - 9);
+    ctx.textAlign = 'right';
+    ctx.fillText(list.length + ' 只', W - PAD - 16, y + barH - 9);
+    ctx.textAlign = 'left';
+    y += headH;
+    const bodyH = list.length * rowH + (omittedNote ? 26 : 10);
+    ctx.save();
+    ctx.shadowColor = 'rgba(38,35,30,.06)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+    ctx.fillStyle = '#ffffff'; rr(PAD, y, W - PAD * 2, bodyH, 12); ctx.fill();
+    ctx.restore();
+    list.forEach((x, i) => {
+      const ry = y + i * rowH;
+      if (i % 2 === 1) { ctx.fillStyle = '#fbfaf7'; rr(PAD + 2, ry, W - PAD * 2 - 4, rowH, 6); ctx.fill(); }
+      const ty = ry + Math.round((rowH - hRow) / 2);
+      const l1 = ty + Math.round(hRow * 0.68);
+      ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
+      ctx.fillText(_fitText(ctx, x.name, colBadge - colName - 14), colName, l1);
+      /* 温度徽标 */
+      const tc = EQ_TC[x.tier] || ['#eef0f3','#4b5563'];
+      const bw = Math.max(56, ctx.measureText(x.tier).width + 22);
+      const bh = Math.max(20, hRow * 0.66);
+      ctx.fillStyle = tc[0]; rr(colBadge, ry + Math.round((rowH - bh) / 2), bw, bh, bh / 2); ctx.fill();
+      ctx.fillStyle = tc[1]; ctx.font = '700 ' + Math.round(fData * 1.05) + 'px sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(x.tier, colBadge + bw / 2, ry + rowH / 2 + fData * 0.36);
+      ctx.textAlign = 'left';
+      /* 温度分位（按档位上色） */
+      ctx.fillStyle = tc[1]; ctx.font = '700 ' + Math.round(fData * 1.12) + 'px sans-serif';
+      ctx.fillText((x.percentile == null ? '—' : x.percentile.toFixed(1) + '%'), colPct, l1);
+      /* PE / PB */
+      ctx.fillStyle = '#524c44'; ctx.font = fData + 'px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(numPos(x.pe, 1), colPE, l1);
+      ctx.fillText(numPos(x.pb, 2), colPB, l1);
+      ctx.textAlign = 'left';
+    });
+    if (omittedNote) {
+      ctx.fillStyle = '#a39a8c'; ctx.font = (wide ? 12 : 13) + 'px sans-serif';
+      ctx.fillText(omittedNote, PAD + 16, y + bodyH - 9);
+    }
+    return y + bodyH + 12;
+  };
+
+  let y = rowsTop + 4;
+  const coldNote = cold.length < coldAll.length
+    ? '低估区共 ' + coldAll.length + ' 只 · 本图列最冷 ' + cold.length + ' 只' : '';
+  const hotNote = hot.length < hotAll.length
+    ? '高估区共 ' + hotAll.length + ' 只 · 本图列最热 ' + hot.length + ' 只' : '';
+  y = drawSec(y, '冷区 · 极低估 / 低估（越冷越便宜）', cold, '#0b6b46', '#e9f6ee', coldNote);
+  y = drawSec(y, '热区 · 高估（越热越贵）', hot, '#b3261e', '#fdecea', hotNote);
+
+  /* ---- 页脚：标注（指数温度计卡片）+ 温度版免责 + 账号 ---- */
   const fy = H - foot;
   ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 19 : 21) + 'px sans-serif';
-  ctx.fillText('班马日记本每周更新 · 估值冷热不是买卖信号', PAD, fy + 24);
+  ctx.fillText('详细温度数据在班马日记本「指数温度计」卡片中查看', PAD, fy + 24);
   ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
-  const lines = _wrapText(ctx, DISC_EQ, W - PAD * 2, 3);   /* 指数导出图：温度版免责（2026-11-05） */
+  const lines = _wrapText(ctx, DISC_EQ, W - PAD * 2, 3);
   lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 54 + i * 19));
   ctx.textAlign = 'right'; ctx.fillStyle = '#9aa0a6';
   ctx.fillText('@班马成长日记', W - PAD, fy + 24); ctx.textAlign = 'left';
-  return {width: W, height: H, rows: nRows};
+  return {width: W, height: H, rows: cold.length + hot.length};
 }
 
 function drawExport(canvas, pool, sizeKey, rows){
