@@ -2121,6 +2121,144 @@ function _deltaTxt(f, hasPrev){
 }
 /* v5.22 指数估值导出：按宽基/行业/策略/海外分段，只画指数行（不含具体基金）。
    63 行手机图不可读 → 默认按尺寸行数（xhs 20 / wide 10），显式 &rows 可覆盖。 */
+/* ============ 每周导出海报骨架（2026-11-06 用户拍板重设计）============
+   品牌行 → 模块渐变细条 → 副标题 → 三张 stat 卡 → 整卡带色头分区 → 页脚；
+   横版：温度计左右双栏、天气双栏（阳光+多云阴 | 雨）。cfg 由各导出函数组装。 */
+function drawZonePoster(canvas, S, cfg){
+  const W = S.w, H = S.h, PAD = 44;
+  const wide = W > H;
+  const foot = Math.round(H * (wide ? 0.17 : 0.14));
+  const footTop = H - foot;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const rr = (x,y,w,h,r) => {
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  };
+  ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
+
+  /* 品牌行 + 日期胶囊 */
+  ctx.fillStyle = '#ff6a00'; rr(PAD, wide ? 24 : 28, 10, wide ? 36 : 42, 5); ctx.fill();
+  ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 29 : 35) + 'px sans-serif';
+  ctx.fillText('班马日记本 · ' + cfg.title, PAD + 22, wide ? 58 : 66);
+  const pill = '估值日期 ' + ((D.eq_index && D.eq_index.asof) || '—');
+  ctx.font = (wide ? 14 : 16) + 'px sans-serif';
+  const pw = ctx.measureText(pill).width + 28, ph = wide ? 30 : 34;
+  ctx.fillStyle = '#ffe9d9'; rr(W - PAD - pw, wide ? 26 : 30, pw, ph, ph/2); ctx.fill();
+  ctx.fillStyle = '#b3541e'; ctx.fillText(pill, W - PAD - pw + 14, (wide ? 26 : 30) + ph * 0.68);
+
+  /* 模块渐变细条（拍板①：温度计=绿黄红，天气=橙灰蓝） */
+  const gy = wide ? 70 : 80;
+  const g = ctx.createLinearGradient(PAD, 0, W - PAD, 0);
+  cfg.grad.forEach((c, i) => g.addColorStop(i / (cfg.grad.length - 1), c));
+  ctx.fillStyle = g; rr(PAD, gy, W - PAD * 2, 6, 3); ctx.fill();
+
+  /* 副标题 */
+  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 13 : 15) + 'px sans-serif';
+  ctx.fillText(cfg.subtitle, PAD, gy + (wide ? 24 : 27));
+
+  /* 三张 stat 卡（拍板②：大数字 + 小标签） */
+  const stY = gy + (wide ? 34 : 40), stH = wide ? 54 : 64;
+  const sgap = wide ? 10 : 12, scw = (W - PAD * 2 - sgap * 2) / 3;
+  cfg.stats.forEach((s, i) => {
+    const x = PAD + i * (scw + sgap);
+    ctx.save(); ctx.shadowColor = 'rgba(38,35,30,.05)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+    ctx.fillStyle = '#ffffff'; rr(x, stY, scw, stH, 12); ctx.fill(); ctx.restore();
+    ctx.fillStyle = s.c; ctx.font = '800 ' + (wide ? 25 : 30) + 'px sans-serif';
+    ctx.fillText(String(s.n), x + 16, stY + (wide ? 33 : 40));
+    ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + (wide ? 11.5 : 13.5) + 'px sans-serif';
+    ctx.fillText(s.t, x + 16, stY + (wide ? 49 : 57));
+  });
+
+  /* 分区布局：竖版单列堆叠；横版双栏（cfg.twoCol → cfg.cols） */
+  const cardsTop = stY + stH + (wide ? 12 : 14);
+  const avail = footTop - cardsTop - 6;
+  const GAP = 14;
+  const cols = (wide && cfg.twoCol) ? cfg.cols : [cfg.zones];
+  const colGap = (wide && cfg.twoCol) ? 16 : 0;
+  const colW = (W - PAD * 2 - (cols.length - 1) * colGap) / cols.length;
+  let rowH = wide ? 23 : 36;
+  const rowHMin = wide ? 20 : 26;
+
+  /* 自适应：放不下先降行高，到下限仍放不下则从列尾（末区）截断并标注 */
+  cols.forEach(zs => {
+    const rows = zs.reduce((s, z) => s + z.list.length, 0);
+    const fixed = zs.reduce((s, z) => s + 104 + (z.note ? 30 : 18), 0) + (zs.length - 1) * GAP;
+    if (rows * rowH + fixed <= avail) return;
+    const fh = Math.floor((avail - fixed) / Math.max(1, rows));
+    if (fh >= rowHMin) { rowH = Math.min(rowH, fh); return; }
+    rowH = rowHMin;
+    const rem = Math.floor((avail - fixed) / rowHMin);
+    for (let zi = zs.length - 1; zi >= 0; zi--) {
+      const z = zs[zi];
+      const otherRows = zs.reduce((s, q, i) => i === zi ? s : s + q.list.length, 0);
+      const cap = rem - otherRows;
+      if (z.list.length > cap && cap >= 2) {
+        z.note = '共 ' + z.n + ' 只 · 本图列前 ' + cap + ' 只';
+        z.list = z.list.slice(0, cap);
+        break;
+      }
+    }
+  });
+
+  /* 整卡带色头（拍板③）：白卡 + 色头条（图标+区名+数量徽章）+ 列标签 + 行 */
+  const drawCard = (x, y, w, z, fixedH) => {
+    const n = z.list.length;
+    const rowsY = 104;
+    const h = fixedH != null ? fixedH : (rowsY + n * rowH + (z.note ? 30 : 18));
+    ctx.save(); ctx.shadowColor = 'rgba(38,35,30,.06)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+    ctx.fillStyle = '#ffffff'; rr(x, y, w, h, 14); ctx.fill(); ctx.restore();
+    ctx.fillStyle = z.tint; rr(x + 12, y + 12, w - 24, 44, 10); ctx.fill();
+    ctx.font = '18px sans-serif'; ctx.fillText(z.icon, x + 26, y + 41);
+    ctx.fillStyle = z.color; ctx.font = '700 ' + (wide ? 14.5 : 16.5) + 'px sans-serif';
+    ctx.fillText(z.t, x + 52, y + 40);
+    ctx.font = '700 ' + (wide ? 12 : 13) + 'px sans-serif';
+    const btxt = '共 ' + z.n + ' 只';
+    const bw = ctx.measureText(btxt).width + 24;
+    ctx.fillStyle = z.color; rr(x + w - 12 - bw, y + 19, bw, 30, 15); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(btxt, x + w - 12 - bw + 12, y + 39);
+    const px = z.cells(w);
+    ctx.fillStyle = '#a39a8c'; ctx.font = '600 ' + (wide ? 10.5 : 11.5) + 'px sans-serif';
+    z.labels.forEach((L, i) => {
+      if (!L || px.lab[i] == null) return;
+      if (px.labAlign[i] === 'r') {
+        ctx.textAlign = 'right'; ctx.fillText(L, px.lab[i], y + 92); ctx.textAlign = 'left';
+      } else ctx.fillText(L, px.lab[i], y + 92);
+    });
+    z.list.forEach((item, i) => {
+      const ry = y + rowsY + i * rowH;
+      if (i % 2 === 1) { ctx.fillStyle = '#fbfaf7'; rr(x + 6, ry, w - 12, rowH, 7); ctx.fill(); }
+      z.render(ctx, rr, ry, item, w, rowH, px, wide);
+    });
+    if (z.note) {
+      ctx.fillStyle = '#a39a8c'; ctx.font = (wide ? 11 : 12.5) + 'px sans-serif';
+      ctx.fillText(z.note, x + 16, y + rowsY + n * rowH + (wide ? 18 : 22));
+    }
+    return h;
+  };
+
+  cols.forEach((zs, ci) => {
+    const cx = PAD + ci * (colW + colGap);
+    let cy = cardsTop;
+    zs.forEach(z => {
+      const fixedH = (cols.length > 1 && zs.length === 1) ? avail : null;
+      cy += drawCard(cx, cy, colW, z, fixedH) + GAP;
+    });
+  });
+
+  /* 页脚：橙色行动句 + 免责 + 账号 */
+  const fy = footTop;
+  ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 17 : 21) + 'px sans-serif';
+  ctx.fillText(cfg.footer, PAD, fy + 26);
+  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 12.5 : 14.5) + 'px sans-serif';
+  _wrapText(ctx, cfg.disc, W - PAD * 2, 3).forEach((ln, i) => ctx.fillText(ln, PAD, fy + 56 + i * 18));
+  ctx.textAlign = 'right'; ctx.fillStyle = '#9aa0a6';
+  ctx.fillText('@班马成长日记', W - PAD, fy + 26); ctx.textAlign = 'left';
+  const shownRows = cols.reduce((s, zs) => s + zs.reduce((t, z) => t + z.list.length, 0), 0);
+  return {width: W, height: H, rows: cfg.rows != null ? cfg.rows : shownRows};
+}
+
 function _drawEqExport(canvas, S, rowsLimit){
   const EQ_TC = {'极低估':['#e3f5ec','#0b6b46'],'低估':['#e9f6ee','#1a7f37'],
                  '合理偏低':['#eef0f3','#4b5563'],'合理偏高':['#fff3e3','#a85100'],
@@ -2131,14 +2269,8 @@ function _drawEqExport(canvas, S, rowsLimit){
        （族内按大众优先取第一个命中本温区的，例：证券公司与中证申万证券行业只出一个）；
      ⑤ 标注"详细温度数据在班马日记本「指数温度计」卡片中查看"；⑥ UI 重排：
        概览 chip + 分区卡片（左色条/斑马纹/圆角阴影）。 */
-  const W = S.w, H = S.h, PAD = 44;
-  const wide = W > H;
-  const foot = Math.round(H * (wide ? 0.19 : 0.14));
-  const rowsBot = H - foot - 6;
-  const rowsTop = wide ? 166 : 184;
-  const headH = wide ? 30 : 38;
-  const rowH = wide ? 26 : 35;   /* 竖版行加高：精选行少，填满版面避免下半页留白 */
-  const all = ((D.eq_index && D.eq_index.indices) || []);
+  /* 红利族已拆到天气模块（2026-11-06 拍板）：温度计导出剔除红利 */
+  const all = ((D.eq_index && D.eq_index.indices) || []).filter(x => !isWeatherIdx(x));
 
   /* ---- 大众精选：族（按大众优先排序，同族去重）+ 独立名单 ---- */
   const EQ_FAMS = [
@@ -2186,280 +2318,110 @@ function _drawEqExport(canvas, S, rowsLimit){
   const hotAll  = pick(['高估']).sort((a, b) => b.percentile - a.percentile);
   const nMid = Math.max(0, all.length - coldAll.length - hotAll.length);
 
-  /* 容量：冷区优先、热区保底；截断时标注省略 */
-  const fit = Math.max(4, Math.floor((rowsBot - rowsTop - 2 * headH - 56) / rowH));
-  const coldCap = wide ? Math.min(9, Math.ceil(fit * 0.7)) : coldAll.length;
-  const hotCap  = wide ? Math.min(4, Math.floor(fit * 0.3)) : hotAll.length;
-  let cold = coldAll.slice(0, coldCap), hot = hotAll.slice(0, hotCap);
+  /* 展示行数：海报骨架自适应版面；rowsLimit 时按冷热比例截断 */
+  let cold = coldAll, hot = hotAll;
   if (rowsLimit) {
-    cold = cold.slice(0, Math.max(3, Math.ceil(rowsLimit * 0.7)));
-    hot  = hot.slice(0, Math.max(2, Math.floor(rowsLimit * 0.3)));
+    cold = coldAll.slice(0, Math.max(3, Math.ceil(rowsLimit * 0.7)));
+    hot  = hotAll.slice(0, Math.max(2, Math.floor(rowsLimit * 0.3)));
   }
-
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  const rr = (x,y,w,h,r) => {
-    ctx.beginPath(); ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  /* 行内列位（相对卡宽）：[指数][档位徽章][分位][PE][PB] */
+  const cellsEq = w => {
+    const pbR = w - 16, peR = w - 92, pctR = peR - 72;
+    return {nameX: 16, nameW: Math.max(60, pctR - 212), badgeRight: pctR - 84,
+            pctR: pctR, peR: peR, pbR: pbR,
+            lab: [16, null, pctR, peR, pbR], labAlign: ['l', null, 'r', 'r', 'r']};
   };
-  ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
-
-  /* ---- 头部：橙条 + 标题（温度计）+ 日期胶囊 ---- */
-  ctx.fillStyle = '#ff6a00'; rr(PAD, wide ? 30 : 34, 10, wide ? 40 : 44, 5); ctx.fill();
-  ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 34 : 40) + 'px sans-serif';
-  ctx.fillText('班马日记本 · 指数温度计', PAD + 24, wide ? 66 : 74);
-  const pill = '估值日期 ' + ((D.eq_index && D.eq_index.asof) || '—');
-  ctx.font = (wide ? 16 : 18) + 'px sans-serif';
-  const pw = ctx.measureText(pill).width + 32, ph = wide ? 32 : 36;
-  ctx.fillStyle = '#ffe9d9'; rr(W - PAD - pw, wide ? 34 : 38, pw, ph, ph/2); ctx.fill();
-  ctx.fillStyle = '#b3541e'; ctx.fillText(pill, W - PAD - pw + 16, (wide ? 34 : 38) + ph * 0.68);
-
-  /* ---- 副标题 + 概览 chip（冷/中/热） ---- */
-  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 16) + 'px sans-serif';
-  ctx.fillText('大众指数精选 · 同族只列其一 · 只标冷热两端', PAD, wide ? 98 : 108);
-  const chips = [
-    {t:'冷端 · 极低估/低估', n:coldAll.length, c:'#0b6b46', bg:'#e9f6ee'},
-    {t:'中性',              n:nMid,           c:'#4b5563', bg:'#f1f2f4'},
-    {t:'热端 · 高估',        n:hotAll.length,  c:'#b3261e', bg:'#fdecea'},
-  ];
-  let cx = PAD;
-  const cy = wide ? 112 : 126, ch = wide ? 34 : 38;
-  chips.forEach(cp => {
-    ctx.font = '600 ' + (wide ? 15 : 17) + 'px sans-serif';
-    const label = cp.t + '  ' + cp.n + ' 只';
-    const cw = ctx.measureText(label).width + 36;
-    ctx.fillStyle = cp.bg; rr(cx, cy, cw, ch, ch / 2); ctx.fill();
-    ctx.fillStyle = cp.c; ctx.fillText(label, cx + 18, cy + ch * 0.68);
-    cx += cw + 12;
-  });
-
-  /* ---- 列头（5 列：指数/温度/温度分位/PE/PB） ---- */
-  const fData = wide ? 13 : 16;
-  const fName = wide ? 18 : 24;
-  const colName = PAD + 16;
-  const colBadge = wide ? PAD + 330 : PAD + 236;
-  const colPct = wide ? PAD + 470 : PAD + 352;
-  const colPE = wide ? W - PAD - 190 : W - PAD - 168;
-  const colPB = W - PAD - 16;
-  const HEAD = ['指数','温度','温度分位','PE','PB'];
-  ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + fData + 'px sans-serif';
-  ctx.fillText(HEAD[0], colName, rowsTop - 8);
-  ctx.fillText(HEAD[1], colBadge, rowsTop - 8);
-  ctx.fillText(HEAD[2], colPct, rowsTop - 8);
-  ctx.textAlign = 'right'; ctx.fillText(HEAD[3], colPE, rowsTop - 8);
-  ctx.fillText(HEAD[4], colPB, rowsTop - 8); ctx.textAlign = 'left';
-
-  /* ---- 分区卡片 ---- */
-  const hRow = Math.max(18, rowH - 3);
-  const drawSec = (y, title, list, color, tint, omittedNote) => {
-    const barH = headH - 8;
-    ctx.fillStyle = tint; rr(PAD, y, W - PAD * 2, barH, 9); ctx.fill();
-    ctx.fillStyle = color; ctx.font = '700 ' + (wide ? 15 : 17) + 'px sans-serif';
-    ctx.fillText(title, PAD + 16, y + barH - 9);
+  const renderEq = (ctx, rr, ry, x, w, rowH, px, wide) => {
+    const fN = wide ? 16 : 21, fD = wide ? 12.5 : 15.5;
+    const l1 = ry + Math.round(rowH / 2 + fN * 0.36);
+    ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fN + 'px sans-serif';
+    ctx.fillText(_fitText(ctx, x.name, px.nameW), px.nameX, l1);
+    const tc = EQ_TC[x.tier] || ['#eef0f3', '#4b5563'];
+    const bw = Math.max(wide ? 46 : 58, ctx.measureText(x.tier).width + (wide ? 16 : 22));
+    const bh = Math.max(18, Math.round(rowH * 0.58));
+    ctx.fillStyle = tc[0]; rr(px.badgeRight - bw, ry + Math.round((rowH - bh) / 2), bw, bh, bh / 2); ctx.fill();
+    ctx.fillStyle = tc[1]; ctx.font = '700 ' + (wide ? 12 : 13.5) + 'px sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText(x.tier, px.badgeRight - bw / 2, ry + rowH / 2 + (wide ? 4 : 5));
     ctx.textAlign = 'right';
-    ctx.fillText(list.length + ' 只', W - PAD - 16, y + barH - 9);
+    ctx.font = '700 ' + (wide ? 15 : 19) + 'px sans-serif';
+    ctx.fillText(x.percentile == null ? '—' : x.percentile.toFixed(1) + '%', px.pctR, l1);
+    ctx.fillStyle = '#524c44'; ctx.font = (wide ? 12 : 14.5) + 'px sans-serif';
+    ctx.fillText(numPos(x.pe, 1), px.peR, l1);
+    ctx.fillText(numPos(x.pb, 2), px.pbR, l1);
     ctx.textAlign = 'left';
-    y += headH;
-    const bodyH = list.length * rowH + (omittedNote ? 26 : 10);
-    ctx.save();
-    ctx.shadowColor = 'rgba(38,35,30,.06)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
-    ctx.fillStyle = '#ffffff'; rr(PAD, y, W - PAD * 2, bodyH, 12); ctx.fill();
-    ctx.restore();
-    list.forEach((x, i) => {
-      const ry = y + i * rowH;
-      if (i % 2 === 1) { ctx.fillStyle = '#fbfaf7'; rr(PAD + 2, ry, W - PAD * 2 - 4, rowH, 6); ctx.fill(); }
-      const ty = ry + Math.round((rowH - hRow) / 2);
-      const l1 = ty + Math.round(hRow * 0.68);
-      ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
-      ctx.fillText(_fitText(ctx, x.name, colBadge - colName - 14), colName, l1);
-      /* 温度徽标 */
-      const tc = EQ_TC[x.tier] || ['#eef0f3','#4b5563'];
-      const bw = Math.max(56, ctx.measureText(x.tier).width + 22);
-      const bh = Math.max(20, hRow * 0.66);
-      ctx.fillStyle = tc[0]; rr(colBadge, ry + Math.round((rowH - bh) / 2), bw, bh, bh / 2); ctx.fill();
-      ctx.fillStyle = tc[1]; ctx.font = '700 ' + Math.round(fData * 1.05) + 'px sans-serif';
-      ctx.textAlign = 'center'; ctx.fillText(x.tier, colBadge + bw / 2, ry + rowH / 2 + fData * 0.36);
-      ctx.textAlign = 'left';
-      /* 温度分位（按档位上色） */
-      ctx.fillStyle = tc[1]; ctx.font = '700 ' + Math.round(fData * 1.12) + 'px sans-serif';
-      ctx.fillText((x.percentile == null ? '—' : x.percentile.toFixed(1) + '%'), colPct, l1);
-      /* PE / PB */
-      ctx.fillStyle = '#524c44'; ctx.font = fData + 'px sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText(numPos(x.pe, 1), colPE, l1);
-      ctx.fillText(numPos(x.pb, 2), colPB, l1);
-      ctx.textAlign = 'left';
-    });
-    if (omittedNote) {
-      ctx.fillStyle = '#a39a8c'; ctx.font = (wide ? 12 : 13) + 'px sans-serif';
-      ctx.fillText(omittedNote, PAD + 16, y + bodyH - 9);
-    }
-    return y + bodyH + 12;
   };
-
-  let y = rowsTop + 4;
-  const coldNote = cold.length < coldAll.length
-    ? '低估区共 ' + coldAll.length + ' 只 · 本图列最冷 ' + cold.length + ' 只' : '';
-  const hotNote = hot.length < hotAll.length
-    ? '高估区共 ' + hotAll.length + ' 只 · 本图列最热 ' + hot.length + ' 只' : '';
-  y = drawSec(y, '冷区 · 极低估 / 低估（越冷越便宜）', cold, '#0b6b46', '#e9f6ee', coldNote);
-  y = drawSec(y, '热区 · 高估（越热越贵）', hot, '#b3261e', '#fdecea', hotNote);
-
-  /* ---- 页脚：标注（指数温度计卡片）+ 温度版免责 + 账号 ---- */
-  const fy = H - foot;
-  ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 19 : 21) + 'px sans-serif';
-  ctx.fillText('详细温度数据在班马日记本「指数温度计」卡片中查看', PAD, fy + 24);
-  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
-  const lines = _wrapText(ctx, DISC_EQ, W - PAD * 2, 3);
-  lines.forEach((ln, i) => ctx.fillText(ln, PAD, fy + 54 + i * 19));
-  ctx.textAlign = 'right'; ctx.fillStyle = '#9aa0a6';
-  ctx.fillText('@班马成长日记', W - PAD, fy + 24); ctx.textAlign = 'left';
-  return {width: W, height: H, rows: cold.length + hot.length};
+  const mkNote = (shown, total) => shown < total ? '共 ' + total + ' 只 · 本图列前 ' + shown + ' 只' : '';
+  const coldZ = {t: '冷区 · 越冷越便宜', icon: '❄️', tint: '#e9f6ee', color: '#0b6b46',
+    n: coldAll.length, list: cold, note: mkNote(cold.length, coldAll.length),
+    labels: ['指数', '', '分位', 'PE', 'PB'], cells: cellsEq, render: renderEq};
+  const hotZ = {t: '热区 · 越热越贵', icon: '🔥', tint: '#fdecea', color: '#b3261e',
+    n: hotAll.length, list: hot, note: mkNote(hot.length, hotAll.length),
+    labels: ['指数', '', '分位', 'PE', 'PB'], cells: cellsEq, render: renderEq};
+  return drawZonePoster(canvas, S, {
+    title: '指数温度计',
+    grad: ['#22c55e', '#eab308', '#ef4444'],
+    subtitle: '大众指数精选 · 同族只列其一 · 只标冷热两端（越冷越便宜）',
+    stats: [
+      {t: '冷端（极低估+低估）', n: coldAll.length, c: '#0b6b46'},
+      {t: '中性', n: nMid, c: '#4b5563'},
+      {t: '热端（高估）', n: hotAll.length, c: '#b3261e'}],
+    zones: [coldZ, hotZ], cols: [[coldZ], [hotZ]], twoCol: true,
+    footer: '详细温度数据在班马日记本「指数温度计」卡片中查看',
+    disc: DISC_EQ});
 }
 
-/* 红利天气导出（2026-11-06 拍板）：按股息率分位降序、晴→雨三区分段、
-   天气徽章配色随档位；列=指数/天气/股息率分位/当前股息率/近1周。 */
+/* 红利天气导出（2026-11-06 拍板；同日按海报骨架重设计）：三区（阳光/多云阴/雨）、
+   天气徽章配色随档位；列=指数/天气/股息率/分位参考/近1周。 */
 function _drawWeatherExport(canvas, S, rowsLimit){
-  const W = S.w, H = S.h, PAD = 44;
-  const wide = W > H;
-  const foot = Math.round(H * (wide ? 0.19 : 0.14));
-  const rowsBot = H - foot - 6;
-  const rowsTop = wide ? 170 : 194;
-  const headH = wide ? 28 : 34;
-  const rowH = wide ? 26 : 32;
-  const all = exportRows('div_weather');
-  const zones = [
-    {t:'阳光区 · 酷暑 / 晴天（分位高 = 便宜）', n:['酷暑','晴天'], c:'#d84315', bg:'#fff1e8', keep:'head'},
-    {t:'多云阴天 · 中性',                      n:['多云','阴天'], c:'#475569', bg:'#eef1f5', keep:'tail'},
-    {t:'雨景区 · 小雨 / 暴雨（分位低 = 贵）',   n:['小雨','暴雨'], c:'#1e3a8a', bg:'#e8eefc', keep:'tail'},
-  ];
-  let used = zones.map(z => ({...z, list: all.filter(x => z.n.includes(x.weather))}))
-    .filter(z => z.list.length);
-  /* 容量自适应：两端（阳光/雨）优先，中性先裁；雨区从头部裁、阳光区从尾部裁，保住极端档 */
-  let fit = Math.max(3, Math.floor((rowsBot - rowsTop - used.length * headH - 46) / rowH));
-  if (rowsLimit) fit = Math.min(fit, rowsLimit);
-  const total = used.reduce((s, z) => s + z.list.length, 0);
-  if (total > fit) {
-    let over = total - fit;
-    const order = [1, 2, 0];                     /* 中性 → 雨 → 阳光 */
-    for (const i of order) {
-      if (!used[i] || over <= 0) continue;
-      const cut = Math.min(over, Math.max(0, used[i].list.length - 2));
-      used[i].list = used[i].keep === 'head'
-        ? used[i].list.slice(cut) : used[i].list.slice(0, used[i].list.length - cut);
-      over -= cut;
-    }
-    used = used.filter(z => z.list.length);
-  }
-
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  const rr = (x,y,w,h,r) => {
-    ctx.beginPath(); ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  const all = exportRows('div_weather');   /* 按当前股息率降序；版面由海报骨架自适应 */
+  const cellsWx = w => {
+    const retR = w - 16, refR = retR - 96, dyrR = refR - 64;
+    return {nameX: 16, nameW: Math.max(60, dyrR - 212), badgeRight: dyrR - 84,
+            dyrR: dyrR, refR: refR, retR: retR,
+            lab: [16, null, dyrR, refR, retR], labAlign: ['l', null, 'r', 'r', 'r']};
   };
-  ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
-  /* 头部 */
-  ctx.fillStyle = '#ff6a00'; rr(PAD, wide ? 30 : 34, 10, wide ? 40 : 44, 5); ctx.fill();
-  ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 34 : 40) + 'px sans-serif';
-  ctx.fillText('班马日记本 · 红利天气', PAD + 24, wide ? 66 : 74);
-  const pill = '估值日期 ' + ((D.eq_index && D.eq_index.asof) || '—');
-  ctx.font = (wide ? 16 : 18) + 'px sans-serif';
-  const pw = ctx.measureText(pill).width + 32, ph = wide ? 32 : 36;
-  ctx.fillStyle = '#ffe9d9'; rr(W - PAD - pw, wide ? 34 : 38, pw, ph, ph/2); ctx.fill();
-  ctx.fillStyle = '#b3541e'; ctx.fillText(pill, W - PAD - pw + 16, (wide ? 34 : 38) + ph * 0.68);
-  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 16) + 'px sans-serif';
-  ctx.fillText('股息率分位越高 = 越便宜 = 天气越晴 · 红利族独立于温度计', PAD, wide ? 98 : 108);
-  /* 概览 chip */
-  const nSun = all.filter(x => x.weather==='酷暑'||x.weather==='晴天').length;
-  const nMid = all.filter(x => x.weather==='多云'||x.weather==='阴天').length;
-  const nRain = all.filter(x => x.weather==='小雨'||x.weather==='暴雨').length;
-  const chips = [
-    {t:'晴天系', n:nSun, c:'#d84315', bg:'#fff1e8'},
-    {t:'多云阴天', n:nMid, c:'#475569', bg:'#eef1f5'},
-    {t:'雨系', n:nRain, c:'#1e3a8a', bg:'#e8eefc'},
-  ];
-  let cx = PAD;
-  const cy = wide ? 112 : 128, ch = wide ? 34 : 38;
-  chips.forEach(cp => {
-    ctx.font = '600 ' + (wide ? 15 : 17) + 'px sans-serif';
-    const label = cp.t + '  ' + cp.n + ' 只';
-    const cw = ctx.measureText(label).width + 36;
-    ctx.fillStyle = cp.bg; rr(cx, cy, cw, ch, ch/2); ctx.fill();
-    ctx.fillStyle = cp.c; ctx.fillText(label, cx + 18, cy + ch * 0.68);
-    cx += cw + 12;
-  });
-  /* 列头 */
-  const fData = wide ? 13 : 16, fName = wide ? 18 : 23;
-  const colName = PAD + 16;
-  const colBadge = wide ? PAD + 300 : PAD + 250;
-  const colPct = wide ? PAD + 440 : PAD + 372;
-  const colDyr = wide ? W - PAD - 240 : W - PAD - 208;
-  const colRet = W - PAD - 16;
-  const HEAD = ['指数','天气','当前股息率','分位(参考)','近1周'];
-  ctx.fillStyle = '#8a8378'; ctx.font = '600 ' + fData + 'px sans-serif';
-  ctx.fillText(HEAD[0], colName, rowsTop - 8);
-  ctx.fillText(HEAD[1], colBadge, rowsTop - 8);
-  ctx.fillText(HEAD[2], colPct, rowsTop - 8);
-  ctx.textAlign = 'right';
-  ctx.fillText(HEAD[3], colDyr, rowsTop - 8);
-  ctx.fillText(HEAD[4], colRet, rowsTop - 8);
-  ctx.textAlign = 'left';
-  /* 分区卡片 */
-  const hRow = Math.max(18, rowH - 3);
-  const drawSec = (y, z) => {
-    const barH = headH - 8;
-    ctx.fillStyle = z.bg; rr(PAD, y, W - PAD*2, barH, 9); ctx.fill();
-    ctx.fillStyle = z.c; ctx.font = '700 ' + (wide ? 15 : 17) + 'px sans-serif';
-    ctx.fillText(z.t, PAD + 16, y + barH - 9);
+  const renderWx = (ctx, rr, ry, x, w, rowH, px, wide) => {
+    const fN = wide ? 16 : 21, fD = wide ? 12.5 : 15.5;
+    const l1 = ry + Math.round(rowH / 2 + fN * 0.36);
+    ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fN + 'px sans-serif';
+    ctx.fillText(_fitText(ctx, x.name, px.nameW), px.nameX, l1);
+    const wc = WEATHER_TC[x.weather] || ['#eef0f3', '#4b5563'];
+    const bw = Math.max(wide ? 48 : 60, ctx.measureText(x.weather).width + (wide ? 16 : 24));
+    const bh = Math.max(18, Math.round(rowH * 0.58));
+    ctx.fillStyle = wc[0]; rr(px.badgeRight - bw, ry + Math.round((rowH - bh) / 2), bw, bh, bh / 2); ctx.fill();
+    ctx.fillStyle = wc[1]; ctx.font = '700 ' + (wide ? 12 : 13.5) + 'px sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText(x.weather, px.badgeRight - bw / 2, ry + rowH / 2 + (wide ? 4 : 5));
     ctx.textAlign = 'right';
-    ctx.fillText(z.list.length + ' 只', W - PAD - 16, y + barH - 9);
+    ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 14.5 : 18) + 'px sans-serif';
+    ctx.fillText(x.dyr == null ? '—' : x.dyr.toFixed(2) + '%', px.dyrR, l1);
+    ctx.fillStyle = '#9a938a'; ctx.font = (wide ? 12 : 14.5) + 'px sans-serif';
+    ctx.fillText(x.dyr_pct == null ? '—' : x.dyr_pct.toFixed(1) + '%', px.refR, l1);
+    ctx.fillStyle = x.ret_1w == null ? '#9aa0a6' : (x.ret_1w >= 0 ? '#0b6b46' : '#b3261e');
+    ctx.font = (wide ? 12 : 14.5) + 'px sans-serif';
+    ctx.fillText(x.ret_1w == null ? '—' : (x.ret_1w >= 0 ? '+' : '') + (x.ret_1w * 100).toFixed(2) + '%', px.retR, l1);
     ctx.textAlign = 'left';
-    y += headH;
-    const bodyH = z.list.length * rowH + 10;
-    ctx.save();
-    ctx.shadowColor = 'rgba(38,35,30,.06)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
-    ctx.fillStyle = '#ffffff'; rr(PAD, y, W - PAD*2, bodyH, 12); ctx.fill();
-    ctx.restore();
-    z.list.forEach((x, i) => {
-      const ry = y + i * rowH;
-      if (i % 2 === 1) { ctx.fillStyle = '#fbfaf7'; rr(PAD+2, ry, W-PAD*2-4, rowH, 6); ctx.fill(); }
-      const l1 = ry + Math.round((rowH + fData * 0.7) / 2);
-      const wc = WEATHER_TC[x.weather] || ['#eef0f3','#4b5563'];
-      ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fName + 'px sans-serif';
-      ctx.fillText(_fitText(ctx, x.name, colBadge - colName - 14), colName, l1);
-      /* 天气徽章 */
-      const bw = Math.max(58, ctx.measureText(x.weather).width + 34);
-      const bh = Math.max(20, hRow * 0.64);
-      ctx.fillStyle = wc[0]; rr(colBadge, ry + Math.round((rowH - bh)/2), bw, bh, bh/2); ctx.fill();
-      ctx.fillStyle = wc[1]; ctx.font = '700 ' + Math.round(fData * 1.05) + 'px sans-serif';
-      ctx.textAlign = 'center'; ctx.fillText(x.weather, colBadge + bw/2, ry + rowH/2 + fData*0.36);
-      ctx.textAlign = 'left';
-      /* 当前股息率（主数值）+ 分位(参考) */
-      ctx.fillStyle = '#26231e'; ctx.font = '700 ' + Math.round(fData * 1.12) + 'px sans-serif';
-      ctx.fillText(x.dyr==null?'—':x.dyr.toFixed(2)+'%', colPct, l1);
-      ctx.fillStyle = '#9a938a'; ctx.font = fData + 'px sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText(x.dyr_pct==null?'—':x.dyr_pct.toFixed(1)+'%', colDyr, l1);
-      ctx.fillStyle = x.ret_1w == null ? '#9aa0a6' : (x.ret_1w >= 0 ? '#0b6b46' : '#b3261e');
-      ctx.fillText(x.ret_1w == null ? '—' : (x.ret_1w>=0?'+':'') + (x.ret_1w*100).toFixed(2) + '%', colRet, l1);
-      ctx.textAlign = 'left';
-    });
-    return y + bodyH + 12;
   };
-  let y = rowsTop + 4;
-  used.forEach(z => { y = drawSec(y, z); });
-  /* 页脚 */
-  const fy = H - foot;
-  ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 19 : 21) + 'px sans-serif';
-  ctx.fillText('详细天气数据在班马日记本「红利天气」卡片中查看', PAD, fy + 24);
-  ctx.fillStyle = '#8a8378'; ctx.font = (wide ? 14 : 15) + 'px sans-serif';
-  _wrapText(ctx, DISC_WEATHER, W - PAD * 2, 3).forEach((ln, i) => ctx.fillText(ln, PAD, fy + 54 + i * 19));
-  ctx.textAlign = 'right'; ctx.fillStyle = '#9aa0a6';
-  ctx.fillText('@班马成长日记', W - PAD, fy + 24); ctx.textAlign = 'left';
-  return {width: W, height: H, rows: used.reduce((s,z)=>s+z.list.length, 0)};
+  const mk = (t, icon, tint, color, ws) => {
+    const list = all.filter(x => ws.includes(x.weather));
+    return {t, icon, tint, color, n: list.length, list, note: '',
+            labels: ['指数', '', '股息率', '分位参考', '近1周'], cells: cellsWx, render: renderWx};
+  };
+  const sunZ  = mk('阳光区 · 越高越晴', '🌞', '#fef3c7', '#d97706', ['酷暑', '晴天']);
+  const midZ  = mk('多云阴天 · 中性', '⛅', '#eaeff4', '#64748b', ['多云', '阴天']);
+  const rainZ = mk('雨景区 · 越低越贵', '🌧️', '#e0ebfd', '#2563eb', ['小雨', '暴雨']);
+  const zones = [sunZ, midZ, rainZ].filter(z => z.n > 0);
+  const cols = [[sunZ, midZ].filter(z => z.n > 0), [rainZ].filter(z => z.n > 0)].filter(c => c.length);
+  return drawZonePoster(canvas, S, {
+    title: '红利天气',
+    grad: ['#f59e0b', '#94a3b8', '#2563eb'],
+    subtitle: '综合分越高 = 性价比越高 = 天气越晴 · 红利族独立于温度计',
+    stats: [
+      {t: '晴天系（酷暑+晴天）', n: sunZ.n, c: '#d97706'},
+      {t: '多云阴天', n: midZ.n, c: '#64748b'},
+      {t: '雨系（小雨+暴雨）', n: rainZ.n, c: '#2563eb'}],
+    zones: zones, cols: cols, twoCol: true,
+    footer: '详细天气数据在班马日记本「红利天气」卡片中查看',
+    disc: DISC_WEATHER});
 }
 
 function drawExport(canvas, pool, sizeKey, rows){
