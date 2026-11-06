@@ -801,7 +801,7 @@ def _cs_json(url: str, timeout: float = 20.0) -> dict:
 
 def load_cs(code: str, refresh: bool) -> dict | None:
     """中证官网 PE(TTM) 日频 + 指数收盘日频（缓存 20h，失败沿用旧缓存）。"""
-    key = f"eqcs_v1_{code}"
+    key = f"eqcs_v2_{code}"   # v2（2026-11-06）：perf 接口 H 系修复后升版，强制回补点位
     cached = D._load_cache(key, C.EQ_INDEX["cache_hours"])
     if cached is not None:
         return cached
@@ -812,16 +812,52 @@ def load_cs(code: str, refresh: bool) -> dict | None:
         except Exception:                          # noqa: BLE001
             return None
     try:
-        info = _cs_json(f"{CS_BASE}/indexInfo/index-basic-info/{code}").get("data") or {}
-        pe = _cs_json(f"{CS_BASE}/perf/indexCsiDsPe?indexCode={code}"
-                      f"&startDate=20050101&endDate=20261231").get("data") or []
-        pr = _cs_json(f"{CS_BASE}/perf/index-perf?indexCode={code}"
-                      f"&startDate=20050101&endDate=20261231").get("data") or []
+        try:
+            info = _cs_json(f"{CS_BASE}/indexInfo/index-basic-info/{code}").get("data") or {}
+        except Exception:                          # noqa: BLE001
+            # 发布日非必需：中证 info 接口会整段 403（2026-11-06 高频探测触发 WAF 实测，
+            # 连有效码也 403）——失败时回退 v1 旧缓存的 publish，绝不能让它拖死整个 load_cs
+            info = {}
+            try:
+                old = D._load_cache(f"eqcs_v1_{code}", 24 * 365)
+                if old:
+                    info = {"publishDate": old.get("publish") or ""}
+            except Exception:                      # noqa: BLE001
+                info = {}
+        try:
+            pe = _cs_json(f"{CS_BASE}/perf/indexCsiDsPe?indexCode={code}"
+                          f"&startDate=20050101&endDate=20261231").get("data") or []
+        except Exception:                          # noqa: BLE001  中证 WAF 403 等 → 走 v1 回退
+            pe = []
+        try:
+            pr = _cs_json(f"{CS_BASE}/perf/index-perf?indexCode={code}"
+                          f"&startDate=20050101&endDate=20261231").get("data") or []
+        except Exception:                          # noqa: BLE001
+            pr = []
+        if not pr and code[:1].isdigit():
+            # H 系（30269/30184 等）perf 必须带 H 前缀：裸数字返回 0 行、H30269 返回 22 行
+            # （2026-11-06 实测）。注意：非 H 系裸码（399707 等）加 H 是非法码会抛错——
+            # 必须单独兜住，否则整个 load_cs 连已拿到的 pe 一起丢（曾致5只 missing）
+            try:
+                pr = _cs_json(f"{CS_BASE}/perf/index-perf?indexCode=H{code}"
+                              f"&startDate=20050101&endDate=20261231").get("data") or []
+            except Exception:                      # noqa: BLE001
+                pr = []
         raw = {"publish": str(info.get("publishDate") or ""),
                "pe": [[str(x.get("tradeDate")), x.get("peg")] for x in pe
                       if x.get("peg") is not None],
                "close": [[str(x.get("tradeDate")), x.get("close")] for x in pr
                          if x.get("close") is not None]}
+        # 中证 WAF 403 兜底（2026-11-06 实测 info/perf 双 403）：缺哪条腿就回退 v1 旧缓存，
+        # 保住点位线/近1周与周日全量刷新（v1 有旧值；新指数无 v1 则接受空、等解封）
+        for field in ("pe", "close"):
+            if not raw[field]:
+                try:
+                    old = D._load_cache(f"eqcs_v1_{code}", 24 * 365)
+                    if old and old.get(field):
+                        raw[field] = old[field]
+                except Exception:                  # noqa: BLE001
+                    pass
         if not raw["pe"] and not raw["close"]:
             return None
         D._save_cache(key, raw)
