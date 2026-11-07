@@ -88,43 +88,60 @@
       +'<span style="font-size:'+(wide?9.5:12)+'px;color:#8a8378;">'+sub+'</span></div>'
       +'<div style="flex:1;min-height:0;overflow:hidden;">'+inner+'</div></div>';
   }
+  function mwRowFill(x, wide, last, idx){
+    var t = MW_TC[x.tier] || ['#eef0f3','#4b5563'];
+    return '<div style="flex:1;display:flex;align-items:center;gap:'+(wide?8:12)+'px;'
+      +'min-height:0;padding:'+(wide?'2px 4px':'4px 6px')+';'
+      +(last?'':'border-bottom:1px solid #f1ebe1;')
+      +(idx%2===1?'background:#fcfaf6;':'')+'">'
+      +'<span style="flex:1;min-width:0;font-size:'+(wide?14:20)+'px;font-weight:700;color:#26231e;'
+      +'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+x.name+'</span>'
+      +'<span style="background:'+t[0]+';color:'+t[1]+';border-radius:999px;padding:'+(wide?'2px 8px':'3px 12px')
+      +';font-size:'+(wide?10.5:13.5)+'px;font-weight:700;white-space:nowrap;flex:0 0 auto;">'+x.tier+'</span>'
+      +'<b style="width:'+(wide?62:84)+'px;text-align:right;font-size:'+(wide?16:24)+'px;color:'+t[1]
+      +';font-variant-numeric:tabular-nums;flex:0 0 auto;">'
+      +(x.percentile==null?'—':x.percentile.toFixed(1)+'%')+'</b>'
+      +'</div>';
+  }
   function buildWeekly(sizeKey){
     var wide = sizeKey === 'wide';
     var score = M.score, level = M.level;
-    /* 情绪象限（左上）：分数 + 核心4数值行（只给数值+少量信息） */
-    var statRows = coreKeys().map(function(k){
-      var v = M.indicators[k]; if (!v) return '';
-      return '<div style="display:flex;align-items:baseline;gap:6px;padding:'
-        +(wide?'3px 0':'5px 0')+';border-bottom:1px dashed #f0eae0;">'
-        +'<span style="flex:1;min-width:0;font-size:'+(wide?11:13.5)+'px;color:#524c44;'
-        +'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+v.label+'</span>'
-        +'<b style="font-size:'+(wide?13:16)+'px;color:#26231e;font-variant-numeric:tabular-nums;">'
-        + v.value + '<span style="font-size:'+(wide?9:11)+'px;color:#8a8378;font-weight:600;">'
-        + (v.unit||'') + '</span></b>'
-        +'<span style="width:'+(wide?54:70)+'px;text-align:right;font-size:'+(wide?11:13.5)
-        +'px;font-weight:650;color:'+heatColor(v.pct)+';">'+(v.pct==null?'—':Math.round(v.pct)+'%')+'</span>'
-        +'</div>';
-    }).join('');
-    var moodInner = '<div style="display:flex;align-items:baseline;gap:7px;">'
-      +'<b style="font-size:'+(wide?40:50)+'px;line-height:1;color:'+LV[level]
-      +';font-variant-numeric:tabular-nums;">'+score+'</b>'
-      +'<span style="font-size:'+(wide?14:18)+'px;font-weight:700;color:'+LV[level]+';">· '+level+'</span>'
-      +'<span style="margin-left:auto;font-size:'+(wide?10:12)+'px;color:#8a8378;">情绪分（百分制）</span></div>'
-      +'<div style="margin-top:'+(wide?4:8)+'px;">'+statRows+'</div>';
-    /* 估值三象限：23 只按分位升序 8/8/7，列表行（非卡片） */
     var list = mwIndices();
     var groups = [list.slice(0,8), list.slice(8,16), list.slice(16,24)];
     var gMeta = [['估值 · 最冷 8 只','第 1-8'], ['估值 · 中间 8 只','第 9-16'],
                  ['估值 · 最热 7 只','第 17-23']];
+    /* 情绪象限：复用环形进度条（market_score 同款）+ 核心4数值行 */
+    var statRows = coreKeys().map(function(k){
+      var v = M.indicators[k]; if (!v) return '';
+      return '<div style="display:flex;align-items:center;gap:6px;padding:'
+        +(wide?'3px 0':'6px 0')+';flex:1;min-height:0;border-bottom:1px dashed #efe4d6;">'
+        +'<span style="flex:1;min-width:0;font-size:'+(wide?11:14.5)+'px;color:#5c564c;'
+        +'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+v.label+'</span>'
+        +'<b style="font-size:'+(wide?13:18)+'px;color:#26231e;font-variant-numeric:tabular-nums;">'
+        + v.value + '<span style="font-size:'+(wide?9:11.5)+'px;color:#8a8378;font-weight:600;">'
+        + (v.unit||'') + '</span></b>'
+        +'<span style="width:'+(wide?56:76)+'px;text-align:right;font-size:'+(wide?11:14.5)
+        +'px;font-weight:700;color:'+heatColor(v.pct)+';">'+(v.pct==null?'—':Math.round(v.pct)+'%')+'</span>'
+        +'</div>';
+    }).join('');
+    var moodInner = '<div style="display:flex;flex-direction:column;align-items:center;height:100%;">'
+      +'<div class="sc-ring" style="width:'+(wide?150:236)+'px;height:'+(wide?150:236)+'px;'
+      +'margin:'+(wide?'2px 0 6px':'6px 0 12px')+';flex:0 0 auto;">'
+      + ring(score, level, 'quad') + '</div>'
+      +'<div style="width:100%;flex:1;display:flex;flex-direction:column;min-height:0;">'
+      + statRows + '</div></div>';
+    /* 估值象限：行 flex:1 自适应填满（解决下半页空） */
     var quads = groups.map(function(g,i){
-      var rows = g.map(function(x){ return mwRow(x, wide); }).join('');
-      return mwQuad(gMeta[i][0], gMeta[i][1], rows, wide, '#524c44');
+      var rows = g.map(function(x,gi){ return mwRowFill(x, wide, gi===g.length-1, gi); }).join('');
+      var inner = '<div style="display:flex;flex-direction:column;height:100%;">'+rows+'</div>';
+      return mwQuad(gMeta[i][0], gMeta[i][1], inner, wide, '#524c44');
     });
     var mood = mwQuad('市场情绪', '核心 4 · 合成权重 40/25/20/15', moodInner, wide, LV[level]);
-    /* 四象限：左上情绪 | 右上最冷 | 左下中间 | 右下最热 */
+    /* 显式高度撑满内容区（head 与绝对定位 foot 之间），四象限等分 */
+    var gridH = wide ? 556 : 1360;
     return '<div class="mx s-'+sizeKey+'">'+head('班马日记本 · 市场周报')
       +'<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:'
-      +(wide?8:12)+'px;padding:'+(wide?'2px 14px 6px 14px':'4px 16px 8px 16px')+';">'
+      +(wide?10:14)+'px;height:'+gridH+'px;padding:'+(wide?'0':'2px 0 0 0')+';">'
       + mood + quads[0] + quads[1] + quads[2]
       +'</div>'
       + foot('指数分位为历史自算估值参考；情绪分与分位均不构成投资建议')
@@ -215,14 +232,14 @@
 
   /* ---------- 小构件 ---------- */
   function ring(score, level, cls){
-    var r = cls==='big' ? 176 : (cls==='cover' ? 132 : 120);
+    var r = cls==='big' ? 176 : (cls==='cover' ? 132 : (cls==='quad' ? 126 : 120));
     var vb = cls==='big' ? 430 : (cls==='cover' ? 360 : 300);
-    var sw = cls==='big' ? 34 : (cls==='cover' ? 26 : 26);
+    var sw = cls==='big' ? 34 : (cls==='cover' ? 26 : (cls==='quad' ? 30 : 26));
     var c = vb/2;
     var C = 2*Math.PI*r, fill = Math.max(0,Math.min(100,score))/100*C;
     var col = LV[level]||'#4b5563';
-    var numSize = cls==='big' ? 132 : (cls==='cover' ? 110 : 92);
-    var lvSize  = cls==='big' ? 40  : (cls==='cover' ? 34  : 30);
+    var numSize = cls==='big' ? 132 : (cls==='cover' ? 110 : (cls==='quad' ? 64 : 92));
+    var lvSize  = cls==='big' ? 40  : (cls==='cover' ? 34  : (cls==='quad' ? 22 : 30));
     return '<svg viewBox="0 0 '+vb+' '+vb+'">'
       +'<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="#efe9e0" stroke-width="'+sw+'"/>'
       +'<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="'+sw+'" stroke-linecap="round"'
