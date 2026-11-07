@@ -156,7 +156,7 @@
       +'<span style="font-size:'+(wide?28:38)+'px;font-weight:800;color:#26231e;">只还在便宜区</span></div>'
       +'<div style="font-size:'+(wide?14:19)+'px;color:#5c564c;margin-top:'+(wide?8:12)+'px;line-height:1.5;">'
       +'23 只大众指数 · '+highL.length+' 只已进高估（'+hotNames+'）</div></div>'
-      +'<div class="sc-ring" style="width:'+(wide?140:196)+'px;height:'+(wide?140:196)+'px;'
+      +'<div class="sc-ring" style="width:'+(wide?160:196)+'px;height:'+(wide?160:196)+'px;'
       +'flex:0 0 auto;">'+ ring(score, level, 'quad') + '</div></div>';
     /* 情绪四数横条 */
     var strip = '<div style="display:flex;gap:'+(wide?8:12)+'px;background:#fff7ec;'
@@ -289,14 +289,14 @@
 
   /* ---------- 小构件 ---------- */
   function ring(score, level, cls){
-    var r = cls==='big' ? 176 : (cls==='cover' ? 132 : (cls==='quad' ? 126 : 120));
+    var r = cls==='big' ? 176 : (cls==='cover' ? 132 : (cls==='quad' ? 132 : 120));
     var vb = cls==='big' ? 430 : (cls==='cover' ? 360 : 300);
-    var sw = cls==='big' ? 34 : (cls==='cover' ? 26 : (cls==='quad' ? 30 : 26));
+    var sw = cls==='big' ? 34 : (cls==='cover' ? 26 : (cls==='quad' ? 26 : 26));
     var c = vb/2;
     var C = 2*Math.PI*r, fill = Math.max(0,Math.min(100,score))/100*C;
     var col = LV[level]||'#4b5563';
-    var numSize = cls==='big' ? 132 : (cls==='cover' ? 110 : (cls==='quad' ? 64 : 92));
-    var lvSize  = cls==='big' ? 40  : (cls==='cover' ? 34  : (cls==='quad' ? 22 : 30));
+    var numSize = cls==='big' ? 132 : (cls==='cover' ? 110 : (cls==='quad' ? 60 : 92));
+    var lvSize  = cls==='big' ? 40  : (cls==='cover' ? 34  : (cls==='quad' ? 20 : 30));
     return '<svg viewBox="0 0 '+vb+' '+vb+'">'
       +'<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="#efe9e0" stroke-width="'+sw+'"/>'
       +'<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="'+sw+'" stroke-linecap="round"'
