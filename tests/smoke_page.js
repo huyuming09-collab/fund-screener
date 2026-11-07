@@ -545,18 +545,9 @@ chk('exportPools：启用且有数据的池（多池=中短债+长债+固收+，
 chk('drawExport 遍历全部可导出池：每池都有行且画布为请求尺寸',
   poolsExp.every(p => { const info = drawExport(cv2, p.id, 'xhs');
     return info.rows > 0 && cv2.width === 1080 && cv2.height === 1620; }));
-if (D.eq_index && (D.eq_index.indices||[]).length) {
-  const eqRows = exportRows('eq_index');
-  const infoE = drawExport(cv2, 'eq_index', 'xhs');
-  const infoW = drawExport(cv2, 'eq_index', 'wide');
-  chk('指数温度计导出：画布尺寸正确 + 只含非红利（红利已拆到天气池，2026-11-06）',
-      eqRows.length === D.eq_index.indices.filter(x => x.module !== 'weather').length
-      && eqRows.every(x => x.module !== 'weather')
-      && infoE.rows >= 1 && infoW.rows >= 1
-      && infoE.rows <= eqRows.length && infoW.rows <= eqRows.length
-      && cv2.width === 1200 && cv2.height === 800);
-  chk('exportPools 含指数估值页签', poolsExp.some(p => p.id === 'eq_index'));
-}
+chk('指数温度计导出已删除、并入市场周报（2026-11-07 拍板）',
+    !poolsExp.some(p => p.id === 'eq_index')
+    && !html.includes('return _drawEqExport'));
 let drawOK = true;
 try { drawExport(cv2,'long_bond','xhs'); drawExport(cv2,'not_a_pool','wide'); } catch(e){ drawOK = false; }
 chk('drawExport 容错：未知池/空池不抛异常', drawOK);
@@ -646,6 +637,7 @@ if (D.market && D.market.indicators) {
       && mktExpJs.includes("'market_score'") && mktExpJs.includes("'market_core'")
       && mktExpJs.includes("'market_ref'") && mktExpJs.includes("'market_cover'")
       && mktExpJs.includes("'market_weekly'") && mktExpJs.includes('buildWeekly')
+      && mktExpJs.includes('CSI932365') && mktExpJs.includes('grid-template-columns:1fr 1fr')
       && !mktExpJs.includes("'market_ind'")
       && mktExpJs.includes('function buildScore')
       && mktExpJs.includes('不构成任何投资建议或基金推介')

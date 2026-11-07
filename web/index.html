@@ -2272,117 +2272,6 @@ function drawZonePoster(canvas, S, cfg){
   return {width: W, height: H, rows: cfg.rows != null ? cfg.rows : shownRows};
 }
 
-function _drawEqExport(canvas, S, rowsLimit){
-  const EQ_TC = {'极低估':['#e3f5ec','#0b6b46'],'低估':['#e9f6ee','#1a7f37'],
-                 '合理偏低':['#eef0f3','#4b5563'],'合理偏高':['#fff3e3','#a85100'],
-                 '高估':['#fdecea','#b3261e']};
-  /* 指数温度计导出（2026-11-06 用户拍板重设计）：
-     ① 删 近1年 / 可选基金 / 最低费率 三列；② 表头"温度表"→"温度计"；
-     ③ 删"估值冷热不是买卖信号"；④ 只标冷热两端——大众精选 + 同族去重
-       （族内按大众优先取第一个命中本温区的，例：证券公司与中证申万证券行业只出一个）；
-     ⑤ 标注"详细温度数据在班马日记本「指数温度计」卡片中查看"；⑥ UI 重排：
-       概览 chip + 分区卡片（左色条/斑马纹/圆角阴影）。 */
-  /* 红利族已拆到天气模块（2026-11-06 拍板）：温度计导出剔除红利 */
-  const all = ((D.eq_index && D.eq_index.indices) || []).filter(x => !isWeatherIdx(x));
-
-  /* ---- 大众精选：族（按大众优先排序，同族去重）+ 独立名单 ---- */
-  const EQ_FAMS = [
-    ['中证国有企业改革','中证央企创新驱动','中证央企结构调整','中证国企一带一路'],
-    ['证券公司','中证申万证券行业','中证证券公司30','中证800证券保险','中证证券保险领先'],
-    ['800地产','国证地产','中证全指房地产'],
-    ['中概互联50','中国互联','港股通互联网','中证沪港深互联网','中证移动互联网'],
-    ['全指医药','中证医药卫生','中证医药50','医药100','中证生物医药','中证医疗',
-     '中证医药健康100策略','中证800制药与生物科技'],
-    ['创新药','港股通创新药','香港创新药','沪港深创新药'],
-    ['半导体','中证半导体产业','中证芯片产业','中证半导体材料设备主题'],
-    ['中证军工','中证国防','中证空天一体军工'],
-    ['新能源汽车','中证新能源','新能源车','中证电池','中证内地低碳经济主题'],
-    ['绿色电力','中证全指电力公用事业','中证全指公用事业'],
-    ['中证煤炭','中证煤炭等权','中证上游资源产业','中证A股资源产业','中证800有色金属',
-     '中证申万有色金属','中证有色金属矿业主题','中证工业有色金属主题','中证稀有金属主题',
-     '中证细分有色金属产业主题'],
-    ['中证红利','中证红利低波动100','中证央企红利50','上证红利','深证红利','标普红利',
-     '300红利LV','红利成长LV','红利低波','消费红利','中证港股通高股息投资',
-     '中证港股通高股息精选','中证港股通央企红利','中证国新港股通央企红利'],
-    ['中证全指自由现金流','中证800自由现金流'],
-    ['主要消费','中证消费50','沪港深消费50','中证全指食品','国证食品',
-     '中证细分食品饮料产业主题','港股通大消费','中证港股通消费主题'],
-    ['恒生科技','中证港股通科技','香港科技'],
-    ['中证畜牧养殖','中证畜牧养殖产业'],
-  ];
-  const EQ_SOLO = ['中证白酒','光伏产业','科技龙头','人工智能','5G通讯','中证动漫游戏',
-    '中证中药','中证家电龙头','创业板','纳指100','中证A500','沪深300','上证50','中证500',
-    '中证1000','科创50','上证综指','深证成指','恒生指数','标普500','中证100','中证银行',
-    '机器人','中证沪深港黄金产业股票'];
-  const pick = (tiers) => {
-    const by = new Map(all.map(x => [x.name, x]));
-    const out = [], seen = new Set();
-    EQ_FAMS.forEach(fam => {
-      const hit = fam.map(n => by.get(n)).find(x => x && tiers.includes(x.tier));
-      if (hit && !seen.has(hit.name)) { out.push(hit); seen.add(hit.name); }
-    });
-    EQ_SOLO.forEach(n => {
-      const x = by.get(n);
-      if (x && tiers.includes(x.tier) && !seen.has(x.name)) { out.push(x); seen.add(x.name); }
-    });
-    return out;
-  };
-  const coldAll = pick(['极低估','低估']).sort((a, b) => a.percentile - b.percentile);
-  const hotAll  = pick(['高估']).sort((a, b) => b.percentile - a.percentile);
-  const nMid = Math.max(0, all.length - coldAll.length - hotAll.length);
-
-  /* 展示行数：海报骨架自适应版面；rowsLimit 时按冷热比例截断 */
-  let cold = coldAll, hot = hotAll;
-  if (rowsLimit) {
-    cold = coldAll.slice(0, Math.max(3, Math.ceil(rowsLimit * 0.7)));
-    hot  = hotAll.slice(0, Math.max(2, Math.floor(rowsLimit * 0.3)));
-  }
-  /* 行内列位（相对卡宽）：[指数][档位徽章][分位][PE][PB] */
-  const cellsEq = w => {
-    const pbR = w - 16, peR = w - 92, pctR = peR - 72;
-    return {nameX: 16, nameW: Math.max(60, pctR - 212), badgeRight: pctR - 84,
-            pctR: pctR, peR: peR, pbR: pbR,
-            lab: [16, null, pctR, peR, pbR], labAlign: ['l', null, 'r', 'r', 'r']};
-  };
-  const renderEq = (ctx, rr, ry, x, w, rowH, px, wide) => {
-    const fN = wide ? 17.5 : 23, fD = wide ? 13.5 : 17;
-    const l1 = ry + Math.round(rowH / 2 + fN * 0.36);
-    ctx.fillStyle = '#26231e'; ctx.font = '600 ' + fN + 'px sans-serif';
-    ctx.fillText(_fitText(ctx, x.name, px.nameW), px.nameX, l1);
-    const tc = EQ_TC[x.tier] || ['#eef0f3', '#4b5563'];
-    const bw = Math.max(wide ? 50 : 64, ctx.measureText(x.tier).width + (wide ? 18 : 24));
-    const bh = Math.max(19, Math.round(rowH * 0.56));
-    ctx.fillStyle = tc[0]; rr(px.badgeRight - bw, ry + Math.round((rowH - bh) / 2), bw, bh, bh / 2); ctx.fill();
-    ctx.fillStyle = tc[1]; ctx.font = '700 ' + (wide ? 13 : 15) + 'px sans-serif';
-    ctx.textAlign = 'center'; ctx.fillText(x.tier, px.badgeRight - bw / 2, ry + rowH / 2 + (wide ? 5 : 6));
-    ctx.textAlign = 'right';
-    ctx.font = '700 ' + (wide ? 16.5 : 21) + 'px sans-serif';
-    ctx.fillText(x.percentile == null ? '—' : x.percentile.toFixed(1) + '%', px.pctR, l1);
-    ctx.fillStyle = '#524c44'; ctx.font = (wide ? 13 : 16) + 'px sans-serif';
-    ctx.fillText(numPos(x.pe, 1), px.peR, l1);
-    ctx.fillText(numPos(x.pb, 2), px.pbR, l1);
-    ctx.textAlign = 'left';
-  };
-  const mkNote = (shown, total) => shown < total ? '共 ' + total + ' 只 · 本图列前 ' + shown + ' 只' : '';
-  const coldZ = {t: '冷区 · 越冷越便宜', icon: '❄️', tint: '#e9f6ee', color: '#0b6b46',
-    n: coldAll.length, list: cold, note: mkNote(cold.length, coldAll.length),
-    labels: ['指数', '', '分位', 'PE', 'PB'], cells: cellsEq, render: renderEq};
-  const hotZ = {t: '热区 · 越热越贵', icon: '🔥', tint: '#fdecea', color: '#b3261e',
-    n: hotAll.length, list: hot, note: mkNote(hot.length, hotAll.length),
-    labels: ['指数', '', '分位', 'PE', 'PB'], cells: cellsEq, render: renderEq};
-  return drawZonePoster(canvas, S, {
-    title: '指数温度计',
-    grad: ['#22c55e', '#eab308', '#ef4444'],
-    subtitle: '大众指数精选 · 同族只列其一 · 只标冷热两端（越冷越便宜）',
-    stats: [
-      {t: '冷端（极低估+低估）', n: coldAll.length, c: '#0b6b46'},
-      {t: '中性', n: nMid, c: '#4b5563'},
-      {t: '热端（高估）', n: hotAll.length, c: '#b3261e'}],
-    zones: [coldZ, hotZ], cols: [[coldZ], [hotZ]], twoCol: true,
-    footer: '详细温度数据在班马日记本「指数温度计」卡片中查看',
-    disc: DISC_EQ});
-}
-
 /* 红利天气导出（2026-11-06 拍板；同日按海报骨架重设计）：三区（阳光/多云阴/雨）、
    天气徽章配色随档位；列=指数/天气/股息率/分位参考/近1周。 */
 function _drawWeatherExport(canvas, S, rowsLimit){
@@ -2457,7 +2346,7 @@ function _drawWeatherExport(canvas, S, rowsLimit){
 function drawExport(canvas, pool, sizeKey, rows){
   const S = EXPORT_SIZES[sizeKey] || EXPORT_SIZES.xhs;
   if (pool === 'div_weather') return _drawWeatherExport(canvas, S, rows);
-  if (pool === 'eq_index') return _drawEqExport(canvas, S, rows);
+  /* 2026-11-07 拍板：指数温度计导出（eq_index/_drawEqExport）删除，估值并入 market_weekly */
   const ps = (D && D.pools && D.pools[pool]) || {};
   const hasPrev = ps.has_prev != null ? !!ps.has_prev : !!(D && D.has_prev);
   /* 债指（v5.17）：全量分组绘制，不套尺寸默认行数（用户 2026-10-22 拍板"截断不合理"）；显式 &rows 仍生效 */
@@ -2707,8 +2596,9 @@ function exportDownload(canvas, pool, sizeKey){
   else done(canvas.toDataURL('image/png'), false);
 }
 function exportPools(){
-  /* 可导出池：数据契约里 enabled 的分类，且该池当期确实有榜单行（旧单池 data.js 回退默认池） */
-  const cats = ((D && D.categories) || []).filter(c=>!(c&&c.hidden));
+  /* 可导出池：数据契约里 enabled 的分类，且该池当期确实有榜单行（旧单池 data.js 回退默认池）
+     2026-11-07 拍板：指数温度计导出（eq_index）删除——估值部分并入市场周报合并图 */
+  const cats = ((D && D.categories) || []).filter(c=>!(c&&c.hidden) && c.id !== 'eq_index');
   const out = cats.filter(c => c && c.id && c.enabled !== false && exportRows(c.id).length > 0)
                   .map(c => ({id: c.id, name: c.name || CATEGORY_LABELS[c.id] || c.id}));
   if (out.length) return out;
@@ -2790,8 +2680,6 @@ function initExport(){
         ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '红利天气·股息率口径')
         : pool === 'index'
         ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '全量分组')   /* v5.17 债指不分 TOP 截断 */
-        : pool === 'eq_index'
-        ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '指数估值·按尺寸行数')
         : EXPORT_SIZES[sizeKey].label) + ' · ' + info.rows + ' 行 · 数据基准 '
         + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）'
         + (pools.length > 1 ? '；「下载全部」逐池出图，浏览器可能询问是否允许多文件下载' : '');
