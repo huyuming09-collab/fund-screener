@@ -118,23 +118,44 @@
       +(x.percentile==null?'—':x.percentile.toFixed(1)+'%')+'</b>'
       +'</div>';
   }
+  function mwRowV4(x, wide, last, idx){
+    var t = MW_TC[x.tier] || ['#eef0f3','#4b5563'];
+    return '<div style="flex:1;display:flex;align-items:center;gap:'+(wide?6:10)+'px;'
+      +'min-height:0;padding:'+(wide?'1px 8px':'3px 12px')+';'
+      +(last?'':'border-bottom:1px solid #f4efe6;')
+      +(idx%2===1?'background:#fcfaf7;':'')+'">'
+      +'<span style="flex:1;min-width:0;font-size:'+(wide?13.5:18.5)+'px;font-weight:700;color:#26231e;'
+      +'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+x.name+'</span>'
+      /* 档位显眼化：徽章加宽加粗、分位数字放大 */
+      +'<span style="background:'+t[0]+';color:'+t[1]+';border-radius:999px;padding:'+(wide?'2px 9px':'3px 13px')
+      +';font-size:'+(wide?11:14)+'px;font-weight:800;white-space:nowrap;flex:0 0 auto;'
+      +'box-shadow:inset 0 0 0 1.5px '+t[1]+'33;">'+x.tier+'</span>'
+      +'<b style="width:'+(wide?62:88)+'px;text-align:right;font-size:'+(wide?16:25)+'px;font-weight:800;color:'
+      +t[1]+';font-variant-numeric:tabular-nums;flex:0 0 auto;">'
+      +(x.percentile==null?'—':x.percentile.toFixed(1)+'%')+'</b>'
+      +'</div>';
+  }
   function buildWeekly(sizeKey){
     var wide = sizeKey === 'wide';
     var score = M.score, level = M.level;
     var list = mwIndices();
-    var cheap = list.filter(function(x){ return x.percentile!=null && x.percentile<30; }).length;
-    var hotL = list.filter(function(x){ return x.tier==='高估'; });
-    var hotNames = hotL.slice(0,3).map(function(x){ return x.name.replace(/^中证/,''); }).join('、');
-    var left = list.slice(0,12), right = list.slice(12);
-    /* 头条：超大钩子数字 + 右侧环形情绪 */
+    /* 按档位分三区（2026-11-07 修正：此前按位置切12/12 把低估混进热区）：
+       低估=极低估+低估；正常=合理偏低+正常+合理偏高；高估=高估 */
+    var isLow = function(x){ return x.tier==='极低估' || x.tier==='低估'; };
+    var isHigh = function(x){ return x.tier==='高估'; };
+    var lowL = list.filter(isLow);
+    var midL = list.filter(function(x){ return !isLow(x) && !isHigh(x); });
+    var highL = list.filter(isHigh);
+    var hotNames = highL.slice(0,3).map(function(x){ return x.name.replace(/^中证/,''); }).join('、');
+    /* 头条钩子 */
     var hook = '<div style="display:flex;align-items:flex-start;gap:'+(wide?20:32)+'px;">'
       +'<div style="flex:1;min-width:0;">'
       +'<div style="display:flex;align-items:baseline;gap:'+(wide?10:14)+'px;">'
       +'<b style="font-size:'+(wide?72:92)+'px;line-height:1;color:#0b6b46;font-variant-numeric:tabular-nums;">'
-      + cheap + '</b>'
+      + lowL.length + '</b>'
       +'<span style="font-size:'+(wide?28:38)+'px;font-weight:800;color:#26231e;">只还在便宜区</span></div>'
       +'<div style="font-size:'+(wide?14:19)+'px;color:#5c564c;margin-top:'+(wide?8:12)+'px;line-height:1.5;">'
-      +'23 只大众指数 · '+hotL.length+' 只已进高估（'+hotNames+'）</div></div>'
+      +'23 只大众指数 · '+highL.length+' 只已进高估（'+hotNames+'）</div></div>'
       +'<div class="sc-ring" style="width:'+(wide?140:196)+'px;height:'+(wide?140:196)+'px;'
       +'flex:0 0 auto;">'+ ring(score, level, 'quad') + '</div></div>';
     /* 情绪四数横条 */
@@ -153,31 +174,32 @@
           +'<span style="margin-left:auto;font-size:'+(wide?10.5:13)+'px;font-weight:700;color:'
           + heatColor(v.pct)+';">'+(v.pct==null?'—':Math.round(v.pct)+'%')+'</span></div></div>';
       }).join('') + '</div>';
-    /* 双列列表卡（左冷右热） */
-    var col = function(title, icon, arr, tint, color){
+    /* 三区卡：标题带条数徽章；区域大小按条数弹性（左列低估 flex:13，右列 正常:flex:7 / 高估:flex:3） */
+    var zone = function(title, icon, arr, tint, color, grow){
       var rows = arr.map(function(x,gi){ return mwRowV4(x, wide, gi===arr.length-1, gi); }).join('');
-      return '<div style="flex:1;min-width:0;background:#ffffff;border-radius:14px;overflow:hidden;'
+      return '<div style="flex:'+grow+' 1 0;background:#ffffff;border-radius:14px;overflow:hidden;'
         +'box-shadow:0 3px 12px rgba(38,35,30,.06);display:flex;flex-direction:column;min-height:0;">'
-        +'<div style="display:flex;align-items:center;gap:8px;background:'+tint+';padding:'
-        +(wide?7:11)+'px 14px;flex:0 0 auto;">'
-        +'<span style="font-size:'+(wide?15:20)+'px;">'+icon+'</span>'
-        +'<b style="font-size:'+(wide?13:17)+'px;color:'+color+';">'+title+'</b>'
-        +'<span style="margin-left:auto;font-size:'+(wide?11:14)+'px;font-weight:700;color:'+color+';">'
+        +'<div style="display:flex;align-items:center;gap:9px;background:'+tint+';padding:'
+        +(wide?7:12)+'px 14px;flex:0 0 auto;border-left:6px solid '+color+';">'
+        +'<span style="font-size:'+(wide?16:22)+'px;">'+icon+'</span>'
+        +'<b style="font-size:'+(wide?14:19)+'px;color:'+color+';letter-spacing:.5px;">'+title+'</b>'
+        +'<span style="margin-left:auto;background:'+color+';color:#fff;border-radius:999px;'
+        +'padding:2px '+(wide?9:13)+'px;font-size:'+(wide?11:15)+'px;font-weight:800;">'
         + arr.length + ' 只</span></div>'
         +'<div style="flex:1;display:flex;flex-direction:column;min-height:0;">'+rows+'</div></div>';
     };
     var lists = '<div style="flex:1;min-height:0;display:flex;gap:'+(wide?10:14)+'px;">'
-      + col('最冷 · 从这里开始找', '❄️', left, '#e9f6ee', '#0b6b46')
-      + col('最热 · 高位警惕', '🔥', right, '#fdecea', '#b3261e')
-      +'</div>';
-    /* 主体：显式高度撑满 head 与绝对 foot 之间；头条→情绪条→双列(弹性填充) */
+      +'<div style="flex:13;min-width:0;display:flex;">'
+      + zone('低估区 · 越低越便宜', '❄️', lowL, '#e9f6ee', '#0b6b46', 13) + '</div>'
+      +'<div style="flex:10;min-width:0;display:flex;flex-direction:column;gap:'+(wide?8:12)+'px;">'
+      + zone('正常区 · 不贵不便宜', '⛅', midL, '#eef0f3', '#475569', 7)
+      + zone('高估区', '🔥', highL, '#fdecea', '#b3261e', 3)
+      +'</div></div>';
     var bodyH = wide ? 556 : 1360;
     return '<div class="mx s-'+sizeKey+'">'+head('班马日记本 · 市场周报')
       +'<div style="height:'+bodyH+'px;display:flex;flex-direction:column;gap:'
       +(wide?8:14)+'px;">'
-      + hook
-      + strip
-      + lists
+      + hook + strip + lists
       +'</div>'
       + foot('指数分位为历史自算估值参考；情绪分与分位均不构成投资建议')
       +'</div>';
