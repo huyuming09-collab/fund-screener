@@ -103,46 +103,81 @@
       +(x.percentile==null?'—':x.percentile.toFixed(1)+'%')+'</b>'
       +'</div>';
   }
+  function mwRowV4(x, wide, last, idx){
+    var t = MW_TC[x.tier] || ['#eef0f3','#4b5563'];
+    return '<div style="flex:1;display:flex;align-items:center;gap:'+(wide?6:10)+'px;'
+      +'min-height:0;padding:'+(wide?'1px 8px':'3px 12px')+';'
+      +(last?'':'border-bottom:1px solid #f4efe6;')
+      +(idx%2===1?'background:#fcfaf7;':'')+'">'
+      +'<span style="flex:1;min-width:0;font-size:'+(wide?13.5:18)+'px;font-weight:700;color:#26231e;'
+      +'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+x.name+'</span>'
+      +'<span style="background:'+t[0]+';color:'+t[1]+';border-radius:999px;padding:'+(wide?'1px 7px':'2px 10px')
+      +';font-size:'+(wide?10:12.5)+'px;font-weight:700;white-space:nowrap;flex:0 0 auto;">'+x.tier+'</span>'
+      +'<b style="width:'+(wide?56:78)+'px;text-align:right;font-size:'+(wide?14.5:21)+'px;color:'+t[1]
+      +';font-variant-numeric:tabular-nums;flex:0 0 auto;">'
+      +(x.percentile==null?'—':x.percentile.toFixed(1)+'%')+'</b>'
+      +'</div>';
+  }
   function buildWeekly(sizeKey){
     var wide = sizeKey === 'wide';
     var score = M.score, level = M.level;
     var list = mwIndices();
-    var groups = [list.slice(0,8), list.slice(8,16), list.slice(16,24)];
-    var gMeta = [['估值 · 最冷 8 只','第 1-8'], ['估值 · 中间 8 只','第 9-16'],
-                 ['估值 · 最热 7 只','第 17-23']];
-    /* 情绪象限：复用环形进度条（market_score 同款）+ 核心4数值行 */
-    var statRows = coreKeys().map(function(k){
-      var v = M.indicators[k]; if (!v) return '';
-      return '<div style="display:flex;align-items:center;gap:6px;padding:'
-        +(wide?'3px 0':'6px 0')+';flex:1;min-height:0;border-bottom:1px dashed #efe4d6;">'
-        +'<span style="flex:1;min-width:0;font-size:'+(wide?11:14.5)+'px;color:#5c564c;'
-        +'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+v.label+'</span>'
-        +'<b style="font-size:'+(wide?13:18)+'px;color:#26231e;font-variant-numeric:tabular-nums;">'
-        + v.value + '<span style="font-size:'+(wide?9:11.5)+'px;color:#8a8378;font-weight:600;">'
-        + (v.unit||'') + '</span></b>'
-        +'<span style="width:'+(wide?56:76)+'px;text-align:right;font-size:'+(wide?11:14.5)
-        +'px;font-weight:700;color:'+heatColor(v.pct)+';">'+(v.pct==null?'—':Math.round(v.pct)+'%')+'</span>'
-        +'</div>';
-    }).join('');
-    var moodInner = '<div style="display:flex;flex-direction:column;align-items:center;height:100%;">'
-      +'<div class="sc-ring" style="width:'+(wide?150:236)+'px;height:'+(wide?150:236)+'px;'
-      +'margin:'+(wide?'2px 0 6px':'6px 0 12px')+';flex:0 0 auto;">'
-      + ring(score, level, 'quad') + '</div>'
-      +'<div style="width:100%;flex:1;display:flex;flex-direction:column;min-height:0;">'
-      + statRows + '</div></div>';
-    /* 估值象限：行 flex:1 自适应填满（解决下半页空） */
-    var quads = groups.map(function(g,i){
-      var rows = g.map(function(x,gi){ return mwRowFill(x, wide, gi===g.length-1, gi); }).join('');
-      var inner = '<div style="display:flex;flex-direction:column;height:100%;">'+rows+'</div>';
-      return mwQuad(gMeta[i][0], gMeta[i][1], inner, wide, '#524c44');
-    });
-    var mood = mwQuad('市场情绪', '核心 4 · 合成权重 40/25/20/15', moodInner, wide, LV[level]);
-    /* 显式高度撑满内容区（head 与绝对定位 foot 之间），四象限等分 */
-    var gridH = wide ? 556 : 1360;
+    var cheap = list.filter(function(x){ return x.percentile!=null && x.percentile<30; }).length;
+    var hotL = list.filter(function(x){ return x.tier==='高估'; });
+    var hotNames = hotL.slice(0,3).map(function(x){ return x.name.replace(/^中证/,''); }).join('、');
+    var left = list.slice(0,12), right = list.slice(12);
+    /* 头条：超大钩子数字 + 右侧环形情绪 */
+    var hook = '<div style="display:flex;align-items:flex-start;gap:'+(wide?20:32)+'px;">'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div style="display:flex;align-items:baseline;gap:'+(wide?10:14)+'px;">'
+      +'<b style="font-size:'+(wide?72:92)+'px;line-height:1;color:#0b6b46;font-variant-numeric:tabular-nums;">'
+      + cheap + '</b>'
+      +'<span style="font-size:'+(wide?28:38)+'px;font-weight:800;color:#26231e;">只还在便宜区</span></div>'
+      +'<div style="font-size:'+(wide?14:19)+'px;color:#5c564c;margin-top:'+(wide?8:12)+'px;line-height:1.5;">'
+      +'23 只大众指数 · '+hotL.length+' 只已进高估（'+hotNames+'）</div></div>'
+      +'<div class="sc-ring" style="width:'+(wide?140:196)+'px;height:'+(wide?140:196)+'px;'
+      +'flex:0 0 auto;">'+ ring(score, level, 'quad') + '</div></div>';
+    /* 情绪四数横条 */
+    var strip = '<div style="display:flex;gap:'+(wide?8:12)+'px;background:#fff7ec;'
+      +'border:1px solid #f3e2cd;border-radius:14px;padding:'+(wide?8:12)+'px;">'
+      + coreKeys().map(function(k){
+        var v = M.indicators[k]; if(!v) return '';
+        return '<div style="flex:1;min-width:0;background:#ffffff;border-radius:10px;padding:'
+          +(wide?'6px 8px':'10px 12px')+';">'
+          +'<div style="font-size:'+(wide?10.5:13)+'px;color:#8a8378;white-space:nowrap;'
+          +'overflow:hidden;text-overflow:ellipsis;">'+v.label+'</div>'
+          +'<div style="display:flex;align-items:baseline;gap:4px;margin-top:2px;">'
+          +'<b style="font-size:'+(wide?14:18)+'px;color:#26231e;font-variant-numeric:tabular-nums;">'
+          + v.value + '<span style="font-size:'+(wide?9:11)+'px;color:#8a8378;font-weight:600;">'
+          + (v.unit||'') + '</span></b>'
+          +'<span style="margin-left:auto;font-size:'+(wide?10.5:13)+'px;font-weight:700;color:'
+          + heatColor(v.pct)+';">'+(v.pct==null?'—':Math.round(v.pct)+'%')+'</span></div></div>';
+      }).join('') + '</div>';
+    /* 双列列表卡（左冷右热） */
+    var col = function(title, icon, arr, tint, color){
+      var rows = arr.map(function(x,gi){ return mwRowV4(x, wide, gi===arr.length-1, gi); }).join('');
+      return '<div style="flex:1;min-width:0;background:#ffffff;border-radius:14px;overflow:hidden;'
+        +'box-shadow:0 3px 12px rgba(38,35,30,.06);display:flex;flex-direction:column;min-height:0;">'
+        +'<div style="display:flex;align-items:center;gap:8px;background:'+tint+';padding:'
+        +(wide?7:11)+'px 14px;flex:0 0 auto;">'
+        +'<span style="font-size:'+(wide?15:20)+'px;">'+icon+'</span>'
+        +'<b style="font-size:'+(wide?13:17)+'px;color:'+color+';">'+title+'</b>'
+        +'<span style="margin-left:auto;font-size:'+(wide?11:14)+'px;font-weight:700;color:'+color+';">'
+        + arr.length + ' 只</span></div>'
+        +'<div style="flex:1;display:flex;flex-direction:column;min-height:0;">'+rows+'</div></div>';
+    };
+    var lists = '<div style="flex:1;min-height:0;display:flex;gap:'+(wide?10:14)+'px;">'
+      + col('最冷 · 从这里开始找', '❄️', left, '#e9f6ee', '#0b6b46')
+      + col('最热 · 高位警惕', '🔥', right, '#fdecea', '#b3261e')
+      +'</div>';
+    /* 主体：显式高度撑满 head 与绝对 foot 之间；头条→情绪条→双列(弹性填充) */
+    var bodyH = wide ? 556 : 1360;
     return '<div class="mx s-'+sizeKey+'">'+head('班马日记本 · 市场周报')
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:'
-      +(wide?10:14)+'px;height:'+gridH+'px;padding:'+(wide?'0':'2px 0 0 0')+';">'
-      + mood + quads[0] + quads[1] + quads[2]
+      +'<div style="height:'+bodyH+'px;display:flex;flex-direction:column;gap:'
+      +(wide?8:14)+'px;">'
+      + hook
+      + strip
+      + lists
       +'</div>'
       + foot('指数分位为历史自算估值参考；情绪分与分位均不构成投资建议')
       +'</div>';
