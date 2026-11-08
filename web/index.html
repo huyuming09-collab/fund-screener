@@ -2469,10 +2469,15 @@ function drawExport(canvas, pool, sizeKey, rows){
       return top + cardH;
     }
     if (wide) {
-      /* 2026-11-09 修：久期三档=3分段，原写死两列会把第3段画到画布外——按分段数自适应列宽 */
-      const gap = 20, _n = Math.max(segs.length, 1);
-      const colW = Math.floor((W - PAD * 2 - gap * (_n - 1)) / _n);
-      segs.forEach((s, i) => seg(s, PAD + i * (colW + gap), colW, rowsTop));
+      /* 2026-11-09 用户定：保持两列——第1列=第1档；其余档（中债+长债，量少）纵向堆进第2列 */
+      const gap = 20, colW = Math.floor((W - PAD * 2 - gap) / 2);
+      if (segs.length <= 2) {
+        segs.forEach((s, i) => seg(s, PAD + i * (colW + gap), colW, rowsTop));
+      } else {
+        seg(segs[0], PAD, colW, rowsTop);
+        let y2 = rowsTop;
+        segs.slice(1).forEach(s => { y2 = seg(s, PAD + colW + gap, colW, y2) + 10; });
+      }
     } else {
       let y = rowsTop;
       segs.forEach(s => { y = seg(s, PAD, W - PAD * 2, y) + 10; });
