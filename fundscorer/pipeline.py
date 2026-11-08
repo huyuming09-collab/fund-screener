@@ -655,7 +655,7 @@ def run_index_only(log=print) -> int:
 
     沿用上期榜单 payload（data/top20.json）只替换 eq_index/market 两段后重写
     web/data.js——不碰债基筛选、CSV、榜史（榜史仍只由周日全量写）。
-    触发：周五 17:00 `FundScreener-Index-Fri`（温度计/红利天气/市场情绪三内容共用
+    触发：周五 18:00 `FundScreener-Index-Fri`（温度计/红利天气/市场情绪三内容共用
     这一场拉取，周六不交易故周五统一拉）。
     """
     import json as _json

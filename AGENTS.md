@@ -51,7 +51,7 @@ node tests/smoke_page.js                  # 现基线：SMOKE PASS
 - 社媒配图**只导出榜单图**：`web/index.html?export=<pool>&size=xhs|wide`（`<pool>` = `short_bond` / `long_bond` / `fixed_plus`）
 - 情绪周榜图（与榜单导出同一工作台 `index.html`）：`?export=market_score|market_core|market_ref|market_cover&size=…&bare=1`（大图 / 核心4详解 / 参考4详解 / 封面 1200×510；实现 `web/market-export.js`，2026-11-04 拍板、2026-11-05 删单指标卡，数据随 data.js 每周日更新，属每周固定模板）
 - 红利天气导出（2026-11-06 拍板）：`index.html?export=div_weather&size=xhs|wide&bare=1`（红利族股息率天气，独立于温度计）；卡片墙页 `web/weather.html`，详情经 `?section=index&cat=eq_index&eqdetail=<code>` 深链回 index
-- 市场周报合并图（2026-11-06 拍板；**2026-11-07 改四象限**）：`index.html?export=market_weekly&size=xhs|wide&bare=1`——**四象限**：左上=情绪分+核心4数值，右上/左下/右下=**23 只大众指数列表**（用户定单按 code 匹配，分位升序 8/8/7，列表行非卡片，引流定位）；`web/market-export.js` 第 5 个情绪池。**同日拍板：原指数温度计导出（eq_index/_drawEqExport）删除，估值并入本图作为新封面导出**——每周五 17:00 `FundScreener-Index-Fri` 段级更新（`pipeline --sections=eq,market`；2026-11-08 由 18:00 改 17:00"五点抓取"）后出图
+- 市场周报合并图（2026-11-06 拍板；**2026-11-07 改四象限**）：`index.html?export=market_weekly&size=xhs|wide&bare=1`——**四象限**：左上=情绪分+核心4数值，右上/左下/右下=**23 只大众指数列表**（用户定单按 code 匹配，分位升序 8/8/7，列表行非卡片，引流定位）；`web/market-export.js` 第 5 个情绪池。**同日拍板：原指数温度计导出（eq_index/_drawEqExport）删除，估值并入本图作为新封面导出**——每周五 18:00 `FundScreener-Index-Fri` 段级更新（`pipeline --sections=eq,market`；2026-11-08 用户定"周五稍晚、太早数据没更完"保持 18:00，**周日全量同日改 17:00**）后出图
 - 全分类工作台：`?export=all`
 - **不要再新增封面 / 对照 / 直方图 / 表格类导出模式**——这类图不随周更维护，会与当期数据脱节；确有需要先问用户
 - **导出必须带 `&bare=1`**：裸 URL 会把顶部黑色操作条与提示行截进图（已多次踩坑）；出图后抽检顶部无暗条（y≈20 采样行，暗像素占比 <20%）
@@ -79,7 +79,7 @@ node tests/smoke_page.js                  # 现基线：SMOKE PASS
 
 - Python 虚拟环境：`.venv/`（**不要**用系统 python；本机曾出现 conda 污染导致缺依赖）
 - 数据抓取仅在**运行日**做：平时跑管线一律 `--skip-refresh`，避免触发基金公司限频
-- 周更由 Windows 计划任务 `FundScreener-Weekly` **每周日 19:00**（Asia/Shanghai）调 `scripts/weekly_update_win.cmd` → `weekly_update.sh`：管线 → 素材包（本地）→ 守卫 → 提交推送；**失败弹 toast 通知**（`scripts/notify_fail.ps1`，用户 2026-11-01 定「更新不成功要提示」）。**为何周日不是周五**：净值源天天基金复权净值 T+1/T+2（债基为主），实测周五晚/周六上午只有到周四的净值，周日 14:15 后才齐（2026-11-01 实测）；见 STATUS §6（2026-10-31 / 2026-11-01）。**不自算复权净值**：分红日自算会漏分红算出幻影亏损（110017 单位净值跌1.1%实为+0.22%），污染评分，故只用官方复权。
+- 周更由 Windows 计划任务 `FundScreener-Weekly` **每周日 17:00**（Asia/Shanghai；2026-11-08 由 19:00 改 17:00——用户定"19:00 跑完再出岔子就来不及当晚发帖，提前留故障余量"）→ bash 直调 `scripts/weekly_auto.sh update`（2026-11-08 改 bash 直调，绕开 .cmd 批处理解析碎裂）→ `weekly_update.sh`：管线 → 素材包（本地）→ 守卫 → 提交推送；**失败弹 toast 通知**（`scripts/notify_fail.ps1`，用户 2026-11-01 定「更新不成功要提示」）。**为何周日不是周五**：净值源天天基金复权净值 T+1/T+2（债基为主），实测周五晚/周六上午只有到周四的净值，周日 14:15 后才齐（2026-11-01 实测）；见 STATUS §6（2026-10-31 / 2026-11-01）。**不自算复权净值**：分红日自算会漏分红算出幻影亏损（110017 单位净值跌1.1%实为+0.22%），污染评分，故只用官方复权。
 
 ## 9. Token 效率纪律（2026-10-27 用户定，长期有效）
 

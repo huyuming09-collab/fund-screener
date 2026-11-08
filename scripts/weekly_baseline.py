@@ -4,7 +4,7 @@
 背景（用户 2026-10-29 定）：周中可能为了抓数据跑一次管线，会把 rank_history/top20 写到当天，
 导致当期产物的 `rank_prev` 指向"周中"而不是"上一期基准"。规则是
 **周更文案的名次变化一律对比上一期周更的数据基准日**（快照按 asof 命名，asof 均为周五；
-周更运行日已改每周日 19:00，见 AGENTS §8），所以：
+周更运行日已改每周日 17:00（2026-11-08 由19:00改，见 AGENTS §8），所以：
 
   python scripts/weekly_baseline.py save            # 周更成功后调用（wrapper 内），存当期快照
   python scripts/weekly_baseline.py list            # 看有哪些基准

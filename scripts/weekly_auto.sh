@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 周更任务统一入口（2026-11-08：绕开 cmd.exe 批处理解析碎裂问题）
-# 用法: weekly_auto.sh update   -> 全量周更（周日 19:00 任务用）
-#       weekly_auto.sh index    -> 指数系段级（周五 17:00 任务用）
+# 用法: weekly_auto.sh update   -> 全量周更（周日 17:00 任务用，2026-11-08 由19:00改17:00留故障余量）
+#       weekly_auto.sh index    -> 指数系段级（周五 18:00 任务用，2026-11-08 定保持18:00）
 # 失败: 调 notify_fail.ps1 弹 toast（保留原 win.cmd 的通知口径）
 set -u
 cd "$(dirname "$0")/.."
