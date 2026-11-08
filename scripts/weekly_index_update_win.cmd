@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-REM 周五 18:00 指数系段级更新 Windows 入口（2026-11-06 周更排期拍板）
-REM 用 Git Bash 跑 scripts/weekly_index_update.sh（只刷 eq+market 段，
-REM 不碰债基榜与榜史；守卫与"只 add web/data.js"口径同周更脚本）。
-REM 失败弹 toast（同 weekly_update_win.cmd 的通知口径）。
+REM Friday 18:00 index-section update entry (schedule decided 2026-11-06).
+REM Runs scripts/weekly_index_update.sh in Git Bash: only eq+market sections,
+REM bond pools and rank history untouched; guard and "only add web/data.js"
+REM follow weekly_update.sh; failure pops toast via notify_fail.ps1.
 cd /d "%~dp0.."
 set "LOG=data\pipeline_cron.log"
 set "BASH=D:\git\Git\bin\bash.exe"
@@ -14,8 +14,8 @@ echo [%DATE% %TIME%] weekly_index_update_win.cmd start >> "%LOG%"
 set "RC=!ERRORLEVEL!"
 
 if not "!RC!"=="0" (
-  echo [%DATE% %TIME%] 指数系段级更新失败 rc=!RC! >> "%LOG%"
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0notify_fail.ps1" -Msg "指数系周更失败 rc=!RC!，请查 data\pipeline_cron.log" >> "%LOG%" 2>&1
+  echo [%DATE% %TIME%] index section update failed rc=!RC! >> "%LOG%"
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0notify_fail.ps1" -Msg "index weekly failed rc=!RC!, check data\pipeline_cron.log" >> "%LOG%" 2>&1
 )
 echo [%DATE% %TIME%] weekly_index_update_win.cmd exit=!RC! >> "%LOG%"
 exit /b !RC!
