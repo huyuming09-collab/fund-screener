@@ -2469,7 +2469,9 @@ function drawExport(canvas, pool, sizeKey, rows){
       return top + cardH;
     }
     if (wide) {
-      const gap = 20, colW = Math.floor((W - PAD * 2 - gap) / 2);
+      /* 2026-11-09 修：久期三档=3分段，原写死两列会把第3段画到画布外——按分段数自适应列宽 */
+      const gap = 20, _n = Math.max(segs.length, 1);
+      const colW = Math.floor((W - PAD * 2 - gap * (_n - 1)) / _n);
       segs.forEach((s, i) => seg(s, PAD + i * (colW + gap), colW, rowsTop));
     } else {
       let y = rowsTop;
