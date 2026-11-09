@@ -304,10 +304,15 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     #      病根：原全组混久期取中位（3-5 年多数派定线），长久期结构性贴线必沉底
     #      （博时5-10农发 3.36% > 混合中位 1.40%×2 沉底；档内中位≈3.0%×2 则不沉）。
     #      无论是否开闸，picks 一律重排为 短→中→长 档序（档内保持分数降序）。
-    # v3（2026-11-09 拍板）：回撤护栏闸废除；存单类并入所在久期档但名次沉底
+    # v3（2026-11-09 拍板）：回撤护栏闸废除；存单类并入所在久期档但名次沉底。
+    # 展示上限（2026-11-09 用户拍板"内容太多"）：按池内归一总数 ×30%（与历史展示量
+    # 相当，比例随池大小伸缩），按分数序截断；存单强制保留并列档内最后。
+    _cap = max(4, int(len(picks) * 0.30 + 0.5))
+    _show0 = picks[:_cap] + [r for r in picks[_cap:]
+                             if "存单" in str(r.get("name") or "")]
     _TIER_ORDER = ("dur_s", "dur_m", "dur_l")
     _by_tier = {t: [] for t in _TIER_ORDER}
-    for r in picks:
+    for r in _show0:
         _by_tier.setdefault(r.get("tier"), []).append(r)
     _reordered = []
     for _t in _TIER_ORDER:

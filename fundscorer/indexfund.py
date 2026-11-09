@@ -403,6 +403,10 @@ def v3_index_scores(rows):
     KEY = {"dual": "ret_dual", "vol": "vol_low", "mdd": "mdd_low",
            "fee": "fee_low", "scale": "scale_high", "exc": "abs_exc_low"}
     res = []
+    # 展示分整体上移（2026-11-09 用户拍板："分数只是展示效果，前排不该显得被扣分"）：
+    # display = A + B × raw（单调保序 → 归一/档内排名不变）；分项按同比例摊，
+    # 保证 Σdetail == score（cards 复算契约）。
+    A, B = 55.0, 0.45
     for i in range(n):
         parts = [(p["dual"][i], W["ret"], KEY["dual"]),
                  (p["vol"][i], W["vol"], KEY["vol"]),
@@ -415,9 +419,17 @@ def v3_index_scores(rows):
         if ok:
             tw = sum(w for _, w, _ in ok)                        # 缺值权重重归一
             for v, w, k in ok:
-                detail[k] = round(v * w / tw, 3)
-        iq = sum(detail.get(k, 0) for k in ("ret_dual", "vol_low", "mdd_low"))
-        tq = sum(detail.get(k, 0) for k in ("fee_low", "scale_high", "abs_exc_low"))
-        res.append({"score": round(iq + tq, 1), "iq": round(iq, 1),
-                    "tq": round(tq, 1), "detail": detail})
+                detail[k] = v * w / tw
+            raw = sum(detail.values())
+            if raw > 0:
+                detail = {k: round(v * (B + A / raw), 3)
+                          for k, v in detail.items()}           # Σ = A + B×raw
+            else:
+                detail = {"base": A}
+        else:
+            detail = {"base": A}
+        iq = round(sum(detail.get(k, 0) for k in ("ret_dual", "vol_low", "mdd_low")), 1)
+        tq = round(sum(detail.get(k, 0) for k in ("fee_low", "scale_high", "abs_exc_low")), 1)
+        res.append({"score": round(sum(detail.values()), 1), "iq": iq,
+                    "tq": tq, "detail": detail})
     return res
