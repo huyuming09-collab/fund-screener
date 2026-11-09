@@ -408,8 +408,9 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
     else:
         P = composite_percentiles(pool)
         p1_label = f"P1 综合分位≥{cfg['comp_pct_min'] * 100:g}%"
-    keep &= P["mpct"] >= cfg["comp_pct_min"]
-    funnel[p1_label] = int(keep.sum())
+    if not index_fund:      # v3（2026-11-09 拍板）：债指废除 P1 相对排位闸（广发案例）
+        keep &= P["mpct"] >= cfg["comp_pct_min"]
+        funnel[p1_label] = int(keep.sum())
     yearly_branch = {b: yearly[b] for b in pool["base"] if b in yearly}
     Y = pd.DataFrame(yearly_branch).T
     if index_fund:
@@ -434,8 +435,9 @@ def screen_candidates(records: list[dict], spikes: dict, yearly: dict,
              for i, b in zip(pool.index, pool["base"])},
             dtype="float64")
         p2_label = f"P2 年度分位中位≥{cfg['yearly_median_min'] * 100:g}%"
-    keep &= med >= cfg["yearly_median_min"]
-    funnel[p2_label] = int(keep.sum())
+    if not index_fund:      # v3（2026-11-09 拍板）：债指废除 P2 相对排位闸
+        keep &= med >= cfg["yearly_median_min"]
+        funnel[p2_label] = int(keep.sum())
 
     out = pool[keep].copy()
     out["comp_pct"] = P.loc[keep, "mpct"]

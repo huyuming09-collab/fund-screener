@@ -320,3 +320,102 @@ def pick_per_index(rows):
                         na_position="last", kind="mergesort")
     keep = df.groupby("idx", sort=False).head(1)
     return keep.to_dict("records")
+
+
+def v3_index_scores(rows):
+    """债指单列榜 v3「指数本位」评分（2026-11-09 用户拍板：70/30、废 P1/P2 与回撤闸、
+    5 亿维持、存单沉底由调用方处理）。
+
+    score = 0.70×IQ + 0.30×TQ（百分制；久期档内分位，档内<5只回退全池分位）
+    IQ 指数质量 = 0.50×双窗收益(近3y+近5y均值,高优) + 0.25×波动(低优) + 0.25×回撤(低优)
+    TQ 跟踪载体 = 0.40×费率(低优) + 0.35×规模(高优) + 0.25×|超额|(低优)
+      ——复制型基金 |超额|≈0 应得高分（替代旧"正超额奖/负超额罚"，修失真）
+    缺值：该因子不计入、行内权重按剩余折算（绝不垫中位）；整块全缺 → 该块 0 分。
+    作废字段（2026-11-09 实证诊断）：bench_ann_5y 档内全同零区分；
+    track_dev 恒空（同指数组<3 不产出）。
+
+    返回与 rows 对齐的 [{score, iq, tq, detail}]；detail 各项已含块权重
+    （Σdetail == score，满足 cards 的 raw_score 复算契约）。
+    """
+    W = {"ret": 0.70 * 0.50, "vol": 0.70 * 0.25, "mdd": 0.70 * 0.25,
+         "fee": 0.30 * 0.40, "scale": 0.30 * 0.35, "exc": 0.30 * 0.25}
+
+    def _num(v):
+        try:
+            return None if v is None else float(v)
+        except (TypeError, ValueError):
+            return None
+
+    vals = []
+    for r in rows:
+        m = r.get("metrics") if isinstance(r.get("metrics"), dict) else {}
+        sc = r.get("screening") if isinstance(r.get("screening"), dict) else {}
+        r3 = _num(r.get("ret_3y") or m.get("ret_3y"))
+        r5 = _num(r.get("ret_5y") or m.get("ret_5y"))
+        if r3 is not None and r5 is not None:
+            dual = (r3 + r5) / 2
+        else:
+            dual = r3 if r3 is not None else r5
+        exc = _num(r.get("excess_5y") or m.get("excess_5y"))
+        vals.append({
+            "dual": dual,
+            "vol": _num(r.get("vol_5y") or m.get("vol_5y")),
+            "mdd": _num(r.get("mdd_3y") or m.get("mdd_3y")),
+            "fee": _num(r.get("fee")),
+            "scale": _num(sc.get("scale_sum") or r.get("scale_sum")),
+            "abs_exc": abs(exc) if exc is not None else None,
+        })
+
+    tiers = [r.get("tier") or "?" for r in rows]
+    n = len(rows)
+
+    def pcts(key, ascending):
+        out = [None] * n
+        groups: dict = {}
+        for i, t in enumerate(tiers):
+            groups.setdefault(t, []).append(i)
+        for _t, idxs in groups.items():
+            use = idxs if len(idxs) >= 5 else list(range(n))   # 层<5只回退全池
+            pairs = [(i, vals[i][key]) for i in use if vals[i][key] is not None]
+            if not pairs:
+                continue
+            pairs.sort(key=lambda x: x[1], reverse=not ascending)
+            m = len(pairs)
+            j, ranks = 0, {}
+            while j < m:                                        # 并列取平均名次
+                k = j
+                while k + 1 < m and pairs[k + 1][1] == pairs[j][1]:
+                    k += 1
+                avg = (j + k) / 2 + 1
+                for x in range(j, k + 1):
+                    ranks[pairs[x][0]] = avg
+                j = k + 1
+            for i in (idxs if len(idxs) >= 5 else idxs):        # 小层只回填本层成员
+                if i in ranks:
+                    out[i] = ranks[i] / m * 100
+        return out
+
+    p = {"dual": pcts("dual", True), "vol": pcts("vol", False),
+         "mdd": pcts("mdd", False), "fee": pcts("fee", False),
+         "scale": pcts("scale", True), "exc": pcts("abs_exc", False)}
+    KEY = {"dual": "ret_dual", "vol": "vol_low", "mdd": "mdd_low",
+           "fee": "fee_low", "scale": "scale_high", "exc": "abs_exc_low"}
+    res = []
+    for i in range(n):
+        parts = [(p["dual"][i], W["ret"], KEY["dual"]),
+                 (p["vol"][i], W["vol"], KEY["vol"]),
+                 (p["mdd"][i], W["mdd"], KEY["mdd"]),
+                 (p["fee"][i], W["fee"], KEY["fee"]),
+                 (p["scale"][i], W["scale"], KEY["scale"]),
+                 (p["exc"][i], W["exc"], KEY["exc"])]
+        ok = [(v, w, k) for v, w, k in parts if v is not None]
+        detail = {}
+        if ok:
+            tw = sum(w for _, w, _ in ok)                        # 缺值权重重归一
+            for v, w, k in ok:
+                detail[k] = round(v * w / tw, 3)
+        iq = sum(detail.get(k, 0) for k in ("ret_dual", "vol_low", "mdd_low"))
+        tq = sum(detail.get(k, 0) for k in ("fee_low", "scale_high", "abs_exc_low"))
+        res.append({"score": round(iq + tq, 1), "iq": round(iq, 1),
+                    "tq": round(tq, 1), "detail": detail})
+    return res

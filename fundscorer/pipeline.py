@@ -266,6 +266,16 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
                      "cs": m.get("company_scale"),
                      "dev": dev_map.get(b),
                      "tier": base_tier.get(b, "dur_m")})
+    # ---- v3「指数本位」评分（2026-11-09 用户拍板）：0.7×指数质量 + 0.3×跟踪载体，
+    #      久期档内分位；P1/P2 相对排位闸废除（指数不因基金壳的短期排位出局，广发案例） ----
+    _v3 = IF.v3_index_scores(rows)
+    for _r, _s in zip(rows, _v3):
+        _r["score"] = _s["score"]
+        _r["raw_score"] = _s["score"]
+        _r["score_capped"] = _s["score"]
+        _r["earned_weight"] = 100.0
+        _r["score_detail"] = _s["detail"]
+        _r["sub_scores"] = {"iq": _s["iq"], "tq": _s["tq"]}
     picks = IF.pick_per_index(rows)
     # ---- ② 评估卡真分排序（v5.14：list_top_n=0/None → 全显示，用户拍板去截断） ----
     # ---- ②″ 同画像逐只锚定（v5.18，docs/17 §13）：零点=上榜组卡分中位（在 sort 前）----
@@ -274,18 +284,17 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     for _r in picks:
         _s = idx_snap.get(_r.get("code")) or {}
         _r.setdefault("idx_lookalike_med", _s.get("idx_lookalike_med"))
-        for _k in ("score_detail", "sub_scores", "raw_score", "earned_weight",
-                   "idx_lookalike_nb", "idx_lookalike_min", "idx_lookalike_max"):
+        for _k in ("idx_lookalike_nb", "idx_lookalike_min", "idx_lookalike_max"):
             if _r.get(_k) is None:
                 _r[_k] = _s.get(_k)
-    _anchor = anchor_index_scores(picks)
-    _amed, _alam = _anchor if _anchor else (float("nan"), float("nan"))
-    # 锚定后的分标量写回打分快照（cards 的 raw_score/peers 分数取快照；明细已共对象写穿）
+    # v3（2026-11-09）：同画像锚定废除（anchor_index_scores 不再调用）；
+    # v3 分标量写回打分快照（cards 的明细/peers 分数取快照）
     for _r in picks:
         _s = idx_snap.get(_r.get("code"))
         if _s is None:
             continue
-        for _k in ("score", "raw_score", "score_capped"):
+        for _k in ("score", "raw_score", "score_capped", "earned_weight",
+                   "score_detail", "sub_scores"):
             if _r.get(_k) is not None:
                 _s[_k] = _r[_k]
     picks.sort(key=lambda r: (-(r.get("score") or float("-inf")),
@@ -295,8 +304,7 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     #      病根：原全组混久期取中位（3-5 年多数派定线），长久期结构性贴线必沉底
     #      （博时5-10农发 3.36% > 混合中位 1.40%×2 沉底；档内中位≈3.0%×2 则不沉）。
     #      无论是否开闸，picks 一律重排为 短→中→长 档序（档内保持分数降序）。
-    _gx = float(C.INDEX.get("risk_gate_x") or 0)
-    _gated = 0
+    # v3（2026-11-09 拍板）：回撤护栏闸废除；存单类并入所在久期档但名次沉底
     _TIER_ORDER = ("dur_s", "dur_m", "dur_l")
     _by_tier = {t: [] for t in _TIER_ORDER}
     for r in picks:
@@ -304,19 +312,8 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     _reordered = []
     for _t in _TIER_ORDER:
         _grp = _by_tier.pop(_t, [])
-        if _gx > 0 and len(_grp) >= 3:
-            _mdds = sorted(x["mdd_3y"] for x in _grp if x.get("mdd_3y") is not None)
-            if len(_mdds) >= 3:
-                _med = (_mdds[len(_mdds) // 2] if len(_mdds) % 2
-                        else (_mdds[len(_mdds) // 2 - 1] + _mdds[len(_mdds) // 2]) / 2)
-                _thr = _med * _gx
-                _keep = [x for x in _grp
-                         if x.get("mdd_3y") is None or x["mdd_3y"] <= _thr]
-                _demoted = [x for x in _grp
-                            if x.get("mdd_3y") is not None and x["mdd_3y"] > _thr]
-                if _demoted:
-                    _grp = _keep + _demoted
-                    _gated += len(_demoted)
+        _grp.sort(key=lambda x: (1 if "存单" in str(x.get("name") or "") else 0,
+                                 -(x.get("score") or float("-inf"))))
         _reordered.extend(_grp)
     for _g in _by_tier.values():            # 未知档（防御分支）保底追加
         _reordered.extend(_g)
@@ -368,10 +365,11 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     df = pd.DataFrame(out_rows)
     if not df.empty:
         df["idx_group_n"] = len(df)
+    _dancun = sum(1 for r in show if "存单" in str(r.get("name") or ""))
     log(f"[5a][{tag}] 债指单列榜：候选 {len(idx_rows)} → 同指数归一 {len(picks)}"
-        f" → 展示 {len(df)}（选中键 fee低→公司规模大→跟踪偏离小；评估卡真分排序；"
-        f"回撤闸档内沉底 {_gated} 只（档内中位×{_gx:g}）；同画像锚定中位 "
-        f"{_amed:.2f}、自动折幅 λ={_alam:.3f}；偏离可算基金 {len(dev_map)} 只）"
+        f" → 展示 {len(df)}（v3指数本位评分：0.7×指数质量+0.3×跟踪载体，久期档内分位；"
+        f"选中键 fee低→公司规模大→跟踪偏离小；存单沉底 {_dancun} 只；"
+        f"P1/P2 相对排位闸与回撤护栏闸已废除；偏离可算基金 {len(dev_map)} 只）"
         + "；档 " + "、".join(f"{t.replace('dur_', '')}={_tier_n.get(t, 0)}"
                               for t in ("dur_s", "dur_m", "dur_l")))
     return df, len(picks)

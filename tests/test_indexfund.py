@@ -467,15 +467,18 @@ class TestIndexFamilyV511:
 
 
 class TestIndexScreenV511:
-    """D-I1 筛选：债指 P1/P2 口径（active 路径标签/口径不变）。
-    v5.23：P1 从"3年族同族相对"改「族×久期档回退链」（docs/17 §15）；P2 仍为同族基准。"""
+    """D-I1 筛选口径。v3（2026-11-09 拍板）：债指**废除 P1/P2 相对排位闸**——
+    指数型基金不再因基金壳的短期排位出局（广发7-10国开案例）；载体闸（S1/S4/S5）保留；
+    active 路径 P1/P2 标签与口径不变。"""
 
     def test_index_funnel_labels(self):
         records, yearly, spikes = index_records(n=40)
         _, f = screen_candidates(records, spikes, yearly,
                                  C.SCREENS["short_bond"], index_fund=True)
-        assert any(k.startswith("P1 综合分位≥45%（族×久期档回退链") for k in f)
-        assert any(k.startswith("P2 年度分位中位≥55%（同族基准·≥3完整年）") for k in f)
+        # v3：index 分支不再产生 P1/P2 标签（相对排位闸废除）
+        assert not any(k.startswith("P1") or k.startswith("P2") for k in f)
+        # 载体闸仍在（S1 规模线等）
+        assert any(k.startswith("S1") for k in f)
 
     def test_active_funnel_labels_unchanged(self):
         records, yearly, spikes = index_records(n=40)
@@ -552,25 +555,22 @@ def _tier_records():
     return records, yearly, spikes
 
 
-class TestP1TierStratificationV523:
-    """v5.23 P1 分层回归（docs/17 §15 对照实验证据）：混比时长久期全灭、分层后全数过线；
-    mpct 仍按全池排（45% 切线总量不变，只换人、不放水）。"""
+class TestV3NoRelativeGates:
+    """v3（2026-11-09 拍板）：债指废除 P1/P2 相对排位闸——候选=全部载体闸通过者，
+    久期结构不再被排位闸摧毁（旧 v5.23 测试的"分层过闸"语义整体作废）。"""
 
-    def test_long_duration_funds_pass_after_stratification(self):
+    def test_index_candidates_pass_without_p1_p2(self):
         records, yearly, spikes = _tier_records()
         cand, f = screen_candidates(records, spikes, yearly,
                                     C.SCREENS["long_bond"], index_fund=True)
-        p1_key = next(k for k in f
-                      if k.startswith("P1 综合分位≥45%（族×久期档回退链"))
-        # 过 P1 = G 12 + L 10 = 22（B 10 全数被 P1 挡下；旧口径此处为 12，L 全灭）
-        assert f[p1_key] == 22
+        assert not any(k.startswith("P1") or k.startswith("P2") for k in f)
+        # 载体闸全过 → 32 只全数进候选（L 长久期 10 只结构性存活）
+        assert len(cand) == 32
         bases = set(cand["base"])
-        # 最终候选还须过 P2：L 分年值全档最高 → 10 只全数存活
         assert sum(1 for b in bases if "7-10年" in b) == 10
-        assert not any("BB" in b for b in bases)
 
     def test_active_path_labels_untouched(self):
-        # 主动路径标签不含久期档字样（分层只作用于 index_fund 分支）
+        # 主动路径标签不含久期档字样（分层/废闸只作用于 index_fund 分支）
         records, yearly, spikes = _tier_records()
         _, f = screen_candidates(records, spikes, yearly,
                                  C.SCREENS["long_bond"])
