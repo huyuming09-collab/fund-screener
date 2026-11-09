@@ -305,18 +305,22 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     #      （博时5-10农发 3.36% > 混合中位 1.40%×2 沉底；档内中位≈3.0%×2 则不沉）。
     #      无论是否开闸，picks 一律重排为 短→中→长 档序（档内保持分数降序）。
     # v3（2026-11-09 拍板）：回撤护栏闸废除；存单类并入所在久期档但名次沉底。
-    # 展示上限（2026-11-09 用户拍板"内容太多"）：按池内归一总数 ×30%（与历史展示量
-    # 相当，比例随池大小伸缩），按分数序截断；存单强制保留并列档内最后。
-    _cap = max(4, int(len(picks) * 0.30 + 0.5))
-    _show0 = picks[:_cap] + [r for r in picks[_cap:]
-                             if "存单" in str(r.get("name") or "")]
+    # 展示上限（2026-11-09 用户定"总共18支"）：档位上限 中短9/中6/长3，分数序截断；
+    # 存单强制保留并列档内最后（超出档位上限也保留）。
     _TIER_ORDER = ("dur_s", "dur_m", "dur_l")
+    _TIER_CAP = {"dur_s": 9, "dur_m": 6, "dur_l": 3}
     _by_tier = {t: [] for t in _TIER_ORDER}
-    for r in _show0:
+    for r in picks:
         _by_tier.setdefault(r.get("tier"), []).append(r)
     _reordered = []
     for _t in _TIER_ORDER:
         _grp = _by_tier.pop(_t, [])
+        _cap_t = _TIER_CAP.get(_t)
+        if _cap_t and len(_grp) > _cap_t:
+            _dc = [x for x in _grp if "存单" in str(x.get("name") or "")]
+            _keep = [x for x in _grp
+                     if "存单" not in str(x.get("name") or "")][:_cap_t - len(_dc)]
+            _grp = _keep + _dc                     # 存单占档位名额之一、列最后（总18=9/6/3）
         _grp.sort(key=lambda x: (1 if "存单" in str(x.get("name") or "") else 0,
                                  -(x.get("score") or float("-inf"))))
         _reordered.extend(_grp)

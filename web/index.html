@@ -2400,7 +2400,19 @@ function drawExport(canvas, pool, sizeKey, rows){
     const nTotal = funds.length;
     const nMax = Math.max.apply(null, segs.map(s => s.list.length).concat([1]));
     const rowH = wide
-      ? Math.floor((avail - (titleH + bandGap)) / nMax)
+      ? (() => {
+          /* 列结构须与下方 wide 分支一致：>2 分段时第 1 段独列、其余纵向堆叠。
+             按"各列所需行高"取最小值——堆叠列 = 组头×2 + 段间距10 + 行数和，
+             旧算法只按单段最大行数算，堆叠列会超出 rowsBot 压到页脚
+             （2026-11-09 用户报公众号宽图右下角重叠）。 */
+          const hH = titleH + bandGap, gapS = 10;
+          const cols = segs.length > 2
+            ? [segs.slice(0, 1), segs.slice(1)]
+            : segs.map(s => [s]);
+          return Math.max(30, Math.min.apply(null, cols.map(c =>
+            Math.floor((avail - c.length * hH - (c.length - 1) * gapS)
+                       / Math.max(c.reduce((a, s) => a + s.list.length, 0), 1)))));
+        })()
       : Math.floor((avail - segs.length * (titleH + bandGap)) / Math.max(nTotal, 1));
     function seg(s, x0, w, yTop){
       /* 组头：页面同款浅蓝底 + 左蓝条 */
