@@ -304,19 +304,21 @@ def track_dev(rows):
 
 
 def pick_per_index(rows):
-    """单列榜同指数归一（用户 2026-10-21 拍板）：每指数组按
-    费率↑ → 公司非货规模↑ → 跟踪偏离↓（小者优先）取第 1 只；缺值排末（na_position=last）。
+    """单列榜同指数归一（用户 2026-10-21 拍板；**2026-11-09 升级**：v3 分取代公司规模
+    作第二键——同指数里综合分最高者代表出场，广发7-10案例：v3分62.5>易方达60.1
+    却因公司规模键落选）。现键序：费率↑ → v3分↓ → 公司非货规模↑ 取第 1 只；
+    缺值排末（na_position=last）。
 
-    rows: [{idx, fee, cs, dev, ...}]（须含上述三键；其余键原样保留）。
-    返回保留原键的被选行，顺序 = 第一排序键稳定序（调用方再按卡分排序）。
+    rows: [{idx, fee, score, cs, ...}]（须含上述键；其余键原样保留）。
+    返回保留原键的被选行，顺序 = 第一排序键稳定序（调用方再按档/分排序）。
     """
     if not rows:
         return []
     df = pd.DataFrame(rows)
-    for k in ("idx", "fee", "cs", "dev"):
+    for k in ("idx", "fee", "score", "cs"):
         if k not in df.columns:
             df[k] = float("nan")
-    df = df.sort_values(["fee", "cs", "dev"], ascending=[True, False, True],
+    df = df.sort_values(["fee", "score", "cs"], ascending=[True, False, True],
                         na_position="last", kind="mergesort")
     keep = df.groupby("idx", sort=False).head(1)
     return keep.to_dict("records")

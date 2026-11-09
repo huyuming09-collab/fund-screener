@@ -881,7 +881,7 @@ class TestTrackDevV512:
 
 
 class TestPickPerIndexV512:
-    """单列榜同指数归一（用户 2026-10-21 拍板）：fee↑ → 公司规模↑ → 跟踪偏离↓。"""
+    """单列榜同指数归一（2026-10-21 拍板；**2026-11-09 升级**：fee↑ → v3分↓ → 公司规模↑）。"""
 
     @staticmethod
     def _rows():
@@ -898,17 +898,17 @@ class TestPickPerIndexV512:
         assert sorted(r["idx"] for r in picks) == ["G1", "G2"]
         assert len(picks) == 2
 
-    def test_fee_then_cs_then_dev(self):
+    def test_fee_then_score_then_cs(self):
         picks = {r["idx"]: r["base"] for r in pick_per_index(self._rows())}
-        assert picks["G1"] == "x3"      # fee 同 0.0045、cs 同 → dev 小者胜
-        assert picks["Y" + "2"] if False else True
-        assert picks["G2"] == "y1"      # fee 低者胜（dev 缺失不拖累，fee 已分出）
+        assert picks["G1"] == "x2"      # fee 同 0.0045 → v3 分高者胜（66>63，dev 不再作键）
+        assert picks["G2"] == "y1"      # fee 低者胜（首键即分出）
 
-    def test_cs_beats_dev(self):
-        rows = [{"base": "a", "idx": "G", "fee": 0.002, "cs": 100, "dev": 0.009, "score": 50},
-                {"base": "b", "idx": "G", "fee": 0.002, "cs": 900, "dev": 0.001, "score": 51}]
+    def test_score_beats_cs(self):
+        # fee 平局时 v3 分先于公司规模（广发7-10案例的规则升级）
+        rows = [{"base": "a", "idx": "G", "fee": 0.002, "cs": 900, "dev": 0.001, "score": 50},
+                {"base": "b", "idx": "G", "fee": 0.002, "cs": 100, "dev": 0.009, "score": 51}]
         picks = pick_per_index(rows)
-        assert [r["base"] for r in picks] == ["b"]   # cs 大者胜（dev 只是第三键）
+        assert [r["base"] for r in picks] == ["b"]   # 分高者胜（cs 更大也翻不了）
 
     def test_missing_keys_filled_and_empty(self):
         picks = pick_per_index([{"base": "a", "idx": "G", "fee": None, "cs": None,

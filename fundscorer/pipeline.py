@@ -368,7 +368,7 @@ def _build_index_list(idx_rows, idx_recs, idx_meta, idx_snap, pool, log, tag):
     _dancun = sum(1 for r in show if "存单" in str(r.get("name") or ""))
     log(f"[5a][{tag}] 债指单列榜：候选 {len(idx_rows)} → 同指数归一 {len(picks)}"
         f" → 展示 {len(df)}（v3指数本位评分：0.7×指数质量+0.3×跟踪载体，久期档内分位；"
-        f"选中键 fee低→公司规模大→跟踪偏离小；存单沉底 {_dancun} 只；"
+        f"选中键 fee低→v3分高→公司规模大（2026-11-09 升级）；存单沉底 {_dancun} 只；"
         f"P1/P2 相对排位闸与回撤护栏闸已废除；偏离可算基金 {len(dev_map)} 只）"
         + "；档 " + "、".join(f"{t.replace('dur_', '')}={_tier_n.get(t, 0)}"
                               for t in ("dur_s", "dur_m", "dur_l")))
