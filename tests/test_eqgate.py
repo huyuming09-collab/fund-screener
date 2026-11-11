@@ -68,7 +68,22 @@ def test_career_pairs_dedup_and_join():
 
 
 # ---------------------------------------------------------------- S4 + 分位
-def test_prep_s4_and_p90():
+def test_style_bucket_and_lookup():
+    # 关键词分桶
+    assert G.style_bucket("XX半导体ETF联接") == "科技"
+    assert G.style_bucket("XX消费精选混合") == "消费"
+    assert G.style_bucket("XX均衡增长混合") == "其他/均衡"
+    # 分层回退：cell → bucket → type
+    thr = {"cell": {("股票型", "消费"): 0.05},
+           "bucket": {"医药": 0.03},
+           "type": {"股票型": 0.08}}
+    assert G.thr_lookup(thr, "股票型", "消费") == 0.05     # 优先 cell
+    assert G.thr_lookup(thr, "股票型", "医药") == 0.03     # 回退桶
+    assert G.thr_lookup(thr, "股票型", "其他/均衡") == 0.08  # 回退类型
+    assert G.thr_lookup(thr, "混合型-偏股", "其他/均衡") is None  # 全无 → None
+
+
+def test_prep_s4_and_threshold():
     pool = pd.DataFrame([
         {"code": f"{i:06d}", "name": f"f{i}", "type_text": "股票型"}
         for i in range(20)
@@ -78,10 +93,12 @@ def test_prep_s4_and_p90():
             for i in range(20)}
     pairs = pd.DataFrame([{"mgr": "张三", "company": "甲", "code": "000019",
                            "career_y": 12.0}])       # 只给一只 S4 不足的基金配对
-    pool_a, pf, p90 = G.prep(pool, pairs, navs)
+    pool_a, pf, thr = G.prep(pool, pairs, navs)
     assert int(pool_a["s4"].sum()) == 18             # 2 只 3 年基金被 S4 剔除
-    assert p90["股票型"] == pytest.approx(
-        pd.Series([(i + 1) / 100.0 for i in range(18)]).quantile(0.90))
+    s = pd.Series([(i + 1) / 100.0 for i in range(18)])
+    # 全部同名桶 f0..f17 → 类型×桶格（18 只 ≥10）应建；阈值 = TOP_PCT 分位（现 80%）
+    assert thr["cell"][("股票型", "其他/均衡")] == pytest.approx(
+        s.quantile(G.TOP_PCT))
     # pair 富化：3 年基金的 s4=False → 不会进闸
     assert bool(pf.iloc[0]["s4"]) is False
 
@@ -104,10 +121,10 @@ def test_f10_targets_selects_direct_and_top10():
         {"mgr": "D经理", "company": "丁", "code": "000004", "career_y": 12.0},  # S4 不足
         {"mgr": "E经理", "company": "戊", "code": "000001", "career_y": 4.0},   # ≤6 出闸
     ])
-    _p, pf, p90 = G.prep(pool, pairs, {c: (r["ny"], r["r5"])
+    _p, pf, thr = G.prep(pool, pairs, {c: (r["ny"], r["r5"])
                                        for c, r in pool.set_index("code").iterrows()})
-    p90["股票型"] = 0.15   # 人工阈值：000002(0.20) 达标、000003(0.01) 不达标
-    targets = G.f10_targets(pf, p90)
+    thr["type"]["股票型"] = 0.15   # 人工阈值：000002(0.20) 达标、000003(0.01) 不达标
+    targets = G.f10_targets(pf, thr)
     assert targets == ["000001", "000002"]   # A∩S4 + B达标∩S4；C/D/E 不抓
 
 
@@ -126,7 +143,7 @@ def _gate_fixture():
         {"mgr": "张三", "company": "甲公司", "code": "000001", "career_y": 15.0},
         # 通道A 但任期只有 2 年 → S3 拦下
         {"mgr": "李四", "company": "乙公司", "code": "000002", "career_y": 12.0},
-        # 通道B 分位达标(0.10≥p90=0.08)、任期 6 年 → 通过
+        # 通道B 分位达标(0.10≥阈值0.08)、任期 6 年 → 通过
         {"mgr": "王五", "company": "丙公司", "code": "000002", "career_y": 8.0},
         # 通道B 分位不足(0.02<0.08) → 拦下
         {"mgr": "赵六", "company": "丁公司", "code": "000003", "career_y": 7.0},
@@ -141,14 +158,15 @@ def _gate_fixture():
                                 {"name": "王五", "id": "3", "start": "2019-06-01"}]},
         "000003": {"managers": [{"name": "赵六", "id": "4", "start": "2018-01-01"}]},
     }
-    p90 = {"股票型": 0.15, "混合型-偏股": 0.08, "混合型-灵活": 0.08}
+    thr = {"cell": {}, "bucket": {},
+           "type": {"股票型": 0.15, "混合型-偏股": 0.08, "混合型-灵活": 0.08}}
     bench = {"股票型": 0.05, "混合型-偏股": 0.04,
              "混合型-灵活": 0.03, "混合型-平衡": 0.03}
-    return pool, p90, f10s, bench
+    return pool, thr, f10s, bench
 
 
 def test_run_gate_pass_and_funnel():
-    pool, _p90, f10s, bench = _gate_fixture()
+    pool, _thr, f10s, bench = _gate_fixture()
     pairs = pd.DataFrame([
         {"mgr": "张三", "company": "甲公司", "code": "000001", "career_y": 15.0},
         {"mgr": "李四", "company": "乙公司", "code": "000002", "career_y": 12.0},
@@ -157,12 +175,13 @@ def test_run_gate_pass_and_funnel():
         {"mgr": "钱七", "company": "戊公司", "code": "000001", "career_y": 5.0},
         {"mgr": "孙八", "company": "己公司", "code": "000003", "career_y": 11.0},
     ])
-    pool, pf, p90 = G.prep(pool, pairs,
-                           {"000001": (6.0, 0.20), "000002": (6.0, 0.10),
-                            "000003": (6.0, 0.02)})
-    # prep 的分位要求同类≥10 只，本夹具每类仅 1 只 → 人工给阈值（验证判定逻辑本身）
-    p90 = {"股票型": 0.15, "混合型-偏股": 0.08, "混合型-灵活": 0.08}
-    funnel, mgrs, funds = G.run_gate(pool, pf, p90, f10s, bench)
+    pool, pf, _thr = G.prep(pool, pairs,
+                            {"000001": (6.0, 0.20), "000002": (6.0, 0.10),
+                             "000003": (6.0, 0.02)})
+    # prep 的分位要求同格≥10 只，本夹具每类仅 1 只 → 人工给阈值（验证判定逻辑本身）
+    thr = {"cell": {}, "bucket": {},
+           "type": {"股票型": 0.15, "混合型-偏股": 0.08, "混合型-灵活": 0.08}}
+    funnel, mgrs, funds = G.run_gate(pool, pf, thr, f10s, bench)
 
     # 通过：张三（A通道）、王五（B通道达标）
     assert set(zip(funds["mgr"], funds["code"])) == {("张三", "000001"),
@@ -185,8 +204,8 @@ def test_run_gate_pass_and_funnel():
 def test_run_gate_empty():
     pool = pd.DataFrame(columns=["code", "name", "type_text", "ny", "r5"])
     pairs = pd.DataFrame(columns=["mgr", "company", "code", "career_y"])
-    pool, pf, p90 = G.prep(pool, pairs, {})
-    funnel, mgrs, funds = G.run_gate(pool, pf, p90, {}, {})
+    pool, pf, thr = G.prep(pool, pairs, {})
+    funnel, mgrs, funds = G.run_gate(pool, pf, thr, {}, {})
     assert funnel["通过_pair"] == 0
     assert mgrs.empty and funds.empty
 
@@ -201,3 +220,104 @@ def test_composite_bench_ann_from_between_components():
     # 股权重越高越接近股市收益
     v90 = G.composite_bench_ann_from(hs, bond, w=0.9, years=5)
     assert v90 > v
+
+
+# ---------------------------------------------------------------- S2-C 垫底底线
+def _floor_fixture():
+    """两只 A 通道基金：000001 同格排位 5%（垫底应出局）、000002 排位 50%（应过）。"""
+    pool = pd.DataFrame([
+        {"code": "000001", "name": "垫底基金", "type_text": "股票型",
+         "ny": 6.0, "r5": -0.10, "s4": True, "bucket": "科技", "pctl": 5.0},
+        {"code": "000002", "name": "中档基金", "type_text": "股票型",
+         "ny": 6.0, "r5": 0.05, "s4": True, "bucket": "科技", "pctl": 50.0},
+        {"code": "000003", "name": "无分位基金", "type_text": "股票型",
+         "ny": 6.0, "r5": 0.01, "s4": True, "bucket": "科技", "pctl": None},
+    ])
+    pairs = pd.DataFrame([
+        {"mgr": "甲", "company": "A公司", "code": "000001", "career_y": 15.0},
+        {"mgr": "乙", "company": "B公司", "code": "000002", "career_y": 12.0},
+        {"mgr": "丙", "company": "C公司", "code": "000003", "career_y": 11.0},
+    ])
+    thr = {"cell": {}, "bucket": {}, "type": {"股票型": 0.0}}
+    return pool, pairs, thr
+
+
+def test_s2c_floor_excludes_bottom_decile():
+    pool, pairs, thr = _floor_fixture()
+    pf = pairs.merge(pool[["code", "name", "type_text", "bucket", "ny",
+                           "r5", "s4", "pctl"]], on="code")
+    pf["channel"] = pf["career_y"].map(G.channel)
+    pf["s4"] = pf["s4"].astype(bool)
+    # f10 预筛：垫底的 000001 不应进抓取名单
+    targets = G.f10_targets(pf, thr)
+    assert "000001" not in targets
+    assert "000002" in targets
+    assert "000003" in targets          # pctl 缺失不砍（数据不足不猜测）
+    # 闸判定：垫底出局计数=1，pctl缺失者通过
+    f10s = {c: {"managers": [{"name": m, "start": "2016-01-01"}]}
+            for c, m in [("000002", "乙"), ("000003", "丙")]}
+    funnel, mgrs, funds = G.run_gate(pool, pf, thr, f10s, {})
+    assert funnel["S2C_A通道垫底出局"] == 1
+    assert set(funds["code"]) == {"000002", "000003"}
+
+
+def test_s2c_floor_not_applied_to_b_channel():
+    # B 通道由分位门槛管（前20%），不走 S2-C 垫底线
+    pool, pairs, thr = _floor_fixture()
+    pairs = pairs.copy()
+    pairs.loc[pairs["code"] == "000001", "career_y"] = 8.0   # 改成 B 通道
+    pf = pairs.merge(pool[["code", "name", "type_text", "bucket", "ny",
+                           "r5", "s4", "pctl"]], on="code")
+    pf["channel"] = pf["career_y"].map(G.channel)
+    pf["s4"] = pf["s4"].astype(bool)
+    # B 通道 pctl=5 <80 → 分位不足出局，而不是 S2C
+    f10s = {"000001": {"managers": [{"name": "甲", "start": "2016-01-01"}]}}
+    funnel, mgrs, funds = G.run_gate(pool, pf, thr, f10s, {})
+    assert funnel["S2C_A通道垫底出局"] == 0
+    assert funnel["B通道_分位不足"] == 1
+
+
+# ---------------------------------------------------------------- 风格分类引擎
+def test_classify_styles_cache_and_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(G, "STYLE_CACHE", tmp_path / "style_cls.pkl")
+    calls = {"n": 0}
+
+    def fake_raw(codes):
+        calls["n"] += 1
+        return {c: ("科技" if c.endswith("1") else "均衡") for c in codes}
+
+    monkeypatch.setattr(G, "_classify_raw", fake_raw)
+    # 首次：全量算 + 落缓存
+    out = G.classify_styles(["000001", "000002"])
+    assert out == {"000001": "科技", "000002": "均衡"}
+    assert calls["n"] == 1
+    # 二次：全命中缓存，不再算
+    out2 = G.classify_styles(["000001", "000002"])
+    assert out2 == out and calls["n"] == 1
+    # 部分命中：只算缺失的
+    out3 = G.classify_styles(["000001", "000003"])
+    assert calls["n"] == 2
+    assert out3["000001"] == "科技" and out3["000003"] == "均衡"
+    # 分类失败 → None（调用方回退名字桶）
+    monkeypatch.setattr(G, "_classify_raw", lambda codes: None)
+    monkeypatch.setattr(G, "STYLE_CACHE", tmp_path / "missing.pkl")
+    assert G.classify_styles(["000001"]) is None
+
+
+def test_prep_uses_corr_style_over_name():
+    # 相关性风格优先于名字：名为"XX成长"但相关性归"消费" → bucket=消费
+    pool = pd.DataFrame([
+        {"code": f"{i:06d}", "name": "XX成长混合", "type_text": "股票型"}
+        for i in range(12)
+    ])
+    navs = {f"{i:06d}": (6.0, (i + 1) / 100.0) for i in range(12)}
+    styles = {f"{i:06d}": ("消费" if i < 6 else "科技") for i in range(12)}
+    pairs = pd.DataFrame(columns=["mgr", "company", "code", "career_y"])
+    pool_a, _pf, thr = G.prep(pool, pairs, navs, styles=styles)
+    assert (pool_a["bucket"] == "消费").sum() == 6
+    assert "style_src" in pool_a.columns
+    assert (pool_a["style_src"] == "corr").all()
+    # 无 styles → 回退名字桶（名字无行业词 → 其他/均衡）
+    pool_b, _pf2, _thr2 = G.prep(pool, pairs, navs, styles=None)
+    assert set(pool_b["bucket"]) == {G.BUCKET_OTHER}
+    assert (pool_b["style_src"] == "name").all()
