@@ -651,6 +651,61 @@ if (D.market && D.market.indicators) {
   chk('市场情绪（8指标）存在', false);
 }
 
+/* 偏股雷达两榜（docs/20 §4，2026-11-13 实现）：页签/7桶筛选/详情/深链/导出 */
+if (D.mgr && (D.mgr.vet || []).length){
+  chk('偏股雷达：区页签+分类标签齐',
+      html.includes("tabs:['mgr_vet','mgr_new']") && html.includes('偏股雷达')
+      && CATEGORY_LABELS.mgr_vet === '老将榜' && CATEGORY_LABELS.mgr_new === '新锐榜');
+  const _sec0 = SECTION;
+  SECTION = 'mgr'; switchTab('mgr_vet');
+  const mh = document.getElementById('list').innerHTML;
+  chk('老将榜行数=契约（D.mgr.vet）',
+      (mh.match(/class="fundcard mgr-row"/g) || []).length === D.mgr.vet.length);
+  chk('二级7桶筛选条渲染（默认全选）',
+      mh.includes('sub-filter') && (D.mgr.buckets || []).every(b => mh.indexOf('>' + b + '</button>') >= 0));
+  const bk0 = (D.mgr.buckets || [])[0];
+  if (bk0){
+    mgrBkTgl(bk0);
+    const mh2 = document.getElementById('list').innerHTML;
+    const expect = D.mgr.vet.filter(r => r.bucket === bk0).length;
+    chk('桶筛选点选生效（只剩该桶）',
+        expect === 0 ? mh2.includes('empty-tip')
+        : (mh2.match(/class="fundcard mgr-row"/g) || []).length === expect);
+    mgrBkAll();
+    chk('桶筛选"全部"恢复全量',
+        (document.getElementById('list').innerHTML.match(/class="fundcard mgr-row"/g) || []).length
+        === D.mgr.vet.length);
+  }
+  const k0 = D.mgr.vet[0].key;
+  openMgrDetail(k0);
+  const db = document.getElementById('d-body').innerHTML;
+  const dAll = db + document.getElementById('d-rank').textContent
+      + document.getElementById('d-code').textContent;
+  chk('经理详情5块+代表作齐',
+      ['代表作', '净值走势', '逐年收益', '超额胜率', '风格暴露', '风险指标'].every(s => db.includes(s)));
+  chk('经理详情无 NaN/undefined 泄漏', !/NaN|undefined|null年|null%|null亿/.test(dAll));
+  chk('经理分数标注"池内相对评分"（AG §4-3）',
+      document.getElementById('d-score-label').textContent === '池内相对评分');
+  chk('经理详情隐藏"加入对比"', document.getElementById('d-pick').style.display === 'none');
+  closeDetail();
+  chk('mgrdetail 深链接入（正则+启动块）',
+      /section=\|cat=\|group=\|eqdetail=\|mgrdetail=/.test(html)
+      && html.includes("get('mgrdetail')"));
+  chk('exportRows 两榜分支（前20截断）',
+      exportRows('mgr_vet').length === D.mgr.vet.length
+      && exportRows('mgr_new', 5).length === Math.min(5, (D.mgr.new || []).length));
+  const cvM = mkEl(); cvM.getContext = () => ctxStub;
+  const infoM = drawExport(cvM, 'mgr_vet', 'xhs');
+  chk('drawExport 两榜：行数=min(20,N)、画布 1080×1620',
+      infoM.rows === Math.min(20, D.mgr.vet.length) && cvM.width === 1080 && cvM.height === 1620);
+  SECTION = _sec0;
+  switchTab(_sec0 === 'mgr' ? 'mgr_vet' : 'short_bond');
+} else {
+  chk('无 mgr 数据时两榜页签不渲染',
+      !D.categories.some(c => c.id === 'mgr_vet')
+      && !document.getElementById('tabs').innerHTML.includes('mgr_vet'));
+}
+
 console.log(fail ? 'SMOKE FAIL: '+fail : 'SMOKE PASS');
 process.exit(fail);
 `);

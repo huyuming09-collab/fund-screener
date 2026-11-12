@@ -32,3 +32,4 @@ out.json
 # 永不入库：weekly_update.sh 只 add web/data.js，且带 staged 路径守卫；双保险。
 运营/
 data/lixinger_token.txt
+pytest-of-*/

@@ -102,6 +102,74 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .d-code-inline{opacity:.55;font-size:12px;margin-left:8px;font-weight:600;letter-spacing:.5px;}
 #d-score{white-space:nowrap;}
 .rk.style.wave{background:#f3ecfd;color:#7237c0;}      /* 震荡型：收益低波动高 */
+
+/* ---- 偏股雷达（docs/20 §4，2026-11-13 实现） ---- */
+/* 通道徽章：老将=金棕 / 新锐=蓝青（§4.3 拍板配色）；"新"字标复用 .rk.new 橙红 */
+.rk.style.vet{background:#fdf3d8;color:#8a6d00;}
+.rk.style.nwx{background:#e3f2fd;color:#0b6bb5;}
+/* 风格桶徽章 ×7（按大区色系，§4.3） */
+.rk.style.b-tech{background:#e8f1fd;color:#1d5bb8;}
+.rk.style.b-med{background:#e0f6f4;color:#0d7a6f;}
+.rk.style.b-cons{background:#fdeee8;color:#c05621;}
+.rk.style.b-nev{background:#e8f6ec;color:#1a7f37;}
+.rk.style.b-val{background:#f3ecfd;color:#7237c0;}
+.rk.style.b-cyc{background:#f7efe4;color:#8a6d00;}
+.rk.style.b-bal{background:#f0f0ee;color:#666660;}
+/* 二级页签：7 桶多选筛选条（默认全选，可折叠收起） */
+.sub-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:9px 14px 2px;border-bottom:1px solid var(--line);}
+.sf-toggle{border:1px solid var(--line);background:#fff;border-radius:14px;
+  font-size:11.5px;color:var(--sub);padding:3px 10px;cursor:pointer;font-weight:600;}
+.sf-sum{font-size:11px;color:var(--sub);}
+.sf-chips{display:flex;gap:6px;flex-wrap:wrap;}
+.bk-chip{border:1px solid var(--line);background:#fff;border-radius:14px;
+  font-size:11.5px;color:var(--sub);padding:3px 10px;cursor:pointer;font-weight:600;}
+.bk-chip.on{background:rgba(232,116,59,.12);border-color:rgba(232,116,59,.45);
+  color:var(--accent-ink);}
+/* 经理行：比基金卡更轻（无指标格/费率行） */
+.mgr-row{cursor:pointer;}
+.mgr-row .fc-code{font-size:11.5px;}
+.mgr-go{color:var(--sub);opacity:.5;font-size:15px;margin-left:4px;}
+/* 详情：代表作卡 + 分析块 */
+.md-h{font-size:12.5px;font-weight:700;color:var(--ink);margin:16px 0 8px;
+  display:flex;align-items:center;gap:6px;}
+.md-h::before{content:"";width:4px;height:13px;background:var(--accent);border-radius:2px;}
+.rep-cards{display:flex;flex-direction:column;gap:8px;}
+.rep-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;}
+.rep-top{display:flex;align-items:center;gap:8px;}
+.rep-rule{font-size:10.5px;font-weight:700;color:var(--accent-ink);
+  background:rgba(232,116,59,.1);border:1px solid rgba(232,116,59,.3);
+  border-radius:5px;padding:1px 7px;white-space:nowrap;}
+.rep-name{font-size:14px;font-weight:700;color:var(--ink);flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rep-code{font-size:11px;color:var(--sub);}
+.rep-metrics{display:flex;gap:14px;margin-top:7px;font-size:11.5px;color:var(--sub);
+  flex-wrap:wrap;}
+.rep-metrics b{color:var(--ink);font-weight:600;}
+.md-canvas{width:100%;height:200px;display:block;background:#fff;
+  border:1px solid var(--line);border-radius:12px;}
+.md-legend{display:flex;gap:14px;font-size:11px;color:var(--sub);margin-top:6px;
+  flex-wrap:wrap;align-items:center;}
+.md-legend i{display:inline-block;width:14px;height:3px;border-radius:2px;
+  margin-right:4px;vertical-align:middle;}
+/* 逐年/逐季条形 */
+.yr-row{display:flex;align-items:center;gap:8px;font-size:12.5px;
+  padding:7px 2px;border-bottom:1px solid var(--line);}
+.yr-row:last-child{border-bottom:none;}
+.yr-y{width:64px;color:var(--sub);font-weight:600;}
+.yr-bar{flex:1;height:12px;background:#f2f0ec;border-radius:6px;position:relative;overflow:hidden;}
+.yr-bar::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#d8d4cc;z-index:1;}
+.yr-bar i{position:absolute;top:0;bottom:0;border-radius:6px;}
+.yr-bar i{position:absolute;top:0;bottom:0;border-radius:6px;}
+.yr-vals{width:172px;text-align:right;font-variant-numeric:tabular-nums;}
+.q-strip{display:flex;gap:3px;align-items:flex-end;height:74px;margin-top:4px;}
+.q-strip i{flex:1;border-radius:2px;min-width:4px;}
+.q-note{font-size:11.5px;color:var(--sub);margin-top:6px;}
+.md-risk{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.md-risk .m{background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:10px 6px;text-align:center;}
+.md-risk .v{font-size:16px;font-weight:700;color:var(--ink);}
+.md-risk .l{font-size:10.5px;color:var(--sub);margin-top:3px;}
 .seats{color:#a15c00;background:#fff7e0;border-radius:8px;padding:1px 6px;
        font-size:10.5px;font-weight:600;}
 /* 债指分组头（2026-10-22 重做：原浅底白字对比度 1.07 不可读 → 蓝底深字 9.2:1） */
@@ -573,7 +641,8 @@ const $ = id => document.getElementById(id);
 /* 分类标签：优先取 data.js 的 categories（config.CARD 为单一真源——2026-10-19 池名
    改为 中短债/长债/固收+ 后只需改 config 一处）；data.js 缺失/旧版时回退本地映射 */
 const CATEGORY_LABELS = {short_bond:'中短债', long_bond:'长债', fixed_plus:'固收+', index:'债指',
-  dur_s:'短久期', dur_m:'中久期', dur_l:'长久期'};   /* v5.23 久期三档（docs/17 §15） */
+  dur_s:'短久期', dur_m:'中久期', dur_l:'长久期',
+  mgr_vet:'老将榜', mgr_new:'新锐榜'};   /* v5.23 久期三档（docs/17 §15）；偏股雷达两榜（docs/20 §4） */
 const TIER_SUB = {dur_s:'存单、1-3年等短端', dur_m:'3-5年、1-5年等中端', dur_l:'5-10年、7-10年等长端'};
 const catLabel = c => {
   const hit = ((D && D.categories) || []).find(x => x && x.id === c);
@@ -623,6 +692,7 @@ function screenOf(cat){
 const SECTIONS = {
   bond:  {name:'偏债心动榜单', tabs:['short_bond','long_bond','fixed_plus','index']},
   index: {name:'指数温度计',   tabs:['eq_index']},
+  mgr:   {name:'偏股雷达',     tabs:['mgr_vet','mgr_new']},
 };
 let SECTION = 'bond';   /* 当前内容区；默认偏债（旧直链无 section 参数时） */
 function sectionOfCat(id){ return Object.keys(SECTIONS).find(s => SECTIONS[s].tabs.includes(id)) || 'bond'; }
@@ -630,9 +700,13 @@ const navCats = () => ((D && D.categories) || [])
   .filter(c => !(c && c.hidden))
   .filter(c => SECTIONS[SECTION].tabs.includes(c.id));   /* 只留本区页签 */
 function renderTabs(active){
-  /* 2026-11-05：底部免责按语境分——指数估值 tab 用温度版，其余用榜单原版 */
+  /* 2026-11-05：底部免责按语境分——指数估值 tab 用温度版，其余用榜单原版；
+     偏股雷达两榜追加"池内相对评分"口径句（AG §4-3：凡出现分数必须带说明） */
   const _pd = document.getElementById('p-disc');
   if (_pd) _pd.textContent = (active === 'eq_index') ? DISC_EQ
+    : (active === 'mgr_vet' || active === 'mgr_new')
+      ? ((D && D.disclaimer) || DISCLAIMER_FALLBACK)
+        + ' 本页评分为池内相对评分，不同榜与不同期不可横向比较。'
     : ((D && D.disclaimer) || DISCLAIMER_FALLBACK);
   const cats = navCats();
   /* v1.8 只有 1 个页签时不渲染页签条（指数区=指数估值，冗余）→ 白区直接铺满，顶栏统一 */
@@ -921,6 +995,7 @@ function renderList(){
   const cat = ACTIVE;
   if (cat !== 'eq_index') $('list').classList.remove('eq-mode');   /* v1.3 宽屏类只属于指数页 */
   if (cat === 'eq_index') return renderEqIndexList();   /* v5.22 指数估值页签 */
+  if (cat === 'mgr_vet' || cat === 'mgr_new') return renderMgrList(cat);   /* docs/20 §4 偏股雷达 */
   const ps = poolStat(cat);
   /* 按 tab 过滤；旧 data.js 的 funds 无 category → 按顶层 category（单池）归类 */
   const funds = (D.funds || []).filter(f => (f.category || D.category || 'short_bond') === cat);
@@ -983,6 +1058,265 @@ document.getElementById('list').addEventListener('click', function(e){
   e.stopPropagation();                          /* 阻断到 .fundcard 的冒泡，详情不被打开 */
   pickTgl(b.closest('.fundcard').dataset.code, e);
 }, true);
+
+/* ============ 偏股雷达两榜（docs/20 §4，2026-11-13 实现） ============ */
+const MGR_BK_CLS = {'科技':'b-tech','医药':'b-med','消费':'b-cons','新能源':'b-nev',
+                    '价值':'b-val','周期':'b-cyc','均衡':'b-bal'};
+const MGR_BK_COLOR = {'科技':'#1d5bb8','医药':'#0d7a6f','消费':'#c05621',
+                      '新能源':'#1a7f37','价值':'#7237c0','周期':'#8a6d00','均衡':'#666666'};
+const mpct = v => v==null ? '—' : (v*100).toFixed(1)+'%';
+const mpp  = v => v==null ? '—' : (v>=0?'+':'')+(v*100).toFixed(1)+'pp';
+let MGR_SEL = null;      /* 二级桶筛选：null=全部；Set=选中桶（点空=回全部） */
+let MGR_FOLD = false;    /* 筛选条折叠态（默认展开） */
+let MGR_CUR = null;      /* 当前打开的经理详情 */
+
+function renderMgrList(cat){
+  const m = D.mgr;
+  const rows0 = (m && (cat==='mgr_vet' ? m.vet : m.new)) || [];
+  $('meta').innerHTML = m
+    ? `数据基准 <b class="asof">${m.asof}</b> · ${catLabel(cat)} 上榜 <b>${rows0.length}</b> 人`
+      + ` · 名单复评 ${m.eval_date}（第${m.eval_no}期）`
+    : `数据基准 <b class="asof">—</b> · ${catLabel(cat)}`;
+  if(!m || !rows0.length){
+    $('list').innerHTML = '<div class="empty-tip">本期暂无上榜经理（数据源 data.mgr 缺失或为空）</div>';
+    return;
+  }
+  /* 二级页签：7 桶多选筛选条（默认全选=展示全部；可折叠收起，§4.2 拍板） */
+  const bkts = m.buckets || [];
+  if (MGR_SEL){                                  /* 数据变化后收敛失效选中项 */
+    MGR_SEL = new Set([...MGR_SEL].filter(b => bkts.indexOf(b) >= 0));
+    if (!MGR_SEL.size) MGR_SEL = null;
+  }
+  const on = b => !MGR_SEL || MGR_SEL.has(b);
+  const nSel = MGR_SEL ? MGR_SEL.size : bkts.length;
+  const chips = bkts.map(b =>
+    `<button class="bk-chip${on(b)?' on':''}" onclick="mgrBkTgl('${b}')">${b}</button>`).join('');
+  const filterHTML = `<div class="sub-filter">`
+    + `<button class="sf-toggle" onclick="mgrFold()">${MGR_FOLD?'风格筛选 ▾':'风格筛选 ▴'}</button>`
+    + (MGR_FOLD
+        ? `<span class="sf-sum">${nSel===bkts.length?'全部风格':nSel+' / '+bkts.length+' 桶'}</span>`
+        : `<span class="sf-chips"><button class="bk-chip${!MGR_SEL?' on':''}" onclick="mgrBkAll()">全部</button>${chips}</span>`)
+    + `</div>`;
+  const rows = rows0.filter(r => on(r.bucket));
+  if(!rows.length){
+    $('list').innerHTML = filterHTML + '<div class="empty-tip">该风格桶下本期暂无上榜经理</div>';
+    return;
+  }
+  $('list').innerHTML = filterHTML + rows.map(r => `
+    <div class="fundcard mgr-row" onclick='openMgrDetail(${JSON.stringify(r.key)})'>
+      <div class="fc-head">
+        <div class="rank ${r.rank<=3?'top'+r.rank:''}">${r.rank}</div>
+        <div style="flex:1;min-width:0">
+          <div class="fc-name">${r.name}<span class="rk style ${cat==='mgr_vet'?'vet':'nwx'}">${cat==='mgr_vet'?'老将':'新锐'}</span><span class="rk style ${MGR_BK_CLS[r.bucket]||'b-bal'}">${r.bucket||'均衡'}</span>${r.is_new?'<span class="rk new">新</span>':''}</div>
+          <div class="fc-code">${r.company}<span class="dot">·</span>自${r.entry}在榜<span class="dot">·</span>代表作 ${r.rep_name||'—'}</div>
+        </div>
+        <span class="mgr-go">›</span>
+      </div>
+    </div>`).join('');
+}
+function mgrBkTgl(b){
+  if (!MGR_SEL) MGR_SEL = new Set([b]);           /* 全选态点某桶 → 只看该桶 */
+  else if (MGR_SEL.has(b)){ MGR_SEL.delete(b); if(!MGR_SEL.size) MGR_SEL = null; }
+  else MGR_SEL.add(b);
+  renderList();
+}
+function mgrBkAll(){ MGR_SEL = null; renderList(); }
+function mgrFold(){ MGR_FOLD = !MGR_FOLD; renderList(); }
+
+function openMgrDetail(key){
+  const m = D.mgr; if(!m) return;
+  const inVet = (m.vet||[]).find(r=>r.key===key);
+  const row = inVet || (m.new||[]).find(r=>r.key===key);
+  if(!row) return;
+  const list = inVet ? m.vet : m.new;
+  const cat = inVet ? 'mgr_vet' : 'mgr_new';
+  const det = (m.detail||{})[key] || {};
+  MGR_CUR = {key, row, det, cat};
+  $('d-score-label').textContent = '池内相对评分';   /* AG §4-3：分数必须带此标注 */
+  $('d-score').style.color = '';
+  $('d-score').textContent = row.score==null ? '—' : row.score;
+  $('d-pick').style.display = 'none';              /* 经理详情不进基金对比 */
+  $('d-name').textContent = row.name;
+  $('d-code-inline').textContent = row.company;
+  $('d-rank').textContent = `${catLabel(cat)} 第 ${row.rank} 名 / ${list.length} 人`
+    + (row.is_new ? '（本期新进）' : '');
+  $('d-code').textContent = (row.bucket||'均衡')
+    + ' · 从业' + (row.career==null?'—':row.career+'年')
+    + ' · 任本基金' + (row.tenure==null?'—':row.tenure+'年')
+    + ' · 自' + row.entry + '在榜';
+  $('d-disc').textContent = ((D && D.disclaimer) || DISCLAIMER_FALLBACK)
+    + ' 本页评分为池内相对评分，不同榜与不同期不可横向比较。';
+  $('d-body').innerHTML = mgrBodyHTML(row, det);
+  const el = $('detail'); el.style.display = 'block';
+  requestAnimationFrame(()=>el.classList.add('show'));
+  drawMgrTrend();
+  drawMgrBeta();
+  document.body.style.overflow = 'hidden';
+}
+
+function mgrBodyHTML(row, det){
+  const reps = det.reps || [];
+  const repHTML = reps.length
+    ? '<div class="rep-cards">' + reps.map(x => `
+      <div class="rep-card">
+        <div class="rep-top"><span class="rep-rule">${x.rule}</span>
+          <span class="rep-name">${x.name}</span><span class="rep-code">${x.code||''}</span></div>
+        <div class="rep-metrics">
+          <span>规模 <b>${x.scale==null?'—':(+x.scale).toFixed(1)+'亿'}</b></span>
+          <span>任期 <b>${x.tenure==null?'—':x.tenure+'年'}</b></span>
+          <span>5年年化 <b class="${cls(x.ret5y)}">${mpct(x.ret5y)}</b></span>
+          <span>超额 <b class="${cls(x.excess)}">${mpp(x.excess)}</b></span>
+        </div></div>`).join('') + '</div>'
+    : '<div class="empty-tip">代表作数据缺失</div>';
+
+  /* a. 5 年净值曲线 vs 类型合成 */
+  const tr = det.trend;
+  const trendHTML = (tr && tr.d && tr.d.length > 1)
+    ? `<canvas class="md-canvas" id="mgr-trend"></canvas>
+       <div class="md-legend"><span><i style="background:#ff6a00"></i>基金净值</span>
+       <span><i style="background:#9aa0a6"></i>类型合成基准</span>
+       <span>· 5 年复权净值，归一化为累计收益</span></div>`
+    : '<div class="empty-tip">净值曲线数据不足</div>';
+
+  /* b. 逐年收益 + 超额（中线条形：右红=正超额/收益，左绿=负） */
+  const yr = det.yearly || [];
+  const yrMax = Math.max(0.01, ...yr.map(x => Math.max(Math.abs(x.f||0), Math.abs(x.e||0))));
+  const bar = v => {
+    if (v == null) return '';
+    const w = (Math.min(Math.abs(v), yrMax) / yrMax * 48).toFixed(1);
+    return v >= 0 ? `<i style="left:50%;width:${w}%;background:#e53935"></i>`
+                  : `<i style="right:50%;width:${w}%;background:#0b6b46"></i>`;
+  };
+  const yrHTML = yr.length ? yr.map(x => `
+    <div class="yr-row"><span class="yr-y">${x.y}</span>
+      <span class="yr-bar">${bar(x.f)}</span>
+      <span class="yr-vals"><b class="${cls(x.f)}">${mpct(x.f)}</b> · <span class="${cls(x.e)}">${mpp(x.e)}</span></span>
+    </div>`).join('') : '<div class="empty-tip">逐年数据不足</div>';
+
+  /* c. 近 20 季超额胜率 */
+  const q = det.quarterly || [];
+  const qMax = Math.max(0.01, ...q.map(x => Math.abs(x.e||0)));
+  const wins = q.filter(x => x.win).length;
+  const qHTML = q.length ? `
+    <div class="q-strip">${q.map(x =>
+      `<i title="${x.q} 超额${mpp(x.e)}" style="height:${Math.max(6, Math.abs(x.e||0)/qMax*100).toFixed(0)}%;background:${(x.e||0)>=0?'#e53935':'#0b6b46'}"></i>`).join('')}</div>
+    <div class="q-note">近${q.length}季跑赢 <b class="${wins>=q.length/2?'pos':'neg'}">${wins}</b> 季（${(wins/q.length*100).toFixed(0)}%）· 柱高=|超额|，红=跑赢绿=跑输</div>`
+    : '<div class="empty-tip">季度数据不足</div>';
+
+  /* d. 风格暴露时序（滚动1年超额 β，季频） */
+  const st = det.style;
+  const styleHTML = (st && st.d && st.d.length > 1)
+    ? `<canvas class="md-canvas" id="mgr-beta"></canvas>
+       <div class="md-legend">${Object.keys(st.s).map(k =>
+         `<span><i style="background:${MGR_BK_COLOR[k]||'#999'}"></i>${k}</span>`).join('')}
+       <span>· 滚动 1 年超额 β vs 各风格指数，季频</span></div>`
+    : '<div class="empty-tip">风格暴露数据不足</div>';
+
+  /* e. 风险指标（5 年窗） */
+  const rk = det.risk || {};
+  const riskHTML = `<div class="md-risk">
+    <div class="m"><div class="v">${rk.mdd==null?'—':(rk.mdd*100).toFixed(1)+'%'}</div><div class="l">5年最大回撤</div></div>
+    <div class="m"><div class="v">${rk.vol==null?'—':(rk.vol*100).toFixed(1)+'%'}</div><div class="l">5年年化波动</div></div>
+    <div class="m"><div class="v">${rk.calmar==null?'—':rk.calmar.toFixed(2)}</div><div class="l">卡玛（年化/回撤）</div></div>
+  </div>
+  <div class="q-note">审计参考：过考经理回撤中位约45%、最深74%——防"只看收益"。</div>`;
+
+  return `<div class="md-h">代表作（规则自动选取，不许手挑）</div>${repHTML}`
+    + `<div class="md-h">5 年净值走势 vs 类型合成基准</div>${trendHTML}`
+    + `<div class="md-h">逐年收益与超额（右红正 / 左绿负）</div>${yrHTML}`
+    + `<div class="md-h">近 20 季超额胜率</div>${qHTML}`
+    + `<div class="md-h">风格暴露时序（有没有追涨）</div>${styleHTML}`
+    + `<div class="md-h">风险指标（5 年窗）</div>${riskHTML}`;
+}
+
+function drawMgrTrend(){
+  const cv = $('mgr-trend');
+  if(!cv || typeof cv.getContext !== 'function' || !MGR_CUR) return;
+  const t = MGR_CUR.det.trend;
+  if(!t || !t.d || t.d.length < 2) return;
+  const ctx = cv.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dispW = cv.clientWidth || 710, dispH = cv.clientHeight || 200;
+  const LW = 710, LH = 200;
+  if (cv.width !== Math.round(dispW*dpr) || cv.height !== Math.round(dispH*dpr)){
+    cv.width = Math.round(dispW*dpr); cv.height = Math.round(dispH*dpr);
+  }
+  ctx.setTransform(dpr*dispW/LW, 0, 0, dpr*dispH/LH, 0, 0);
+  const W = LW, H = LH, PADL = 54, PADR = 12, PADT = 14, PADB = 24;
+  ctx.clearRect(0, 0, W, H);
+  const ys = t.f.concat(t.b);
+  const y1 = Math.max(...ys, 0), y2 = Math.min(...ys, 0);
+  const span = (y1 - y2) || 1;
+  const X = i => PADL + i * (W - PADL - PADR) / (t.d.length - 1);
+  const Y = v => PADT + (y1 - v) / span * (H - PADT - PADB);
+  ctx.font = '18px sans-serif'; ctx.fillStyle = '#9aa0a6';
+  ctx.strokeStyle = '#eef0f3'; ctx.lineWidth = 1.5;
+  for (let g = 0; g <= 4; g++){
+    const v = y2 + span*g/4, y = Y(v);
+    ctx.beginPath(); ctx.moveTo(PADL, y); ctx.lineTo(W-PADR, y); ctx.stroke();
+    ctx.fillText((v*100).toFixed(0)+'%', 6, y+6);
+  }
+  ctx.strokeStyle = '#d0d4da'; ctx.setLineDash([6,5]);
+  ctx.beginPath(); ctx.moveTo(PADL, Y(0)); ctx.lineTo(W-PADR, Y(0)); ctx.stroke();
+  ctx.setLineDash([]);
+  const line = (arr, color, w) => {
+    ctx.beginPath();
+    arr.forEach((v,i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v)));
+    ctx.strokeStyle = color; ctx.lineWidth = w; ctx.stroke();
+  };
+  line(t.b, '#9aa0a6', 2.5);          /* 类型合成基准：灰 */
+  line(t.f, '#ff6a00', 3);            /* 基金净值：橙 */
+  ctx.fillStyle = '#9aa0a6'; ctx.font = '18px sans-serif';
+  ctx.fillText(t.d[0].slice(2), PADL, H-6);
+  const last = t.d[t.d.length-1].slice(2);
+  ctx.fillText(last, W-PADR-ctx.measureText(last).width, H-6);
+}
+
+function drawMgrBeta(){
+  const cv = $('mgr-beta');
+  if(!cv || typeof cv.getContext !== 'function' || !MGR_CUR) return;
+  const st = MGR_CUR.det.style;
+  if(!st || !st.d || st.d.length < 2) return;
+  const ctx = cv.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dispW = cv.clientWidth || 710, dispH = cv.clientHeight || 200;
+  const LW = 710, LH = 200;
+  if (cv.width !== Math.round(dispW*dpr) || cv.height !== Math.round(dispH*dpr)){
+    cv.width = Math.round(dispW*dpr); cv.height = Math.round(dispH*dpr);
+  }
+  ctx.setTransform(dpr*dispW/LW, 0, 0, dpr*dispH/LH, 0, 0);
+  const W = LW, H = LH, PADL = 54, PADR = 12, PADT = 14, PADB = 24;
+  ctx.clearRect(0, 0, W, H);
+  const all = Object.values(st.s).flat().filter(v => v != null);
+  if (!all.length) return;
+  const y1 = Math.max(...all, 0), y2 = Math.min(...all, 0);
+  const span = (y1 - y2) || 1;
+  const X = i => PADL + i * (W - PADL - PADR) / (st.d.length - 1);
+  const Y = v => PADT + (y1 - v) / span * (H - PADT - PADB);
+  ctx.font = '18px sans-serif'; ctx.fillStyle = '#9aa0a6';
+  ctx.strokeStyle = '#eef0f3'; ctx.lineWidth = 1.5;
+  for (let g = 0; g <= 4; g++){
+    const v = y2 + span*g/4, y = Y(v);
+    ctx.beginPath(); ctx.moveTo(PADL, y); ctx.lineTo(W-PADR, y); ctx.stroke();
+    ctx.fillText(v.toFixed(1), 6, y+6);
+  }
+  ctx.strokeStyle = '#d0d4da'; ctx.setLineDash([6,5]);
+  ctx.beginPath(); ctx.moveTo(PADL, Y(0)); ctx.lineTo(W-PADR, Y(0)); ctx.stroke();
+  ctx.setLineDash([]);
+  Object.keys(st.s).forEach(k => {
+    const arr = st.s[k];
+    ctx.beginPath();
+    let started = false;
+    arr.forEach((v,i) => { if(v==null) return;
+      if(!started){ ctx.moveTo(X(i), Y(v)); started = true; }
+      else ctx.lineTo(X(i), Y(v)); });
+    ctx.strokeStyle = MGR_BK_COLOR[k] || '#999'; ctx.lineWidth = 2.5; ctx.stroke();
+  });
+  ctx.fillStyle = '#9aa0a6'; ctx.font = '18px sans-serif';
+  ctx.fillText(st.d[0].slice(2), PADL, H-6);
+  const last = st.d[st.d.length-1].slice(2);
+  ctx.fillText(last, W-PADR-ctx.measureText(last).width, H-6);
+}
 
 /* ============ 指数估值（v5.22，债指之外的指数型基金：卡片=指数，不含基金） ============ */
 /* v2.0 六档 + 体感温度措辞（用户 2026-11-01）：极低估/低估/合理偏低/正常/合理偏高/高估
@@ -2080,6 +2414,13 @@ const EXPORT_SIZES = {
   cover:{w:1200, h:510,  rows:10, label:'公众号封面 2.35:1（1200×510，仅情绪封面）'},
 };
 function exportRows(pool, rows){
+  /* 偏股雷达两榜（docs/20 §4.5）：按评分取每榜前 20（&rows 可覆盖） */
+  if (pool === 'mgr_vet' || pool === 'mgr_new'){
+    const m = (D && D.mgr) || {};
+    const list = (pool === 'mgr_vet' ? (m.vet || []) : (m.new || [])).slice()
+      .sort((a,b) => (a.rank||0) - (b.rank||0));
+    return rows ? list.slice(0, rows) : list;
+  }
   if (pool === 'eq_index'){
     const list = ((D && D.eq_index && D.eq_index.indices) || [])
       .filter(x => !isWeatherIdx(x))              /* 红利族已拆到天气模块（2026-11-06） */
@@ -2343,9 +2684,137 @@ function _drawWeatherExport(canvas, S, rowsLimit){
     disc: DISC_WEATHER});
 }
 
+/* ---- 偏股雷达两榜导出（docs/20 §4.5：每榜前20，含新进标与榜龄，尾注完整名单见页面） ---- */
+const MGR_BK_BADGE = {'科技':['#e8f1fd','#1d5bb8'],'医药':['#e0f6f4','#0d7a6f'],
+  '消费':['#fdeee8','#c05621'],'新能源':['#e8f6ec','#1a7f37'],'价值':['#f3ecfd','#7237c0'],
+  '周期':['#f7efe4','#8a6d00'],'均衡':['#f0f0ee','#666660']};
+function _drawMgrExport(canvas, S, pool, rows){
+  const m = (D && D.mgr) || {};
+  const list = exportRows(pool, rows || 20);          /* 每榜前 20（&rows 可覆盖） */
+  const label = catLabel(pool);
+  const W = S.w, H = S.h, PAD = 48;
+  const wide = W > H;
+  const FOOT = Math.round(H * (wide ? 0.17 : 0.14));
+  const footTop = H - FOOT;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  };
+  const right = (txt, x, y) => { ctx.textAlign = 'right'; ctx.fillText(txt, x, y); ctx.textAlign = 'left'; };
+  ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H);
+  if (!list.length){
+    ctx.fillStyle = '#8a8175'; ctx.font = '24px sans-serif';
+    ctx.fillText('本期暂无上榜经理', PAD, H/2);
+    return {width: W, height: H, rows: 0};
+  }
+  /* 标题条 + 日期胶囊 */
+  ctx.fillStyle = '#ff6a00'; rr(PAD, wide ? 34 : 38, 10, wide ? 42 : 46, 5); ctx.fill();
+  ctx.fillStyle = '#26231e'; ctx.font = '700 ' + (wide ? 40 : 46) + 'px sans-serif';
+  ctx.fillText('偏股雷达 · ' + label, PAD + 24, wide ? 74 : 82);
+  const pillTxt = '数据基准 ' + ((m && m.asof) || (D && D.asof) || '—');
+  ctx.font = (wide ? 18 : 20) + 'px sans-serif';
+  const pw = ctx.measureText(pillTxt).width + 36, ph = wide ? 36 : 40;
+  const px = W - PAD - pw;
+  ctx.fillStyle = '#fff'; rr(px, wide ? 40 : 46, pw, ph, ph/2); ctx.fill();
+  ctx.strokeStyle = '#ece7de'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#8a8175'; ctx.fillText(pillTxt, px + 18, wide ? 65 : 72);
+  /* 副标题 */
+  ctx.fillStyle = '#a8a094'; ctx.font = (wide ? 17 : 19) + 'px sans-serif';
+  ctx.fillText(`按池内相对评分排序 · 每榜前${list.length} · 名单复评 ${(m && m.eval_date) || '—'}`,
+               PAD, wide ? 130 : 140);
+  /* 行卡 */
+  const rowsTop = wide ? 152 : 166;
+  const avail = footTop - rowsTop - 14;
+  const n = list.length;
+  const rowH = Math.max(22, Math.floor(avail / n));
+  ctx.fillStyle = '#ffffff'; rr(PAD, rowsTop, W - PAD*2, rowH*n + 8, 16); ctx.fill();
+  const badge = (txt, x, y, cm, fs) => {
+    ctx.font = '700 ' + fs + 'px sans-serif';
+    const w = ctx.measureText(txt).width + 16;
+    ctx.fillStyle = cm[0]; rr(x, y, w, fs + 10, 6); ctx.fill();
+    ctx.fillStyle = cm[1]; ctx.fillText(txt, x + 8, y + fs + 1);
+    return x + w + 8;
+  };
+  list.forEach((r, i) => {
+    const ry = rowsTop + 4 + i * rowH;
+    const twoLine = rowH >= 46;
+    const h = twoLine ? Math.min(rowH - 8, 58) : rowH - 4;
+    if (i < n - 1){
+      ctx.fillStyle = '#f3efe8';
+      ctx.fillRect(PAD + 44, ry + rowH - 1, W - PAD*2 - 60, 1);
+    }
+    const rk = r.rank || i + 1;
+    const bSize = Math.min(wide ? 26 : 34, h - 6), bx = PAD + 16;
+    const by = ry + Math.round((rowH - bSize) / 2);
+    ctx.fillStyle = rk === 1 ? '#ffe3e3' : rk === 2 ? '#fff0dd' : rk === 3 ? '#fdf6d8' : '#f4f1ec';
+    rr(bx, by, bSize, bSize, 8); ctx.fill();
+    ctx.fillStyle = rk === 1 ? '#d32f2f' : rk === 2 ? '#e07b00' : rk === 3 ? '#b08900' : '#8a8175';
+    ctx.font = '700 ' + Math.round(bSize * 0.5) + 'px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(rk), bx + bSize/2, by + Math.round(bSize * 0.68)); ctx.textAlign = 'left';
+    const nameX = bx + bSize + 12;
+    const xScore = W - PAD - 16;
+    const isVet = pool === 'mgr_vet';
+    const chBadge = [isVet ? '#fdf3d8' : '#e3f2fd', isVet ? '#8a6d00' : '#0b6bb5'];
+    const bkC = MGR_BK_BADGE[r.bucket] || MGR_BK_BADGE['均衡'];
+    if (twoLine){
+      const l1 = ry + Math.round(rowH * 0.38);
+      ctx.font = '700 ' + (wide ? 20 : 24) + 'px sans-serif'; ctx.fillStyle = '#26231e';
+      const nm = _fitText(ctx, r.name, Math.min(300, xScore - nameX - 240));
+      ctx.fillText(nm, nameX, l1);
+      let bx2 = nameX + ctx.measureText(nm).width + 10;
+      bx2 = badge(isVet ? '老将' : '新锐', bx2, l1 - (wide ? 17 : 20), chBadge, wide ? 13 : 15);
+      bx2 = badge(r.bucket || '均衡', bx2, l1 - (wide ? 17 : 20), bkC, wide ? 13 : 15);
+      if (r.is_new) badge('新', bx2, l1 - (wide ? 17 : 20), ['#fff4ec','#a85100'], wide ? 13 : 15);
+      ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (wide ? 22 : 26) + 'px sans-serif';
+      right(r.score == null ? '—' : (+r.score).toFixed(1), xScore, l1 + 2);
+      const l2 = ry + Math.round(rowH * 0.80);
+      ctx.font = (wide ? 14 : 16) + 'px sans-serif'; ctx.fillStyle = '#a8a094';
+      const line2 = `${r.company} · 自${r.entry}在榜 · 代表作 ${r.rep_name || '—'}`;
+      ctx.fillText(_fitText(ctx, line2, xScore - nameX - (wide ? 90 : 110)), nameX, l2);
+    } else {
+      /* 紧凑单行（宽图20行空间小） */
+      const l1 = ry + Math.round(rowH * 0.68);
+      const fs = Math.max(12, Math.min(wide ? 15 : 17, Math.round(h * 0.44)));
+      ctx.font = '700 ' + fs + 'px sans-serif'; ctx.fillStyle = '#26231e';
+      const nm = _fitText(ctx, r.name, Math.min(200, xScore - nameX - 330));
+      ctx.fillText(nm, nameX, l1);
+      let bx2 = nameX + ctx.measureText(nm).width + 8;
+      bx2 = badge(isVet ? '老将' : '新锐', bx2, l1 - fs - 4, chBadge, fs - 2);
+      bx2 = badge(r.bucket || '均衡', bx2, l1 - fs - 4, bkC, fs - 2);
+      if (r.is_new) badge('新', bx2, l1 - fs - 4, ['#fff4ec','#a85100'], fs - 2);
+      ctx.font = (fs - 1) + 'px sans-serif'; ctx.fillStyle = '#a8a094';
+      const tail = `${r.company} · 自${r.entry}在榜 · ${r.rep_name || ''}`;
+      ctx.fillText(_fitText(ctx, tail, xScore - (bx2 + 10) - (wide ? 80 : 100)), bx2 + 6, l1);
+      ctx.fillStyle = '#ff6a00'; ctx.font = '700 ' + (fs + 5) + 'px sans-serif';
+      right(r.score == null ? '—' : (+r.score).toFixed(1), xScore, l1);
+    }
+  });
+  /* 页脚：完整名单见页面（设计拍板）+ 合规口径句 */
+  const fy = footTop;
+  const pTxt = '完整名单见页面';
+  ctx.font = '700 ' + (wide ? 20 : 22) + 'px sans-serif';
+  const pW = ctx.measureText(pTxt).width + 44, pH = wide ? 46 : 50;
+  const g2 = ctx.createLinearGradient(PAD, 0, PAD + pW, 0);
+  g2.addColorStop(0, '#ff8a3d'); g2.addColorStop(1, '#ff6a00');
+  ctx.fillStyle = g2; rr(PAD, fy + 6, pW, pH, pH/2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.fillText(pTxt, PAD + 22, fy + 6 + pH * 0.66);
+  ctx.fillStyle = '#ff6a00'; ctx.font = (wide ? 14 : 16) + 'px sans-serif';
+  ctx.fillText('评分=池内相对评分 · 不同榜与不同期不可横比 · @班马成长日记',
+               PAD, fy + 6 + pH + 26);
+  ctx.fillStyle = '#b3aca2'; ctx.font = (wide ? 13 : 15) + 'px sans-serif';
+  ctx.fillText('数据基准 ' + ((m && m.asof) || (D && D.asof) || '')
+               + ' · 随 data.js 每周日更新，勿用于非本期内容', PAD, fy + 6 + pH + 50);
+  return {width: W, height: H, rows: n};
+}
+
 function drawExport(canvas, pool, sizeKey, rows){
   const S = EXPORT_SIZES[sizeKey] || EXPORT_SIZES.xhs;
   if (pool === 'div_weather') return _drawWeatherExport(canvas, S, rows);
+  /* 偏股雷达两榜（docs/20 §4.5）：独立绘制——行=经理（名次/徽章/榜龄/代表作/评分） */
+  if (pool === 'mgr_vet' || pool === 'mgr_new') return _drawMgrExport(canvas, S, pool, rows);
   /* 2026-11-07 拍板：指数温度计导出（eq_index/_drawEqExport）删除，估值并入 market_weekly */
   const ps = (D && D.pools && D.pools[pool]) || {};
   const hasPrev = ps.has_prev != null ? !!ps.has_prev : !!(D && D.has_prev);
@@ -2692,15 +3161,22 @@ function initExport(){
       stage.style.zoom = bare ? 1 : (bw / ME.sizes[sizeKey].w);
     } else {
       const info = drawExport(cv, pool, sizeKey, rows);
-      title.textContent = (pool === 'div_weather' ? '红利天气' : nameOf(pool) + '心动榜')
+      title.textContent = (pool === 'div_weather' ? '红利天气'
+        : pool.indexOf('mgr_') === 0 ? '偏股雷达 · ' + nameOf(pool)   /* 两榜不是"心动榜" */
+        : nameOf(pool) + '心动榜')
         + ' · 班马日记本导出'
         + (pools.length > 1 ? '（共 ' + pools.length + ' 个分类，页签切换）' : '');
       hint.textContent = (pool === 'div_weather'
         ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '红利天气·股息率口径')
         : pool === 'index'
         ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '全量分组')   /* v5.17 债指不分 TOP 截断 */
+        : pool.indexOf('mgr_') === 0
+        ? EXPORT_SIZES[sizeKey].label.replace(/TOP\d+/, '每榜前' + info.rows)  /* 两榜按评分前20 */
         : EXPORT_SIZES[sizeKey].label) + ' · ' + info.rows + ' 行 · 数据基准 '
-        + ((D && D.asof) || '') + '（数字取自当期 data.js，勿用于非本期内容）'
+        + (pool.indexOf('mgr_') === 0
+            ? ((D.mgr && D.mgr.asof) || (D && D.asof) || '')   /* 两榜基准=偏股净值日 */
+            : ((D && D.asof) || ''))
+        + '（数字取自当期 data.js，勿用于非本期内容）'
         + (pools.length > 1 ? '；「下载全部」逐池出图，浏览器可能询问是否允许多文件下载' : '');
       stage.style.display = 'none'; cv.style.display = '';
     }
@@ -2754,7 +3230,7 @@ if (initExport()){
   /* v1.8 进入网址默认到主界面（用户 2026-10-31）：无 section/cat/group 参数时跳 home.html。
      smoke 测试无 location（typeof undefined）→ 不跳，正常渲染。 */
   let _hasParam = false;
-  try { _hasParam = !!(location.search && /section=|cat=|group=|eqdetail=/.test(location.search)); } catch(e){}
+  try { _hasParam = !!(location.search && /section=|cat=|group=|eqdetail=|mgrdetail=/.test(location.search)); } catch(e){}
   if (!_hasParam && typeof location !== 'undefined' && location.replace){
     location.replace('home.html');
   } else {
@@ -2774,6 +3250,14 @@ if (initExport()){
   /* 选中本区首个启用页签（?cat= 若在本区内则优先） */
   (function(){
     const inSec = (D.categories||[]).filter(c => SECTIONS[SECTION].tabs.includes(c.id) && c.enabled);
+    /* 数据缺该区页签（如本期 mgr 段缺失）→ 回默认偏债区，避免空白页签+串区列表 */
+    if (!inSec.length && SECTION !== 'bond'){
+      SECTION = 'bond';
+      const bd = (D.categories||[]).filter(c => SECTIONS.bond.tabs.includes(c.id) && c.enabled);
+      ACTIVE = (bd[0] && bd[0].id) || D.category || 'short_bond';
+      renderTabs(ACTIVE); renderList(); renderPick();
+      return;
+    }
     let want = null;
     try{
       const q = new URLSearchParams(location.search);
@@ -2788,6 +3272,22 @@ if (initExport()){
     try{
       const c = new URLSearchParams(location.search).get('eqdetail');
       if (c){ EQ_WX_BACK = true; openEqIndexDetail(c); }
+    }catch(e){}
+  })();
+  /* 偏股雷达深链（docs/20 §4）：?mgrdetail=<name|company> → 该经理详情 */
+  (function(){
+    try{
+      const k = new URLSearchParams(location.search).get('mgrdetail');
+      if (k && D.mgr){
+        const inVet = (D.mgr.vet||[]).some(r => r.key === k);
+        const inNew = (D.mgr.new||[]).some(r => r.key === k);
+        if (inVet || inNew){
+          SECTION = 'mgr';
+          ACTIVE = inVet ? 'mgr_vet' : 'mgr_new';
+          renderTabs(ACTIVE); renderList(); renderPick();
+          openMgrDetail(k);
+        }
+      }
     }catch(e){}
   })();
   }

@@ -164,13 +164,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
       <span class="arrow">›</span>
     </a>
 
-    <!-- 偏股（留位，暂不命名） -->
-    <div class="card c-eq dev soon">
-      <span class="badge">敬请期待</span>
+    <!-- 偏股雷达（docs/20 §4，2026-11-13 上线：老将榜/新锐榜） -->
+    <a class="card c-eq" href="index.html?section=mgr" id="mgr-card">
+      <span class="badge" id="mgr-badge" hidden>敬请期待</span>
       <div class="ic">📈</div>
-      <div class="nm">偏股主动</div>
-      <div class="ds">主动基金心动榜，开发中</div>
-    </div>
+      <div class="nm">偏股雷达</div>
+      <div class="ds" id="mgr-card-ds">老将新锐两榜 · 持续跑赢同类的主动经理</div>
+      <span class="arrow">›</span>
+    </a>
   </div>
 
   <div class="ft">
@@ -203,6 +204,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
   var top = wx.slice().sort(function(a,b){ return (b.dyr||0) - (a.dyr||0); })[0];
   var sun = wx.filter(function(x){ return x.weather==='酷暑' || x.weather==='晴天'; }).length;
   el.textContent = '最晴：' + top.name + ' ' + top.weather + ' · 晴天系 ' + sun + ' 只';
+})();
+/* 偏股雷达卡（docs/20 §4）：无 mgr 段时回退"敬请期待"占位（与市场卡同模式） */
+(function(){
+  var D = window.CARD_DATA || {};
+  var m = D.mgr;
+  var ok = m && ((m.vet || []).length + (m.new || []).length) > 0;
+  if (ok){
+    document.getElementById('mgr-card-ds').textContent = '老将 ' + (m.vet || []).length
+      + ' 人 · 新锐 ' + (m.new || []).length + ' 人 · 持续跑赢同类的主动经理';
+    return;
+  }
+  var card = document.getElementById('mgr-card');
+  if (!card) return;
+  card.removeAttribute('href');
+  card.classList.add('dev', 'soon');
+  document.getElementById('mgr-badge').hidden = false;
+  document.getElementById('mgr-card-ds').textContent = '主动基金两榜，开发中';
 })();
 </script>
 </body>

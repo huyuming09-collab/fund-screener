@@ -285,7 +285,8 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
                   prev_ranks: dict | None = None,
                   n_screened: int | None = None,
                   pool_stats: dict | None = None,
-                  eq_index: dict | None = None) -> dict:
+                  eq_index: dict | None = None,
+                  mgr: dict | None = None) -> dict:
     """榜单 → 完整卡片数据契约（TOP-N 榜单 + 每只的详情数据）。
 
     prev_ranks  上一期 {base: rank}；None=无历史（首期，全部不算新增、不显示环比）。
@@ -298,6 +299,8 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
                 逐池真值走 pools 映射；不给 pool_stats 时按传入参数（单池调用）原样输出。
     eq_index   指数估值模块 payload（v5.22，eqindex.build 产物）。None=本期无数据 →
                 categories 里过滤掉 eq_index 页签（不出现空页）；有值原样下发。
+    mgr        偏股雷达两榜 payload（docs/20 §4，eqscore.build 产物：vet/new 两榜 +
+                detail 明细）。None=本期无数据 → 过滤 mgr_vet/mgr_new 页签；有值原样下发。
     """
     max_points = C.CARD["trend_max_points"]
     funds = []
@@ -356,14 +359,18 @@ def build_payload(res: pd.DataFrame, snapshot: dict, navs: dict,
         "has_prev": ps.get("has_prev", prev_ranks is not None),
         "sharpe_rf": C.SHARPE_RF,
         # v5.22：指数估值页签仅在模块当期有数据时出现（None=不展示空页签）
+        # mgr_vet/mgr_new 同理（docs/20 §4，无 eqscore 产物则页签不出现）
         "categories": [c for c in C.CARD["categories"]
-                       if not (c.get("id") == "eq_index" and not eq_index)],
+                       if not (c.get("id") == "eq_index" and not eq_index)
+                       and not (c.get("id", "").startswith("mgr_") and not mgr)],
         "funnel": funnel or ps.get("funnel", {}),
         "pools": pools,
         "funds": funds,
         # v5.22 指数估值（债指之外的指数型基金）：独立键，不混入 funds/pools
         # ——卡片单元=指数，基金清单只在详情；无数据时为 None（前端不渲染页签）。
         "eq_index": eq_index,
+        # 偏股雷达两榜（docs/20 §4）：vet/new + detail；None=前端不渲染页签
+        "mgr": mgr,
         "disclaimer": DISCLAIMER,
     }
 

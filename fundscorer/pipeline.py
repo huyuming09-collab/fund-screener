@@ -625,8 +625,17 @@ def run(skip_refresh: bool = False, top: int | None = None,
             except Exception as e:                 # noqa: BLE001
                 log(f"[7][指数估值] 构建失败：{type(e).__name__}: {e}"
                     "（跳过本模块，主动三池与债指不受影响）")
+        # 偏股雷达两榜（docs/20 §4，2026-11-13 接入）：评分+考卷+名单状态机。
+        # 失败只跳过（页签不出现），绝不影响偏债/指数产物与退出码。
+        mgr_payload = None
+        try:
+            from . import eqscore
+            mgr_payload = eqscore.build(refresh=not skip_refresh, log=log)
+        except Exception as e:                     # noqa: BLE001
+            log(f"[9][偏股雷达] 构建失败：{type(e).__name__}: {e}（跳过本模块）")
         payload = cards.build_payload(cards_df, merged_snap, merged_navs,
-                                      pool_stats=stats, eq_index=eq_payload)
+                                      pool_stats=stats, eq_index=eq_payload,
+                                      mgr=mgr_payload)
         # 市场情绪（v2.0）：嵌入 data.js（周更随 data.js 自动提交；失败只跳过不影响基金）
         try:
             from . import market as MK

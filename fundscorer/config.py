@@ -530,6 +530,10 @@ CARD = {
         # 指数估值页签（2026-10-29 用户拍板）：债指之外的指数型基金；卡片=指数，
         # 详情=估值档位+低费率基金清单。关闭开关 = EQ_INDEX["enabled"]=False（页签随 payload 收口）。
         {"id": "eq_index", "name": "指数估值", "enabled": True},
+        # 偏股雷达两榜（docs/20 §4，2026-11-13 实现）：老将榜/新锐榜页内 Tab。
+        # 有数据才出现（payload["mgr"] 缺失时 build_payload 过滤）；数据源=eqscore 引擎。
+        {"id": "mgr_vet", "name": "老将榜", "enabled": True},
+        {"id": "mgr_new", "name": "新锐榜", "enabled": True},
     ],
 }
 
