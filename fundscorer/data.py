@@ -489,6 +489,87 @@ def fetch_manager_products_ann(manager_id: str) -> list[float]:
     return anns
 
 
+def _manager_products_spans(manager_id: str, refresh: bool = False) -> list[dict]:
+    """天天经理页 → 产品清单（含任职起止）：非债、非货基、起止可解析、start<end。
+    缓存 7 天（`mgrprods_v1_{id}`）；同一经理页可能有第二张重复表（无起止列），跳过。"""
+    ck = f"mgrprods_v1_{manager_id}"
+    if not refresh:
+        v = _load_cache(ck, 24 * 7)
+        if v is not None:
+            return list(v)
+    out: list[dict] = []
+    try:
+        html = _http(f"https://fund.eastmoney.com/manager/{manager_id}.html",
+                     encoding="utf-8")
+        for r in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+            cells = [re.sub(r"<[^>]+>", "", c).strip()
+                     for c in re.findall(r"<td[^>]*>(.*?)</td>", r, re.S)]
+            if len(cells) < 8 or not re.match(r"^\d{6}$", cells[0]):
+                continue
+            if _is_bond_like(cells[0], cells[1]) or "货币" in cells[1]:
+                continue                      # 偏股口径：债类/货基不参与（拟合样本验证）
+            mm = re.match(r"(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2}|至今)",
+                          cells[5]) if len(cells) > 5 else None
+            if not mm:
+                continue                      # 第二张表/无起止列 → 跳过
+            start = pd.Timestamp(mm.group(1))
+            end = None if mm.group(2) == "至今" else pd.Timestamp(mm.group(2))
+            if end is not None and end <= start:
+                continue
+            out.append({"code": cells[0], "name": cells[1],
+                        "start": start, "end": end})
+    except Exception:
+        pass
+    _save_cache(ck, out)
+    return out
+
+
+def manager_career_ann(manager_id: str, refresh: bool = False) -> float | None:
+    """经理**从业年化 = 等权组合复合年化**（2026-11-14 定稿，拟合支付宝口径）。
+
+    口径：该经理全部非债、非货基产品（含已离任、含各份额），**各自上任日起**
+    的日收益等权平均 → 复合 → 年化。10 个支付宝样本对照 **MAE=0.60pp**
+    （8/10 在 ±0.6pp 内，最差马翔 -1.92——差额来自缺净值/份额细节）；
+    反例：逐产品年化取均值 MAE4.6、取中位 MAE5.4、最长单基金 MAE4.4——全被否。
+    产品清单缓存 7 天；净值走 fetch_nav（20h 缓存，池内基金与周更共用）；
+    结果缓存 7 天（`mgrann_v1_{id}`，周更自然重算）。缺净值/解析失败的产品跳过；
+    任一产品都没有 → None（调用方按"非双十/不显示"处理）。"""
+    ck = f"mgrann_v1_{manager_id}"
+    if not refresh:
+        v = _load_cache(ck, 24 * 7)
+        if v is not None:
+            return float(v)
+    prods = _manager_products_spans(manager_id, refresh)
+    rets: list[pd.Series] = []
+    for p in prods:
+        try:
+            nav = fetch_nav(p["code"])
+        except Exception:
+            continue                            # 缺净值（清盘/未收录）→ 跳过
+        s = nav[nav["date"] >= p["start"]]
+        if p["end"] is not None:
+            s = s[s["date"] <= p["end"]]         # 离任日截断（基金续存也不算他的）
+        if len(s) < 30:
+            continue
+        r = s.set_index("date")["nav"].pct_change().dropna()
+        if len(r) >= 30:
+            rets.append(r)
+    if not rets:
+        return None
+    port = pd.concat(rets, axis=1).mean(axis=1, skipna=True).dropna()
+    if len(port) < 250:                          # 不足一年，年化无意义
+        return None
+    yrs = (port.index[-1] - port.index[0]).days / 365.0
+    try:
+        val = float((1 + port).prod() ** (1.0 / yrs) - 1)
+    except (OverflowError, ZeroDivisionError):
+        return None
+    if val == val and abs(val) < 1.0:            # 非NaN且|年化|<100%（合理性界）
+        _save_cache(ck, val)
+        return val
+    return None
+
+
 # ---------------------------------------------------------------- 4b. 经理产品类型过滤（v5.6）
 _FUND_TYPE_MAP: dict | None = None
 

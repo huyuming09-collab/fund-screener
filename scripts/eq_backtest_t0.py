@@ -338,10 +338,10 @@ def main() -> int:
                                  fut_rank=row["fut_rank"],
                                  fut_ret=row["fut_ret"], r5=row["r5"],
                                  mdd=row["mdd"], W3r=row["W3r"]))
-        # 逐基金明细存盘（供规则联查：仓位/量化/小格/失真旗 × 未来结局）
+        # 逐基金明细存盘（供规则联查：仓位/小格/失真旗 × 未来结局 + 小格合并评估）
         keep = df[["type", "bkt", "r5", "mdd", "fut_ret", "fut_mdd", "fut_rank",
                    "F1", "F2", "F3r", "F3s", "F5r", "F5s", "F6",
-                   "W3r", "W3s"]].copy()
+                   "W3r", "W3s", "yearly"]].copy()
         keep.to_pickle(ROOT / f"data/eq_bt_{tag}.pkl")
 
     # ---- 打印 ----

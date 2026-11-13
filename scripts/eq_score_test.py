@@ -37,6 +37,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 from fundscorer import data as D                    # noqa: E402
 from fundscorer import eqgate as G                  # noqa: E402
+from fundscorer import eqscore as ES                # noqa: E402（_fund_beta 尺度化）
 import scripts.eq_peer_test as P                    # noqa: E402
 import scripts.eq_sustain_check as S                # noqa: E402
 
@@ -87,6 +88,10 @@ def build_factors(o, feat, qual, pairs, wealth, f10s) -> pd.DataFrame:
         proxy_5y[bkt] = s_ann(cl, o - pd.DateOffset(years=5), o)
     comp5 = {t: S.comp_ann(w, o - pd.DateOffset(years=5), o)
              for t, w in wealth.items()}
+    # 尺度化变体（2026-11-14）：6代理周频β —— 与产线 build_factors 同实现
+    proxy_w = {b: (cl.resample("W-FRI").last().pct_change().dropna()
+                   if cl is not None else None)
+               for b, cl in mkt_ok.items()}
 
     rows = {}
     for c in qual:
@@ -102,6 +107,23 @@ def build_factors(o, feat, qual, pairs, wealth, f10s) -> pd.DataFrame:
             adj = [f[f"cexc_{j}"] for j in range(5)]
             a5 = (None if (pd.isna(f["ret5y"]) or comp5.get(f["type"]) is None)
                   else f["ret5y"] - comp5[f["type"]])
+        # 尺度化变体（β 缺失回退 raw，不产生新 NaN）
+        beta = ES._fund_beta(c, o, proxy_w)
+        if beta:
+            d5 = sum(beta[b] * proxy_5y[b] for b in beta
+                     if proxy_5y.get(b) is not None)
+            a5s = None if pd.isna(f["ret5y"]) else f["ret5y"] - d5
+            adjs = []
+            for j in range(5):
+                drag = sum(beta[b] * proxy_y[b][j] for b in beta
+                           if b in proxy_y and proxy_y[b][j] is not None)
+                adjs.append(None if f[f"back{j}"] is None
+                            else f[f"back{j}"] - drag)
+            f5s = (sum(adjs) - max(adjs)
+                   if all(x is not None for x in adjs) else None)
+        else:
+            a5s = a5
+            f5s = (sum(adj) - max(adj)) if all(x is not None for x in adj) else None
         ps = [f[f"ps_{j}"] for j in range(5)]
         ok_ps = all(not pd.isna(x) for x in ps)
         ok_adj = all(x is not None for x in adj)
@@ -113,6 +135,7 @@ def build_factors(o, feat, qual, pairs, wealth, f10s) -> pd.DataFrame:
                                              and all(x is not None for x in adj)) else None
         f5 = (sum(adj) - max(adj)) if ok_adj else None
         rows[c] = dict(F1=f1, F2=f2, F3=f3, F4=f4, F5=f5,
+                       F3s=a5s, F5s=f5s,
                        bucket=bkt, type=f["type"], ret5y=f["ret5y"])
     df = pd.DataFrame(rows).T
     # 任期/从业（shift 后）
@@ -142,15 +165,18 @@ def build_factors(o, feat, qual, pairs, wealth, f10s) -> pd.DataFrame:
     df["chan"] = df["car"].map(lambda x: "A" if x == x and x > 10
                                else ("B" if x == x and x > 6 else "out"))
     # 分位归一（合格池内）
-    for col in ["F1", "F2", "F3", "F4", "F5", "ten", "car"]:
+    for col in ["F1", "F2", "F3", "F4", "F5", "F3s", "F5s", "ten", "car"]:
         v = pd.to_numeric(df[col], errors="coerce")
         df[col + "_p"] = (v.rank(pct=True) * 100).round(2)
     df["F6_p"] = df[["ten_p", "car_p"]].mean(axis=1)
     return df
 
 
-def scores(df: pd.DataFrame, w: dict) -> pd.Series:
-    cols = [f + "_p" for f in w]
+def scores(df: pd.DataFrame, w: dict, src: str = "raw") -> pd.Series:
+    """W3 加权分。src='scaled' → F3/F5 用6代理β尺度化分位（F3s_p/F5s_p）。"""
+    def _col(f):
+        return (f + "s_p") if (src == "scaled" and f in ("F3", "F5")) else f + "_p"
+    cols = [_col(f) for f in w]
     m = df[cols].astype(float)
     wts = pd.Series([w[f] for f in w], index=cols)   # 权重索引须与列名一致
     return (m * wts).sum(axis=1) / sum(w.values())
@@ -269,16 +295,17 @@ def main():
             rng = np.random.default_rng(7)
             rnd = list(rng.choice(sorted(base), size=min(20, len(base)),
                                   replace=False))
-            for label, w in [("随机", None), ("单F1", "F1"),
-                             ("W1", W_EQUAL), ("W2", W_CORE),
-                             ("W3", w3)]:
+            for label, w, src in [("随机", None, "raw"), ("单F1", "F1", "raw"),
+                                  ("W1", W_EQUAL, "raw"), ("W2", W_CORE, "raw"),
+                                  ("W3", w3, "raw"),
+                                  ("W3s", w3, "scaled")]:
                 if w is None:
                     pick = rnd
                 elif w == "F1":
                     pick = (df.loc[sorted(base), "F1_p"]
                             .sort_values(ascending=False).head(20).index.tolist())
                 else:
-                    sc = scores(df.loc[sorted(base)], w)
+                    sc = scores(df.loc[sorted(base)], w, src)
                     pick = sc.sort_values(ascending=False).head(20).index.tolist()
                 fut = st["fut"].reindex(pick).dropna()
                 if len(fut) >= 5:
@@ -288,8 +315,9 @@ def main():
             print(f"    {lname}({len(base)}只): " + " | ".join(parts))
         # 全合格池 IC
         row = []
-        for label, w in [("W1", W_EQUAL), ("W2", W_CORE), ("W3", w3)]:
-            sc = scores(df, w)
+        for label, w, src in [("W1", W_EQUAL, "raw"), ("W2", W_CORE, "raw"),
+                              ("W3", w3, "raw"), ("W3s", w3, "scaled")]:
+            sc = scores(df, w, src)
             row.append(f"{label} IC={ic(sc, st['fut']):+.3f}")
         print(f"    全合格池: " + " | ".join(row))
 
@@ -318,7 +346,7 @@ def main():
             idx = sub["car"].astype(float).sort_values(
                 ascending=False).index.tolist()
         else:
-            sc = scores(sub, w)
+            sc = scores(sub, w, "scaled" if order == "sc3s" else "raw")
             idx = sc.sort_values(ascending=False).index.tolist()
         # 基金 → 经理
         sub2 = pairs[pairs["code"].isin(idx)].copy()
@@ -334,8 +362,9 @@ def main():
             for label, order in (("计数序", "count"), ("F1序", "F1"),
                                  ("年限序", "career"),
                                  ("W1", "sc1"), ("W2", "sc2"),
-                                 ("W3", "sc3")):
-                w = {"sc1": W_EQUAL, "sc2": W_CORE, "sc3": w3s}.get(order)
+                                 ("W3", "sc3"), ("W3s", "sc3s")):
+                w = {"sc1": W_EQUAL, "sc2": W_CORE, "sc3": w3s,
+                     "sc3s": w3s}.get(order)
                 a = list_mgrs(s0, rule, ch, order, w)
                 b = list_mgrs(later, rule, ch, order, w)
                 if not a:
@@ -400,8 +429,11 @@ def main():
             if parts:
                 print(f"    {rule}∩{ch} top10分组: " + " | ".join(parts))
         # 分数 vs 原始收益 的相关（越低越不被风格收益污染）
+        sc_s = scores(df, W_CORE, "scaled")
         print(f"    score vs 原始ret5y 相关 {ic(sc, df['ret5y']):+.3f} | "
-              f"score vs 未来排位 IC {ic(sc, st['fut']):+.3f}")
+              f"score vs 未来排位 IC {ic(sc, st['fut']):+.3f} | "
+              f"尺度化(W2s) ret5y {ic(sc_s, df['ret5y']):+.3f} / "
+              f"fut {ic(sc_s, st['fut']):+.3f}")
 
     print(f"\n总耗时 {(time.time()-t0)/60:.1f}min", flush=True)
 

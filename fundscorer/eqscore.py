@@ -70,6 +70,16 @@ CSV_FUND = ROOT / "data" / "eq_score_funds.csv"
 
 # W3 权重（docs/20 §2.2：LOOCV-IC 三起点定权，F4 负 IC 归零）——产品决策
 W3 = {"F1": 0.27, "F3": 0.25, "F5": 0.19, "F2": 0.15, "F6": 0.14}
+# F3/F5 因子源开关（2026-11-14 评分基准修复，七问排查 P1 落地）：
+#   "raw"    = 单代理β=1 / 类型合成（原产线；检验18-20 基线口径）
+#   "scaled" = 6代理周频回归β尺度化（F3=ret−Σβᵢ·代理ᵢ；β缺失回退raw，不产生新NaN）
+# **2026-11-14 复测裁决：不切换，保持 "raw"**——eq_score_test 三起点全量复测：
+#   IC 2/3 起点劣化（2025起点 +0.184→+0.145）、检验20 score-vs-ret5y 相关
+#   0.66→0.78（尺度化反而更贴原始收益）、检验19 留存打平 → 未过"不劣化"闸。
+#   矛盾证据如实记：eq_backtest_t0（全池、单段累计未来度量）曾显示 W3s 略优
+#   ——以官方检验18-20 为准（docs/20 §2.2 验收口径）。双列 F3s/F5s 保留供复测。
+# 因子每次 build 现算，feat 缓存只存输入（yearly/ret5y），切换本开关无需动缓存指纹。
+W3_FACTOR_SRC = "raw"
 # 考卷阈值（docs/20 §2.4 L2）——产品决策
 G3S_MIN_TOP = 3
 G3S_PCT = 75.0
@@ -93,6 +103,11 @@ DEEP_LOSS_MIN = -0.05
 #     灵活/平衡用低阈值防误伤；R4组伪前瞻 Tm +6.7% vs kept+32.9%、T0 同格排位25 vs49）
 POS_MIN_BY_TYPE = {"股票型": 50.0, "混合型-偏股": 50.0,
                    "混合型-灵活": 30.0, "混合型-平衡": 30.0}
+# 小格合并（2026-11-14 七问排查 P1 落地）：A格(type×7桶)样本 < 此值 →
+# 改在（类型×三类）组内取年窗分位，大格不动。
+# eq_cell_merge_eval 双起点判据全过：M1 考卷两期 Jaccard 0.312→0.377、
+# M2 小格秩分半信度 0.003→0.218（A下≈噪声）、M3 信号 IC 0.019→0.245。
+CELL_MERGE_N = 150
 # 持仓校验降级（2026-11-13）：前10重仓中相关桶合计 <15% → 同格降均衡
 HOLD_MIN = 0.15
 HOLD_TTL_H = 24 * 30
@@ -464,14 +479,25 @@ def apply_holdings_check(styles: dict, refresh: bool, log) -> dict:
 
 
 # ---------------------------------------------------------------- 1c. 双十判定
-def career_dual_flags(pairs: pd.DataFrame, f10s: dict, log) -> dict:
-    """双十（2026-11-13 用户定）：从业>10年 且 从业年化>10%。
+def _manager_id_of(mgr: str, codes, f10s: dict) -> str | None:
+    """在该经理的基金集合里找他的经理页 id：f10 主经理名与本人一致才可信
+    （共管基金的 jbgk 主经理可能是别人——同名/串页防护）。"""
+    for code in codes:
+        info = f10s.get(code)
+        if info and info.get("manager") == mgr and info.get("manager_id"):
+            return str(info["manager_id"])
+    return None
 
-    从业年化 = **任职最久现任基金**的几何年化（复权净值，自该经理上任日）
-    ——与各平台该基金页"任职年化"同公式同起始日（计算方式一致）。
-    返回 {key: {"dual": bool, "ann": float|None, "code": str|None}}；
-    只算从业>10 年者（其余无双十可能，省 nav 读取）。
-    """
+
+def career_dual_flags(pairs: pd.DataFrame, f10s: dict, log) -> dict:
+    """双十（2026-11-13 用户定；**2026-11-14 年化口径改版**）：从业>10年 且 从业年化>10%。
+
+    从业年化 = **等权组合复合年化**（`D.manager_career_ann`）——2026-11-14 用户
+    报10个支付宝样本钉死：该经理全部非债非货基产品各自上任日起的等权组合年化，
+    MAE=0.60pp（8/10 在±0.6内）；旧口径"任职最久单基金"MAE4.4、逐产品均值4.6、
+    中位5.4 全被样本否决（见 STATUS §6）。
+    返回 {key: {"dual": bool, "ann": float|None, "code": None}}；
+    只算从业>10 年者；8线程并行（经理页7天缓存、净值20h缓存、结果7天缓存）。"""
     career: dict = {}
     codes_of_key: dict = {}
     for r in pairs.itertuples(index=False):
@@ -480,50 +506,27 @@ def career_dual_flags(pairs: pd.DataFrame, f10s: dict, log) -> dict:
         if cy is not None and cy == cy:
             career[k] = max(career.get(k, 0.0), float(cy))
         codes_of_key.setdefault(k, set()).add(r.code)
-    # 经理名 → [(start, code)]（f10 现任经理表没有公司名——按 key 的基金集合对齐，
-    # 防同名经理串数据）
-    starts: dict = {}
-    for code, info in f10s.items():
-        for m in (info or {}).get("managers") or []:
-            nm = m.get("name")
-            if not nm:
-                continue
-            try:
-                st = pd.Timestamp(str(m.get("start") or "")[:10])
-            except Exception:
-                continue
-            starts.setdefault(nm, []).append((st, code))
+    keys = [k for k, cy in career.items() if cy > DUAL_CAREER_MIN_Y]
+
+    def _ann(k):
+        mid = _manager_id_of(k.split("|", 1)[0], codes_of_key.get(k, set()), f10s)
+        if not mid:
+            return k, None
+        return k, D.manager_career_ann(mid)
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        anns = dict(ex.map(_ann, keys))
     out: dict = {}
-    n_dual = n_career = 0
-    for k, cy in career.items():
-        if cy <= DUAL_CAREER_MIN_Y:
-            continue
-        n_career += 1
-        mgr = k.split("|", 1)[0]
-        mine = codes_of_key.get(k, set())
-        cands = [(st, c) for st, c in (starts.get(mgr) or []) if c in mine]
-        if not cands:
-            out[k] = dict(dual=False, ann=None, code=None)
-            continue
-        st, code = min(cands)                      # 最早上任 = 任职最久
-        nav = _read_nav_pickle(code)
-        ann = None
-        if nav is not None and not nav.empty:
-            # 起始日之后的首个净值（f10 start 可能比净值首日早1天 → 取≥start）
-            ns = nav[nav["date"] >= st]
-            nv = nav[nav["date"] <= pd.Timestamp.today().normalize()]
-            if not ns.empty and not nv.empty:
-                d0, d1 = ns["date"].iloc[0], nv["date"].iloc[-1]
-                days = (d1 - d0).days
-                if days > 30:
-                    ann = float((nv["nav"].iloc[-1] / ns["nav"].iloc[0])
-                                ** (365.0 / days) - 1)
+    n_dual = n_none = 0
+    for k in keys:
+        ann = anns.get(k)
         dual = ann is not None and ann > DUAL_ANN_MIN
-        if dual:
-            n_dual += 1
-        out[k] = dict(dual=dual, ann=ann, code=code)
-    log(f"      双十判定：从业>10年 {n_career} 人 → "
-        f"双十(年化>{DUAL_ANN_MIN:.0%}) {n_dual} 人（免考卷免门槛直通）")
+        n_dual += bool(dual)
+        n_none += ann is None
+        out[k] = dict(dual=dual, ann=ann, code=None)
+    log(f"      双十判定：从业>10年 {len(keys)} 人 → "
+        f"双十(等权组合年化>{DUAL_ANN_MIN:.0%}) {n_dual} 人（免考卷免门槛直通；"
+        f"年化不可得 {n_none} 人按非双十）")
     return out
 
 
@@ -571,7 +574,8 @@ def _feat_fingerprint(styles: dict | None = None) -> tuple:
                    ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()[:16]
     return (nav_n, nav_mx, _stat(G.STYLE_CACHE),
-            _stat(NAV_DIR / "bond_index_wealth.pkl"), hs_mx, sty_h)
+            _stat(NAV_DIR / "bond_index_wealth.pkl"), hs_mx, sty_h,
+            f"cellm{CELL_MERGE_N}")     # 2026-11-14 小格合并：逻辑变→旧特征作废
 
 
 def build_features(pool: pd.DataFrame, styles: dict, log) -> dict:
@@ -619,9 +623,20 @@ def build_features(pool: pd.DataFrame, styles: dict, log) -> dict:
     bdf.columns = [f"back{j}" for j in range(bdf.shape[1])]
     feat = pd.concat([feat.drop(columns=["back"]), bdf], axis=1)
     # 同格逐年分位（类型×风格 → 桶 → 类型，n≥10）
+    # 2026-11-14 小格合并（七问排查 P1；eq_cell_merge_eval 双起点判据全过：
+    #   M1 考卷两期 Jaccard 0.312→0.377、M2 小格秩分半信度 0.003→0.218
+    #   （A 格下小格分位≈纯噪声）、M3 信号 IC 0.019→0.245）：
+    #   A格样本 < CELL_MERGE_N → 改在（类型×三类）组内取分位，大格维持 A。
+    feat["_c3"] = [display_bucket(b) for b in feat["bucket"]]
+    small_cell = (feat.groupby(["type", "bucket"])["bucket"]
+                  .transform("size") < CELL_MERGE_N)
     for j in range(5):
-        feat[f"ps_{j}"] = rank_pcts(feat, f"back{j}",
-                                    [["type", "bucket"], ["bucket"], ["type"]])
+        ps_a = rank_pcts(feat, f"back{j}",
+                         [["type", "bucket"], ["bucket"], ["type"]])
+        ps_b = rank_pcts(feat, f"back{j}",
+                         [["type", "_c3"], ["_c3"], ["type"]])
+        feat[f"ps_{j}"] = pd.Series(np.where(small_cell, ps_b, ps_a),
+                                    index=feat.index)
     # 合成基准逐年超额（无代理桶的 F5/F3 兜底）
     try:
         wealth = composite_wealth()
@@ -710,9 +725,40 @@ def fund_channels(pairs: pd.DataFrame) -> pd.Series:
 
 
 # ---------------------------------------------------------------- 4. 因子与评分
+def _fund_beta(code: str, o, proxy_w: dict) -> dict | None:
+    """6代理周频回归β（窗口[基金净值末日-5y, 末日]∩≤o，绝对空间，带截距）。
+    F3/F5 尺度化用（W3_FACTOR_SRC='scaled'）；样本<100周/无净值 → None（调用方回退raw）。"""
+    nav = _read_nav_pickle(code)
+    if nav is None or nav.empty:
+        return None
+    sub = nav[nav["date"] <= o]
+    if sub.empty:
+        return None
+    end = sub["date"].max()
+    w = sub[sub["date"] > end - pd.DateOffset(years=5)].set_index("date")["nav"]
+    rf = w.resample("W-FRI").last().pct_change().dropna()
+    if len(rf) < 100:
+        return None
+    X = pd.DataFrame({b: s for b, s in proxy_w.items() if s is not None})
+    if X.empty:
+        return None
+    dfx = pd.concat([rf.rename("f"), X], axis=1, join="inner").dropna()
+    if len(dfx) < 100:
+        return None
+    A = np.column_stack([dfx.drop(columns=["f"]).values, np.ones(len(dfx))])
+    try:
+        coef, *_ = np.linalg.lstsq(A, dfx["f"].values, rcond=None)
+    except Exception:
+        return None
+    return dict(zip(list(dfx.columns), coef[:-1]))
+
+
 def build_factors(o, feat: pd.DataFrame, qual_funds: set,
                   pairs: pd.DataFrame, f10s: dict, wealth: dict) -> pd.DataFrame:
-    """合格基金 6 因子 + 池内分位 + W3 分（检验18 同口径，现时点 shift=0）。"""
+    """合格基金 6 因子 + 池内分位 + W3 分（检验18 同口径，现时点 shift=0）。
+
+    2026-11-14：额外产出 **F3s/F5s（6代理β尺度化变体）**——β 缺失回退 raw 值
+    （不产生新 NaN）；score 按 W3_FACTOR_SRC 选 F3/F5 分位（raw=原产线）。"""
     proxy_close = {b: G._load_close(p) for p, b in G.STYLE_PROXIES.items()}
     back_win = [(o - pd.DateOffset(years=k), o - pd.DateOffset(years=k - 1))
                 for k in range(1, 6)]
@@ -724,6 +770,9 @@ def build_factors(o, feat: pd.DataFrame, qual_funds: set,
             continue
         proxy_y[bkt] = [s_total(cl, a, b) for a, b in back_win]
         proxy_5y[bkt] = s_ann(cl, o - pd.DateOffset(years=5), o)
+    proxy_w = {b: (cl.resample("W-FRI").last().pct_change().dropna()
+                   if cl is not None else None)
+               for b, cl in proxy_close.items()}
     comp5 = {t: comp_ann(w, o - pd.DateOffset(years=5), o)
              for t, w in wealth.items()}
 
@@ -742,6 +791,22 @@ def build_factors(o, feat: pd.DataFrame, qual_funds: set,
             adj = [f[f"cexc_{j}"] for j in range(5)]
             a5 = (None if (pd.isna(f["ret5y"]) or comp5.get(f["type"]) is None)
                   else f["ret5y"] - comp5[f["type"]])
+        # ---- 尺度化变体（W3_FACTOR_SRC='scaled' 的候选；β缺失回退 raw）----
+        beta = _fund_beta(c, o, proxy_w)
+        if beta:
+            d5 = sum(beta[b] * proxy_5y[b] for b in beta
+                     if proxy_5y.get(b) is not None)
+            a5s = (None if pd.isna(f["ret5y"]) else f["ret5y"] - d5)
+            adjs = []
+            for j in range(5):
+                drag = sum(beta[b] * proxy_y[b][j] for b in beta
+                           if b in proxy_y and proxy_y[b][j] is not None)
+                adjs.append(None if f[f"back{j}"] is None else f[f"back{j}"] - drag)
+            f5s = (sum(adjs) - max(adjs)
+                   if all(x is not None for x in adjs) else None)
+        else:
+            a5s, f5s = a5, (sum(adj) - max(adj)
+                            if all(x is not None for x in adj) else None)
         ps = [f[f"ps_{j}"] for j in range(5)]
         ok_ps = all(not pd.isna(x) for x in ps)
         ok_adj = all(x is not None for x in adj)
@@ -751,6 +816,7 @@ def build_factors(o, feat: pd.DataFrame, qual_funds: set,
             F3=a5,
             F4=(-float(np.std(adj, ddof=1))) if ok_adj else None,
             F5=(sum(adj) - max(adj)) if ok_adj else None,
+            F3s=a5s, F5s=f5s,
             bucket=bkt, type=f["type"], ret5y=f["ret5y"])
     df = pd.DataFrame(rows).T
     if df.empty:
@@ -772,13 +838,18 @@ def build_factors(o, feat: pd.DataFrame, qual_funds: set,
     df["F6"] = pd.to_numeric(df["ten"], errors="coerce").add(
         pd.to_numeric(df["car"], errors="coerce"), fill_value=np.nan) / 2
     # 合格池内分位（0-100）→ W3 加权
-    for col in ["F1", "F2", "F3", "F4", "F5", "ten", "car"]:
+    for col in ["F1", "F2", "F3", "F4", "F5", "F3s", "F5s", "ten", "car"]:
         v = pd.to_numeric(df[col], errors="coerce")
         df[col + "_p"] = (v.rank(pct=True) * 100).round(2)
     df["F6_p"] = df[["ten_p", "car_p"]].mean(axis=1)
-    cols = [f + "_p" for f in W3]
+    # 分数选源：raw=原产线（单代理/合成）；scaled=6代理β尺度化（复测通过才切换）
+    _s = W3_FACTOR_SRC == "scaled"
+    pick = {"F1": "F1_p", "F2": "F2_p", "F6": "F6_p",
+            "F3": ("F3s_p" if _s else "F3_p"),
+            "F5": ("F5s_p" if _s else "F5_p")}
+    cols = [pick[k] for k in W3]
     m = df[cols].astype(float)
-    wts = pd.Series([W3[f] for f in W3], index=cols)
+    wts = pd.Series([W3[k] for k in W3], index=cols)
     df["score"] = ((m * wts).sum(axis=1) / sum(W3.values())).round(1)
     return df
 
@@ -1349,6 +1420,26 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     if not qual.empty:
         for k, g in qual.groupby(["mgr", "company"]):
             qual_by_key[f"{k[0]}|{k[1]}"] = g
+
+    # 从业年化补全（2026-11-14 等权组合口径，显示用）：双十集合只算了从业>10 年者，
+    # 在榜其余成员的卡片也要显示从业年化 → 补算（经理页/净值均带缓存，8线程）
+    miss = [k for k in state["members"]
+            if k in cand and cand[k].get("career_ann") is None]
+    if miss:
+        def _fill(k):
+            qg = qual_by_key.get(k)
+            if qg is None:
+                return k, None
+            mid = _manager_id_of(k.split("|", 1)[0],
+                                 set(qg["code"].tolist()), f10s)
+            return k, (D.manager_career_ann(mid) if mid else None)
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            got = dict(ex.map(_fill, miss))
+        for k, v in got.items():
+            if v is not None:
+                cand[k]["career_ann"] = v
+        log(f"      从业年化补全：在榜缺年化 {len(miss)} 人 → 算出 "
+            f"{sum(1 for v in got.values() if v is not None)} 人")
 
     # 机构占比（代表作维度）：只抓在榜经理的入围基金；refresh 才联网
     member_codes: set = set()

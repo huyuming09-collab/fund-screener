@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fundscorer import cards, eqscore as ES
+from fundscorer import cards, data as D, eqscore as ES
 
 
 # ---------------------------------------------------------------- 1. 展示桶
@@ -581,59 +581,79 @@ class TestDualAndGate:
 
 # ---------------------------------------------------------------- 11. 从业年化
 class TestCareerDualFlags:
-    @staticmethod
-    def _nav(v0, v1, start_date="2024-11-13", periods=520):
-        dates = pd.bdate_range(start_date, periods=periods)
-        return pd.DataFrame({"date": dates,
-                             "nav": np.linspace(v0, v1, len(dates))})
+    """双十判定（2026-11-14 口径改版）：从业>10年 + **等权组合年化**>10%。
+    组合年化在 D.manager_career_ann（mock），本类只测编排：id匹配/同名防串/保守回退。"""
 
-    def test_geometric_annualized_and_threshold(self, monkeypatch):
-        # ~2年 1.0→1.5 → 年化≈20% >10% → 双十
-        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.5))
+    @staticmethod
+    def _f10(mgr, mid):
+        return {"manager": mgr, "manager_id": mid}
+
+    def test_ann_above_threshold_dual(self, monkeypatch):
+        monkeypatch.setattr(D, "manager_career_ann",
+                            lambda mid, refresh=False: 0.15)
         pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
                                    career_y=11.0)])
-        f10s = {"000001": {"managers": [{"name": "张三", "start": "2024-11-12"}]}}
+        f10s = {"000001": self._f10("张三", "ID1")}
         out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
         rec = out["张三|某公司"]
         assert rec["dual"] is True
-        assert rec["ann"] == pytest.approx(0.20, abs=0.06)
+        assert rec["ann"] == pytest.approx(0.15)
 
     def test_low_annualized_not_dual(self, monkeypatch):
-        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.05))
+        monkeypatch.setattr(D, "manager_career_ann",
+                            lambda mid, refresh=False: 0.06)
         pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
                                    career_y=11.0)])
-        f10s = {"000001": {"managers": [{"name": "张三", "start": "2024-11-13"}]}}
+        f10s = {"000001": self._f10("张三", "ID1")}
         out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
         rec = out["张三|某公司"]
         assert rec["dual"] is False and rec["ann"] is not None
 
-    def test_start_before_nav_inception(self, monkeypatch):
-        """回归（张坤案例）：f10 start 比净值首日早 → 取 ≥start 首个净值，仍算得出。"""
-        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.5))
+    def test_ann_unavailable_not_dual(self, monkeypatch):
+        """年化算不出（缺经理页/缺净值/不足一年）→ 按非双十（保守，需过考卷）。"""
+        monkeypatch.setattr(D, "manager_career_ann",
+                            lambda mid, refresh=False: None)
         pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
-                                   career_y=14.0)])
-        f10s = {"000001": {"managers": [{"name": "张三", "start": "2024-11-01"}]}}
+                                   career_y=12.0)])
+        f10s = {"000001": self._f10("张三", "ID1")}
         out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
-        assert out["张三|某公司"]["ann"] is not None
+        rec = out["张三|某公司"]
+        assert rec["dual"] is False and rec["ann"] is None
 
     def test_career_le_10_skipped(self, monkeypatch):
-        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.5))
+        monkeypatch.setattr(D, "manager_career_ann",
+                            lambda mid, refresh=False: 0.99)
         pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
                                    career_y=9.0)])
         out = ES.career_dual_flags(pairs, {}, log=lambda *a, **k: None)
         assert "张三|某公司" not in out              # 从业≤10 不进双十池
 
     def test_same_name_manager_not_crossed(self, monkeypatch):
-        """同名经理防串：start 只在该 key 的基金集合里选。"""
-        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.5))
+        """同名经理防串：id 只在该 key 的基金集合里找，且主经理名一致才采用。"""
+        seen = []
+        monkeypatch.setattr(
+            D, "manager_career_ann",
+            lambda mid, refresh=False: (seen.append(mid), 0.15)[1])
         pairs = pd.DataFrame([
             dict(mgr="李伟", company="甲公司", code="000001", career_y=11.0),
             dict(mgr="李伟", company="乙公司", code="000002", career_y=7.0)])
-        f10s = {"000001": {"managers": [{"name": "李伟", "start": "2024-11-13"}]},
-                "000002": {"managers": [{"name": "李伟", "start": "2010-01-01"}]}}
+        f10s = {"000001": self._f10("李伟", "ID_A"),
+                "000002": self._f10("李伟", "ID_B")}
         out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
-        assert out["李伟|甲公司"]["code"] == "000001"   # 不会选到乙公司的老基金
-        assert "李伟|乙公司" not in out                  # 乙 career≤10
+        assert seen == ["ID_A"]                       # 只查甲的；乙 career≤10 不进
+        assert out["李伟|甲公司"]["dual"] is True
+        assert "李伟|乙公司" not in out
+
+    def test_main_manager_mismatch_rejected(self, monkeypatch):
+        """共管基金 jbgk 主经理是别人 → 不采用该页（防串到他人经理页）。"""
+        monkeypatch.setattr(D, "manager_career_ann",
+                            lambda mid, refresh=False: 0.15)
+        pairs = pd.DataFrame([dict(mgr="李伟", company="甲公司", code="000001",
+                                   career_y=11.0)])
+        f10s = {"000001": {"manager": "王五", "manager_id": "ID_OTHER"}}
+        out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
+        rec = out["李伟|甲公司"]
+        assert rec["dual"] is False and rec["ann"] is None
 
 
 # ---------------------------------------------------------------- 12. 代表作合并
