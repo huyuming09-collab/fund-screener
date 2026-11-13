@@ -76,11 +76,23 @@ G3S_PCT = 75.0
 G4S_MEAN = 70.0
 # 净值断档阈值：末值距锚点超过此天数视为"断数据"→ 资格失效即时出（§2.4 L3）
 NAV_STALE_D = 180
-# 双十直通（2026-11-13 用户定）：从业>10年 且 从业年化>10% → 免考卷免门槛
+# 双十直通（2026-11-13 用户定）：从业>10年 且 从业年化>10% → 免考卷免绝对门槛
 DUAL_CAREER_MIN_Y = 10.0
 DUAL_ANN_MIN = 0.10
 # 非双十绝对门槛（2026-11-13 用户选"1"）：计分基金5年年化 ≥0
 ABS_RET_MIN = 0.0
+# ---- P0 三硬闸（2026-11-13 七问排查，伪前瞻双起点验证后新增；对双十同样生效）----
+# G1 规模闸：计分基金**基础名合并规模** ≥2 亿元（S5 落地；Tm起点 cut+17.2% vs
+#    kept+32.7%、T0 +1.5% vs +3.0%，池级两起点同向）
+SCALE_MIN_YI = 2.0
+# G2 深亏护栏：计分基金5年年化 ≥-5%（R1 伪前瞻两起点强验证：
+#    T0 cut-8.6% vs kept+1.9%、Tm +1.1% vs +31.5%；比0%线分离度更大）
+DEEP_LOSS_MIN = -0.05
+# G3 类型感知仓位闸：10季平均股票仓位（**百分数**）——股票型/偏股≥50%、灵活/平衡≥30%
+#    （偏股雷达要的是真权益管理者；8%仓位的"灵活"基金是债性产品。合同允许低仓的
+#     灵活/平衡用低阈值防误伤；R4组伪前瞻 Tm +6.7% vs kept+32.9%、T0 同格排位25 vs49）
+POS_MIN_BY_TYPE = {"股票型": 50.0, "混合型-偏股": 50.0,
+                   "混合型-灵活": 30.0, "混合型-平衡": 30.0}
 # 持仓校验降级（2026-11-13）：前10重仓中相关桶合计 <15% → 同格降均衡
 HOLD_MIN = 0.15
 HOLD_TTL_H = 24 * 30
@@ -332,6 +344,55 @@ def _inst_ratios(codes: list[str], refresh: bool, workers: int, log) -> dict:
             if v is not None:
                 out[code] = v
     log(f"      机构占比：{len(out)}/{len(codes)} 只有数")
+    return out
+
+
+def _positions(codes: list[str], refresh: bool, workers: int, log) -> dict:
+    """季报股票仓位 {code: 平均仓位%}（东财移动API10季历史，缓存30天，
+    与 scripts/eq_diag.py 共用 pos_*.pkl）。缺数据=不参与 G3 判定（fail-open）。"""
+    out: dict = {}
+    if not codes:
+        return out
+
+    def _one(code):
+        p = NAV_DIR / f"pos_{code}.pkl"
+        if p.exists():
+            try:
+                age_h = (time.time() - p.stat().st_mtime) / 3600
+                if not refresh or age_h < HOLD_TTL_H:
+                    return code, pd.read_pickle(p)
+            except Exception:
+                pass
+        if not refresh:
+            return code, None
+        try:
+            u = ("https://fundmobapi.eastmoney.com/FundMNewApi/"
+                 f"FundMNAssetAllocation?FCODE={code}&deviceid=Wap"
+                 "&plat=Wap&product=EFund&version=6.2.8")
+            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+            raw = json.loads(urllib.request.urlopen(req, timeout=12)
+                             .read().decode("utf-8", "ignore"))
+            hist = [{"d": r.get("FSRQ"), "gp": float(r["GP"])}
+                    for r in (raw.get("Datas") or [])
+                    if r.get("GP") not in (None, "", "--")]
+            if hist:
+                try:
+                    pd.to_pickle(hist, p)
+                except Exception:
+                    pass
+                return code, hist
+            return code, None
+        except Exception:
+            return code, None
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for code, hist in ex.map(_one, codes):
+            if hist:
+                gps = [x["gp"] for x in hist if x.get("gp") is not None]
+                if gps:
+                    out[code] = float(np.mean(gps))
+    log(f"      仓位闸：{len(out)}/{len(codes)} 只有10季仓位史"
+        f"（缺数据者该闸跳过，不冤枉）")
     return out
 
 
@@ -832,20 +893,27 @@ def save_roster(state: dict) -> None:
 def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
                      fch: pd.Series, f10s: dict, nav_ok: set,
                      feat: pd.DataFrame | None = None,
-                     dual: dict | None = None) -> dict:
+                     dual: dict | None = None,
+                     positions: dict | None = None,
+                     base_scale: dict | None = None) -> dict:
     """{mgr|company: {...}}——通道按本人从业；过考基金=本人入围基金里过本人卷的。
 
     B 卷还要求**基金通道=B**（验证脚本同口径：与资深共管的基金算资深的卷，
     新锐不能借它入新锐榜）。data_complete：本人所有在管基金都有可用 F10
     （否则"资格失效 vs 数据不全"分不清 → 冻结不判）。
 
-    2026-11-13 两条新规则（用户拍板）：
-      · **双十直通**：dual[key]=True（从业>10年且从业年化>10%）→ 免考卷免门槛，
-        pass_funds = 全部入围基金（"双十经理全部上榜"）。
-      · **绝对门槛**：非双十的过考基金须 5 年年化 ≥ABS_RET_MIN 才能作计分基金
-        ——先按门槛滤基金、再由引擎取最高分作计分/代表作，展示的计分数字必然≥0。
+    2026-11-13 规则（用户拍板 + 七问排查 P0 三硬闸）：
+      · **双十直通**：dual[key]=True（从业>10年且从业年化>10%）→ 免考卷免0%门槛；
+      · **绝对门槛**：非双十过考基金须5年年化 ≥ABS_RET_MIN（先滤后取）；
+      · **G1 规模闸**：基础名合并规模 <SCALE_MIN_YI → 出局（对双十同样生效）；
+      · **G2 深亏护栏**：计分基金5年年化 <DEEP_LOSS_MIN → 出局（含双十；
+        伪前瞻两起点验证 cut 组未来显著更差）；
+      · **G3 类型感知仓位**：10季平均仓位 <类型阈值 → 出局；
+      三闸数据缺失一律 fail-open（跳过该闸不冤枉）。
     """
     dual = dual or {}
+    positions = positions or {}
+    base_scale = base_scale or {}
     qf: dict = {}
     if not qual.empty:
         for r in qual.itertuples(index=False):
@@ -880,6 +948,24 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
             return None
         return None if np.isnan(v) else v
 
+    def _hard_ok(code):
+        """G1 规模 / G2 深亏 / G3 仓位三硬闸（2026-11-13 P0）。
+        数据缺失 → 跳过该闸（fail-open，不因数据空洞冤枉人）。"""
+        if feat is None or code not in feat.index:
+            return False
+        sc = base_scale.get(base_name(str(feat.at[code, "name"])))
+        if sc is not None and 0 < sc < SCALE_MIN_YI:
+            return False                                  # G1 壳基金
+        r5 = _r5(code)
+        if r5 is not None and r5 < DEEP_LOSS_MIN:
+            return False                                  # G2 深亏
+        pos = positions.get(code)
+        if pos is not None:
+            need = POS_MIN_BY_TYPE.get(str(feat.at[code, "type"]), 30.0)
+            if pos < need:
+                return False                              # G3 低仓位
+        return True
+
     for key, c in cand.items():
         c["channel"] = G.channel(c["career"])
         rows = qf.get(key, [])
@@ -888,7 +974,9 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
         c["dual"] = bool(info.get("dual"))
         c["career_ann"] = info.get("ann")
         if c["dual"] and c["channel"] == "A":
-            c["pass_funds"] = list(c["qual_funds"])   # 双十直通：免考卷免门槛
+            # 双十直通：免考卷免0%门槛；但 G1/G2/G3 三硬闸仍生效（"全部上榜"
+            # 不覆盖壳基金/深亏/非权益行为——2026-11-13 用户"不合理要排除"）
+            c["pass_funds"] = [x for x in c["qual_funds"] if _hard_ok(x)]
         else:
             exam_pass = []
             for r in rows:
@@ -901,7 +989,8 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
                       and fch.get(r.code) == "B"):
                     exam_pass.append(r.code)
             c["pass_funds"] = [x for x in exam_pass
-                               if (_r5(x) is not None and _r5(x) >= ABS_RET_MIN)]
+                               if (_r5(x) is not None and _r5(x) >= ABS_RET_MIN
+                                   and _hard_ok(x))]
         codes = pf.get(key, [])
         c["data_complete"] = (bool(codes)
                               and all(_f10_ok(f10s.get(x)) for x in codes)
@@ -917,7 +1006,9 @@ def _nav_at(nav: pd.DataFrame, d):
 
 def _mgr_detail(codes: list[str], basis: list[str], mgr: str, feat: pd.DataFrame,
                 fdf: pd.DataFrame, f10s: dict, wealth: dict, o,
-                weekly_ex: dict, inst_map: dict | None = None) -> dict:
+                weekly_ex: dict, inst_map: dict | None = None,
+                base_scale: dict | None = None,
+                base_n: dict | None = None) -> dict:
     """代表作 + 5 分析块（a 净值曲线/b 逐年/c 逐季胜率/d 风格暴露/e 风险）。
 
     代表作规则（2026-11-13 用户反馈后改版，R1任期最久退役）：
@@ -1023,9 +1114,14 @@ def _mgr_detail(codes: list[str], basis: list[str], mgr: str, feat: pd.DataFrame
         t = feat.at[code, "type"] if code in feat.index else None
         comp5 = (comp_ann(wealth[t], o - pd.DateOffset(years=5), o)
                  if t in wealth else None)
+        # 规模 = 基础名全份额合并（与 G1 闸同源；缺则回退组内求和）
+        bkey = base_name(_cname(code))
+        sc = (base_scale or {}).get(bkey)
+        if sc is None:
+            sc = _g_scale(b) or None
         reps.append(dict(code=code, name=_cname(code), rule=rule,
-                         scale=round(_g_scale(b), 2) if _g_scale(b) else None,
-                         n_shares=len(g),
+                         scale=round(sc, 2) if sc else None,
+                         n_shares=(base_n or {}).get(bkey) or len(g),
                          tenure=None if ten < 0 else round(ten / 365.25, 1),
                          ret5y=None if r5 is None else round(r5, 4),
                          excess=None if (r5 is None or comp5 is None)
@@ -1191,9 +1287,32 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         sc = pd.to_numeric(fdf["score"], errors="coerce")
         log(f"[5/6] 因子可算 {len(fdf)} 只，均分 {sc.mean():.1f}")
 
-    # 候选 + 名单状态机（双十直通 + 年化≥0 门槛在 build_candidates 内）
+    # 候选 + 名单状态机（双十直通 +0%门槛 + G1/G2/G3 三硬闸在 build_candidates 内）
+    # 基础名合并规模（G1 与展示同源）：f10 全份额按 base_name 求和
+    name_of = dict(zip(pool["code"], pool["name"]))
+    base_scale: dict = {}
+    base_n: dict = {}
+    for code, info in f10s.items():
+        b = base_name(str(name_of.get(code) or ""))
+        if not b:
+            continue
+        try:
+            s = float((info or {}).get("scale_yi") or 0)
+        except (TypeError, ValueError):
+            s = 0.0
+        base_scale[b] = base_scale.get(b, 0.0) + s
+        base_n[b] = base_n.get(b, 0) + 1
+    # 仓位（G3）：只抓需要判定的基金——过考基金 ∪ 双十候选的入围基金
+    dual_keys = {k for k, v in dual.items() if v.get("dual")}
+    need_pos = {c for c in qset if exams.get(c)}
+    if not qual.empty:
+        for r in qual.itertuples(index=False):
+            if f"{r.mgr}|{r.company}" in dual_keys:
+                need_pos.add(r.code)
+    positions = _positions(sorted(need_pos), refresh, workers, log)
     cand = build_candidates(pairs, qual, exams, fch, f10s, navres["ok"],
-                            feat=feat, dual=dual)
+                            feat=feat, dual=dual,
+                            positions=positions, base_scale=base_scale)
     today = str(pd.Timestamp.today().date())
     state = load_roster() or dict(members={}, exits=[], eval_no=0)
     last_eval = state.get("eval_date")
@@ -1267,7 +1386,8 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         qcodes = qg["code"].tolist() if qg is not None else []
         try:
             det = _mgr_detail(qcodes, basis, c["mgr"], feat, fdf, f10s, wealth,
-                              o, weekly_ex, inst_map)
+                              o, weekly_ex, inst_map,
+                              base_scale=base_scale, base_n=base_n)
         except Exception as e:
             log(f"      [warn] 明细构建失败 {key}: {e}")
             det = dict(reps=[], trend=None, yearly=[], quarterly=[],

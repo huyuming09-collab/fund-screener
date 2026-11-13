@@ -527,7 +527,8 @@ class TestHoldingsCheck:
 
 
 # ---------------------------------------------------------------- 10. 双十与年化门槛
-def _cand_env(ret5y=-0.01, exam="G3s", career=12.0, dual=None, key="张三|某公司"):
+def _cand_env(ret5y=-0.01, exam="G3s", career=12.0, dual=None, key="张三|某公司",
+              positions=None, base_scale=None):
     pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
                                career_y=career)])
     qual = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
@@ -535,10 +536,13 @@ def _cand_env(ret5y=-0.01, exam="G3s", career=12.0, dual=None, key="张三|某�
     exams = {"000001": exam} if exam else {}
     fch = pd.Series({"000001": "A"})
     f10s = {"000001": {"managers": [{"name": "张三", "start": "2019-01-01"}]}}
-    feat = pd.DataFrame({"ret5y": [ret5y]},
+    feat = pd.DataFrame({"ret5y": [ret5y], "name": ["优选混合A"],
+                         "type": ["混合型-偏股"]},
                         index=pd.Index(["000001"], name="code"))
     cand = ES.build_candidates(pairs, qual, exams, fch, f10s, {"000001"},
-                               feat=feat, dual=dual or {})
+                               feat=feat, dual=dual or {},
+                               positions=positions or {},
+                               base_scale=base_scale or {})
     return key, cand
 
 
@@ -549,11 +553,12 @@ class TestDualAndGate:
                                                      code="000001")})
         assert c[key]["pass_funds"] == ["000001"]      # 免考卷直通
 
-    def test_dual_bypasses_negative_gate(self):
-        key, c = _cand_env(ret5y=-0.05, exam=None,
+    def test_dual_bypasses_zero_floor(self):
+        """双十免0%门槛：小亏（-3%）仍上；但深亏见 G2 测试。"""
+        key, c = _cand_env(ret5y=-0.03, exam=None,
                            dual={"张三|某公司": dict(dual=True, ann=0.15,
                                                      code="000001")})
-        assert c[key]["pass_funds"] == ["000001"]      # 免门槛（"全部上榜"）
+        assert c[key]["pass_funds"] == ["000001"]      # 免0%门槛（"全部上榜"）
 
     def test_gate_filters_negative(self):
         key, c = _cand_env(ret5y=-0.01, exam="G3s")   # 非双十
@@ -680,3 +685,47 @@ class TestMgrDetailReps:
         det = ES._mgr_detail(codes, ["000001"], "张三", feat, fdf, f10s,
                              {}, o, {"mkt": None, "prox": {}})
         assert det["risk"] is not None                # 分析块跑在计分基金上
+
+
+# ---------------------------------------------------------------- 13. P0 三硬闸
+class TestHardGates:
+    """G1 规模 / G2 深亏 / G3 类型感知仓位（2026-11-13 七问排查；对双十同样生效）。"""
+
+    DUAL = {"张三|某公司": dict(dual=True, ann=0.15, code="000001")}
+
+    def test_g1_shell_fund_cut_even_if_dual(self):
+        """规模<2亿 → 出局，双十也不例外（含"数据缺失 fail-open"对照）。"""
+        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+                           base_scale={"优选混合": 1.5})
+        assert c[key]["pass_funds"] == []
+        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+                           base_scale={"优选混合": 3.0})
+        assert c[key]["pass_funds"] == ["000001"]      # ≥2亿放行
+        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+                           base_scale={})              # 无规模数据 → fail-open
+        assert c[key]["pass_funds"] == ["000001"]
+
+    def test_g2_deep_loss_cut_even_if_dual(self):
+        """5年年化<-5% → 出局，双十也不例外；-5%边界放行。"""
+        key, c = _cand_env(ret5y=-0.06, exam=None, dual=self.DUAL)
+        assert c[key]["pass_funds"] == []
+        key, c = _cand_env(ret5y=-0.05, exam=None, dual=self.DUAL)
+        assert c[key]["pass_funds"] == ["000001"]      # 边界（不低于-5%）
+
+    def test_g3_position_gate_type_aware(self):
+        """偏股型仓位50%线、灵活型30%线；缺数据 fail-open。"""
+        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+                           positions={"000001": 45.0})   # 偏股型<50% → 出局
+        assert c[key]["pass_funds"] == []
+        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+                           positions={"000001": 55.0})   # ≥50% 放行
+        assert c[key]["pass_funds"] == ["000001"]
+        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+                           positions={})                  # 缺数据 → fail-open
+        assert c[key]["pass_funds"] == ["000001"]
+
+    def test_gates_also_apply_to_nongate_path(self):
+        """非双十路径同样吃三闸（考卷+0%门槛之外）。"""
+        key, c = _cand_env(ret5y=0.10, exam="G3s",
+                           base_scale={"优选混合": 1.0})
+        assert c[key]["pass_funds"] == []              # 壳基金过考也出局
