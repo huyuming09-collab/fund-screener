@@ -24,12 +24,21 @@ from fundscorer import cards, eqscore as ES
 class TestDisplayBucket:
     def test_alias_mapping(self):
         assert ES.display_bucket("金融价值") == "价值"
-        assert ES.display_bucket("工业") == "周期"
+        assert ES.display_bucket("工业") == "价值"      # 工业→周期→价值
         assert ES.display_bucket("其他/均衡") == "均衡"
 
-    def test_canonical_passthrough(self):
-        for b in ["科技", "医药", "消费", "新能源", "价值", "周期", "均衡"]:
-            assert ES.display_bucket(b) == b
+    def test_canon3_order(self):
+        assert ES.CANON3 == ["成长", "价值", "均衡"]
+        assert (set(ES.GROWTH_BUCKETS) | set(ES.VALUE_BUCKETS)
+                | {"均衡"}) == set(ES.CANON7)
+
+    def test_seven_to_three(self):
+        assert ES.display_bucket("科技") == "成长"
+        assert ES.display_bucket("医药") == "成长"
+        assert ES.display_bucket("新能源") == "成长"
+        assert ES.display_bucket("消费") == "价值"
+        assert ES.display_bucket("周期") == "价值"
+        assert ES.display_bucket("均衡") == "均衡"
 
     def test_display_alias_is_display_only(self):
         """归一只改显示串——考卷桶（STYLE/BUCKET_PATTERMS 原始值）不受影响。"""
@@ -470,3 +479,204 @@ class TestPayloadMgrTabs:
         ids = [c["id"] for c in p["categories"]]
         assert "mgr_vet" in ids and "mgr_new" in ids
         assert p["mgr"]["vet"] == []
+
+
+# ---------------------------------------------------------------- 9. 持仓校验降级
+class TestHoldingsCheck:
+    """前10重仓背离相关桶 → 同格降均衡（2026-11-13 用户Q2"医药第一怎么办"）。"""
+
+    @staticmethod
+    def _run(styles, fake, monkeypatch):
+        monkeypatch.setattr(ES, "fetch_hold_top10",
+                            lambda c, refresh=True: fake.get(c))
+        return ES.apply_holdings_check(dict(styles), refresh=True,
+                                       log=lambda *a, **k: None)
+
+    def test_backdrop_downgrades(self, monkeypatch):
+        styles = {"000001": "医药", "000002": "医药", "000003": "科技"}
+        fake = {"000001": [("医药生物", 0.05), ("交通运输", 0.11)],   # 背离
+                "000002": [("医药生物", 0.45), ("食品饮料", 0.10)],   # 真行业
+                "000003": [("电子", 0.30)]}                          # 真行业
+        out = self._run(styles, fake, monkeypatch)
+        assert out["000001"] == "均衡"
+        assert out["000002"] == "医药"
+        assert out["000003"] == "科技"
+
+    def test_missing_data_keeps_bucket(self, monkeypatch):
+        out = self._run({"000001": "医药"}, {}, monkeypatch)   # fetch→None
+        assert out["000001"] == "医药"                          # 无数据不降级
+
+    def test_balanced_never_fetches(self, monkeypatch):
+        called = []
+        monkeypatch.setattr(ES, "fetch_hold_top10",
+                            lambda c, refresh=True: called.append(c))
+        ES.apply_holdings_check({"000001": "均衡"}, refresh=True,
+                                log=lambda *a, **k: None)
+        assert called == []                                     # 均衡无需校验
+
+    def test_industry_mapping_covers_sw_l1(self):
+        """申万一级31行业全部有归属（未列回退均衡）。"""
+        sw1 = ["农林牧渔", "基础化工", "钢铁", "有色金属", "电子", "家用电器",
+               "食品饮料", "纺织服饰", "轻工制造", "医药生物", "公用事业",
+               "交通运输", "房地产", "商贸零售", "社会服务", "银行", "非银金融",
+               "建筑装饰", "建筑材料", "电力设备", "机械设备", "国防军工",
+               "汽车", "传媒", "通信", "计算机", "环保", "美容护理", "煤炭",
+               "石油石化", "综合"]
+        for ind in sw1:
+            assert ind in ES.IND2BUCKET or ind == "综合", ind
+
+
+# ---------------------------------------------------------------- 10. 双十与年化门槛
+def _cand_env(ret5y=-0.01, exam="G3s", career=12.0, dual=None, key="张三|某公司"):
+    pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
+                               career_y=career)])
+    qual = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
+                              career_y=career, channel="A", tenure_y=6.0)])
+    exams = {"000001": exam} if exam else {}
+    fch = pd.Series({"000001": "A"})
+    f10s = {"000001": {"managers": [{"name": "张三", "start": "2019-01-01"}]}}
+    feat = pd.DataFrame({"ret5y": [ret5y]},
+                        index=pd.Index(["000001"], name="code"))
+    cand = ES.build_candidates(pairs, qual, exams, fch, f10s, {"000001"},
+                               feat=feat, dual=dual or {})
+    return key, cand
+
+
+class TestDualAndGate:
+    def test_dual_bypasses_exam(self):
+        key, c = _cand_env(exam=None,
+                           dual={"张三|某公司": dict(dual=True, ann=0.15,
+                                                     code="000001")})
+        assert c[key]["pass_funds"] == ["000001"]      # 免考卷直通
+
+    def test_dual_bypasses_negative_gate(self):
+        key, c = _cand_env(ret5y=-0.05, exam=None,
+                           dual={"张三|某公司": dict(dual=True, ann=0.15,
+                                                     code="000001")})
+        assert c[key]["pass_funds"] == ["000001"]      # 免门槛（"全部上榜"）
+
+    def test_gate_filters_negative(self):
+        key, c = _cand_env(ret5y=-0.01, exam="G3s")   # 非双十
+        assert c[key]["pass_funds"] == []              # 计分基金负收益→不上
+
+    def test_gate_keeps_positive(self):
+        key, c = _cand_env(ret5y=0.02, exam="G3s")
+        assert c[key]["pass_funds"] == ["000001"]
+
+    def test_exam_still_required_for_nongate(self):
+        key, c = _cand_env(ret5y=0.02, exam=None)     # 没过考卷
+        assert c[key]["pass_funds"] == []
+
+    def test_ann_carried_for_display(self):
+        key, c = _cand_env(dual={"张三|某公司": dict(dual=True, ann=0.142,
+                                                     code="000001")})
+        assert c[key]["dual"] is True
+        assert c[key]["career_ann"] == pytest.approx(0.142)
+
+
+# ---------------------------------------------------------------- 11. 从业年化
+class TestCareerDualFlags:
+    @staticmethod
+    def _nav(v0, v1, start_date="2024-11-13", periods=520):
+        dates = pd.bdate_range(start_date, periods=periods)
+        return pd.DataFrame({"date": dates,
+                             "nav": np.linspace(v0, v1, len(dates))})
+
+    def test_geometric_annualized_and_threshold(self, monkeypatch):
+        # ~2年 1.0→1.5 → 年化≈20% >10% → 双十
+        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.5))
+        pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
+                                   career_y=11.0)])
+        f10s = {"000001": {"managers": [{"name": "张三", "start": "2024-11-12"}]}}
+        out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
+        rec = out["张三|某公司"]
+        assert rec["dual"] is True
+        assert rec["ann"] == pytest.approx(0.20, abs=0.06)
+
+    def test_low_annualized_not_dual(self, monkeypatch):
+        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.05))
+        pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
+                                   career_y=11.0)])
+        f10s = {"000001": {"managers": [{"name": "张三", "start": "2024-11-13"}]}}
+        out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
+        rec = out["张三|某公司"]
+        assert rec["dual"] is False and rec["ann"] is not None
+
+    def test_start_before_nav_inception(self, monkeypatch):
+        """回归（张坤案例）：f10 start 比净值首日早 → 取 ≥start 首个净值，仍算得出。"""
+        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.5))
+        pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
+                                   career_y=14.0)])
+        f10s = {"000001": {"managers": [{"name": "张三", "start": "2024-11-01"}]}}
+        out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
+        assert out["张三|某公司"]["ann"] is not None
+
+    def test_career_le_10_skipped(self, monkeypatch):
+        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.5))
+        pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
+                                   career_y=9.0)])
+        out = ES.career_dual_flags(pairs, {}, log=lambda *a, **k: None)
+        assert "张三|某公司" not in out              # 从业≤10 不进双十池
+
+    def test_same_name_manager_not_crossed(self, monkeypatch):
+        """同名经理防串：start 只在该 key 的基金集合里选。"""
+        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav(1.0, 1.5))
+        pairs = pd.DataFrame([
+            dict(mgr="李伟", company="甲公司", code="000001", career_y=11.0),
+            dict(mgr="李伟", company="乙公司", code="000002", career_y=7.0)])
+        f10s = {"000001": {"managers": [{"name": "李伟", "start": "2024-11-13"}]},
+                "000002": {"managers": [{"name": "李伟", "start": "2010-01-01"}]}}
+        out = ES.career_dual_flags(pairs, f10s, log=lambda *a, **k: None)
+        assert out["李伟|甲公司"]["code"] == "000001"   # 不会选到乙公司的老基金
+        assert "李伟|乙公司" not in out                  # 乙 career≤10
+
+
+# ---------------------------------------------------------------- 12. 代表作合并
+class TestMgrDetailReps:
+    @staticmethod
+    def _env():
+        o = pd.Timestamp("2026-11-13")
+        codes = ["000001", "000002", "000003"]          # 01/02 同基金 A/C
+        feat = pd.DataFrame(
+            {"name": ["优选混合A", "优选混合C", "成长混合A"],
+             "type": ["股票型"] * 3, "ret5y": [0.12, 0.11, 0.05],
+             "bucket": ["医药", "医药", "科技"]},
+            index=pd.Index(codes, name="code"))
+        fdf = pd.DataFrame(
+            {"score": [90.0, 89.0, 70.0], "F1": [80.0, 79.0, 95.0]},
+            index=pd.Index(codes, name="code"))
+        f10s = {c: {"scale_yi": s,
+                    "managers": [{"name": "张三", "start": "2019-01-01"}]}
+                for c, s in zip(codes, [2.0, 3.0, 10.0])}
+        return o, codes, feat, fdf, f10s
+
+    @staticmethod
+    def _nav():
+        dates = pd.bdate_range("2021-11-13", periods=300)
+        return pd.DataFrame({"date": dates,
+                             "nav": np.linspace(1.0, 1.3, len(dates))})
+
+    def test_count_fund_first_and_ac_merge(self, monkeypatch):
+        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav())
+        o, codes, feat, fdf, f10s = self._env()
+        det = ES._mgr_detail(codes, ["000001"], "张三", feat, fdf, f10s,
+                             {}, o, {"mkt": None, "prox": {}},
+                             inst_map={"000001": 0.62})
+        reps = det["reps"]
+        # 计分基金主位（000001 score90）；A/C 同基础名合并为一条、规模=2+3
+        assert reps[0]["rule"] == "计分" and reps[0]["code"] == "000001"
+        assert reps[0]["scale"] == pytest.approx(5.0)
+        assert reps[0]["n_shares"] == 2
+        assert reps[0]["inst"] == pytest.approx(0.62)
+        # 规模最大=成长混合A(10亿)；同基金 C 份额不重复出现
+        assert reps[1]["rule"] == "规模最大" and reps[1]["code"] == "000003"
+        names = [r["name"] for r in reps]
+        assert "优选混合C" not in names
+        assert len(reps) == 2                         # 业绩最佳与规模重合→去重
+
+    def test_analysis_blocks_follow_count_fund(self, monkeypatch):
+        monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav())
+        o, codes, feat, fdf, f10s = self._env()
+        det = ES._mgr_detail(codes, ["000001"], "张三", feat, fdf, f10s,
+                             {}, o, {"mkt": None, "prox": {}})
+        assert det["risk"] is not None                # 分析块跑在计分基金上

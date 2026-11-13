@@ -16,14 +16,25 @@
 
 口径要点（改动=产品决策，须过用户 AG §7）：
   · 同格 = 类型×相关性风格桶（eqgate 风格引擎），分位回退 桶→类型，n≥10
+  · **持仓校验降级（2026-11-13 用户Q2"医药第一怎么办"）**：相关性桶 X 的基金，
+    前10重仓中 X 系行业合计 <HOLD_MIN(15%) → 同格降为均衡——用持仓事实纠正
+    "标医药但持仓5%"的错格不公（前10足以识别行业基金：行业基金前10同行业占绝对多数；
+    全量行业接口不通，前10是现有最好持仓信号；只降级不升级——错格伤害只在降级方向）
+  · **双十直通（2026-11-13 用户定）**：双十 = 从业>10年 且 从业年化>10%
+    → 免考卷免绝对门槛全部上榜（从业年化=任职最久现任基金的几何年化，
+    复权净值自上任日——与各平台该基金"任职年化"同公式同起始日）
+  · **绝对门槛（2026-11-13 用户选"1"）**：非双十经理的计分基金须5年年化≥0
+    （先按门槛滤基金再取最高分作计分基金——展示的计分数字必然≥0）
   · 通道按**经理本人**从业（>10 A / 6~10 B）；G3s/G4s 为基金级逐年排位考卷
   · 进榜须**本人**任本基金≥5年（pair 级 S3，与 eqgate 闸同口径；
     验证脚本 eq_two_list_now 为 fund 级宽松口径，本引擎从严，规模会有小差）
-  · 展示桶（徽章/7桶筛选）与考卷桶（原始）分离：金融价值→价值、工业→周期、
-    其他/均衡→均衡——只影响显示，不影响同格分位
-  · 特征缓存按指纹（净值/风格/基准 mtime）失效：数据没变就秒开
+  · **展示桶=三类（2026-11-13 用户定）**：成长(科技/新能源/医药)·价值(价值/周期/消费)
+    ·均衡——徽章/筛选/详情/导出全用三类；评分同格仍7桶细分（检验18-20已验证口径）
+  · 代表作 = 计分基金（R1任期规则退役，过渡期结束）+ 规模最大（A/C份额按
+    base_name 合并同基金不重复展示）+ 业绩最佳——按基金基础名去重
+  · 特征缓存按指纹（净值/风格/基准 mtime + 风格字典哈希）失效：数据没变就秒开
   · F10 只读缓存+补缺失（start 是历史事实；离任由 mgr_em 3 天表兜住）
-  · --offline / pipeline --skip-refresh：不刷旧缓存，缺啥补啥
+  · --offline / pipeline --skip-refresh：不刷旧缓存，缺啥补啥（持仓/机构占比同）
 
 输出：返回 payload dict（pipeline 嵌 data.js 的 mgr 段）+ 写
   data/eq_score_{mgrs,funds}.csv（回核）+ data/eq_roster.json（名单状态：
@@ -32,9 +43,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
+import urllib.request
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -46,6 +59,7 @@ import pandas as pd                                    # noqa: E402
 from . import data as D                                # noqa: E402
 from . import metrics as M                             # noqa: E402
 from . import eqgate as G                              # noqa: E402
+from .screen import base_name                          # noqa: E402  A/C 份额合并
 
 ROOT = Path(__file__).resolve().parent.parent
 NAV_DIR = ROOT / "data" / "cache"
@@ -62,13 +76,47 @@ G3S_PCT = 75.0
 G4S_MEAN = 70.0
 # 净值断档阈值：末值距锚点超过此天数视为"断数据"→ 资格失效即时出（§2.4 L3）
 NAV_STALE_D = 180
-# 展示桶归一（考卷仍用原始桶；此处只影响徽章/筛选）
+# 双十直通（2026-11-13 用户定）：从业>10年 且 从业年化>10% → 免考卷免门槛
+DUAL_CAREER_MIN_Y = 10.0
+DUAL_ANN_MIN = 0.10
+# 非双十绝对门槛（2026-11-13 用户选"1"）：计分基金5年年化 ≥0
+ABS_RET_MIN = 0.0
+# 持仓校验降级（2026-11-13）：前10重仓中相关桶合计 <15% → 同格降均衡
+HOLD_MIN = 0.15
+HOLD_TTL_H = 24 * 30
+# 展示桶归一（考卷仍用原始桶；此处只影响徽章/筛选/详情/导出）
 DISPLAY_ALIAS = {"金融价值": "价值", "工业": "周期", "其他/均衡": "均衡"}
 CANON7 = ["科技", "医药", "消费", "新能源", "价值", "周期", "均衡"]
+# 三类展示（2026-11-13 用户定）：不细分行业，成长/价值/均衡
+GROWTH_BUCKETS = {"科技", "新能源", "医药"}
+VALUE_BUCKETS = {"价值", "周期", "消费"}
+CANON3 = ["成长", "价值", "均衡"]
+# 申万一级行业 → 7桶（持仓校验用；未列行业回退均衡）
+IND2BUCKET = {
+    "电子": "科技", "计算机": "科技", "通信": "科技", "传媒": "科技",
+    "国防军工": "科技",
+    "医药生物": "医药",
+    "食品饮料": "消费", "家用电器": "消费", "商贸零售": "消费",
+    "社会服务": "消费", "美容护理": "消费", "纺织服饰": "消费",
+    "农林牧渔": "消费", "汽车": "消费",
+    "电力设备": "新能源",
+    "银行": "价值", "非银金融": "价值", "房地产": "价值",
+    "公用事业": "价值", "环保": "价值",
+    "煤炭": "周期", "钢铁": "周期", "石油石化": "周期",
+    "有色金属": "周期", "基础化工": "周期", "建筑材料": "周期",
+    "建筑装饰": "周期", "交通运输": "周期", "机械设备": "周期",
+    "轻工制造": "周期",
+}
 
 
 def display_bucket(b) -> str:
-    return DISPLAY_ALIAS.get(b, b)
+    """展示桶 = 三类（2026-11-13 用户定）：只影响徽章/筛选/详情/导出，不影响评分同格。"""
+    b7 = DISPLAY_ALIAS.get(b, b)
+    if b7 in GROWTH_BUCKETS:
+        return "成长"
+    if b7 in VALUE_BUCKETS:
+        return "价值"
+    return "均衡"
 
 
 # ---------------------------------------------------------------- 0. 本地小工具
@@ -263,9 +311,168 @@ def _f10_ok(info) -> bool:
     return bool(info) and bool(info.get("managers"))
 
 
+def _inst_ratios(codes: list[str], refresh: bool, workers: int, log) -> dict:
+    """机构持有比例 {code: 0~1}（f10 cyrjg 页，缓存7天）——代表作"机构占比"维度。
+    refresh=False 只读缓存不联网。"""
+    out: dict = {}
+    if not codes:
+        return out
+
+    def _one(code):
+        if refresh:
+            return code, D.fetch_inst_ratio(code)
+        v = D._load_cache(f"inst_{code}", 1e9)
+        try:
+            return code, (float(v) if v is not None else None)
+        except (TypeError, ValueError):
+            return code, None
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for code, v in ex.map(_one, codes):
+            if v is not None:
+                out[code] = v
+    log(f"      机构占比：{len(out)}/{len(codes)} 只有数")
+    return out
+
+
+# ---------------------------------------------------------------- 1b. 持仓校验降级
+def fetch_hold_top10(code: str, refresh: bool = True) -> list | None:
+    """前10重仓 [(行业, 占净值比例)]——天天基金移动 API（申万行业标签自带）。
+    缓存 30 天（持仓季度更新）；refresh=False 只读缓存不联网。"""
+    p = NAV_DIR / f"hold_{code}.pkl"
+    if p.exists():
+        try:
+            age_h = (time.time() - p.stat().st_mtime) / 3600
+            if not refresh or age_h < HOLD_TTL_H:
+                return pd.read_pickle(p)
+        except Exception:
+            pass
+    if not refresh:
+        return None
+    try:
+        u = ("https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition"
+             f"?FCODE={code}&deviceid=Wap&plat=Wap&product=EFund&version=6.2.8")
+        req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+        raw = json.loads(urllib.request.urlopen(req, timeout=15)
+                         .read().decode("utf-8", "ignore"))
+        stocks = ((raw.get("Datas") or {}).get("fundStocks")) or []
+        out = [(s.get("INDEXNAME") or "", float(s.get("JZBL") or 0) / 100.0)
+               for s in stocks if s.get("INDEXNAME")]
+        if not out:
+            return None
+        try:
+            pd.to_pickle(out, p)
+        except Exception:
+            pass
+        return out
+    except Exception:
+        return None
+
+
+def apply_holdings_check(styles: dict, refresh: bool, log) -> dict:
+    """持仓校验降级（2026-11-13 用户Q2"医药第一怎么办"的解法）。
+
+    相关性桶 X 的基金，前10重仓中 X 系行业合计 <HOLD_MIN → 降为均衡：
+    苏的两只基金（医药相关但前10医药5%/11%）→ 均衡格（与真分散基金比，
+    不再白拿医药崩盘格的相对高分）；真行业基金（前10同行业30%+）不受影响。
+    只降级不升级；fetch 失败（无数据）保留原桶。refresh=False 只读已有缓存。
+    """
+    todo = {c: b for c, b in styles.items() if b and b != "均衡"}
+    if not todo:
+        return styles
+    down = miss = 0
+
+    def _one(item):
+        c, b = item
+        top = fetch_hold_top10(c, refresh=refresh)
+        if top is None:
+            return c, None
+        tot = sum(w for ind, w in top if IND2BUCKET.get(ind, "均衡") == b)
+        return c, tot
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for c, tot in ex.map(_one, todo.items()):
+            if tot is None:
+                miss += 1
+            elif tot < HOLD_MIN:
+                styles[c] = "均衡"
+                down += 1
+    log(f"      持仓校验：非均衡 {len(todo)} 只 → 降级 {down} 只"
+        f"（前10该行业合计<{HOLD_MIN:.0%}）/无持仓数据 {miss}")
+    return styles
+
+
+# ---------------------------------------------------------------- 1c. 双十判定
+def career_dual_flags(pairs: pd.DataFrame, f10s: dict, log) -> dict:
+    """双十（2026-11-13 用户定）：从业>10年 且 从业年化>10%。
+
+    从业年化 = **任职最久现任基金**的几何年化（复权净值，自该经理上任日）
+    ——与各平台该基金页"任职年化"同公式同起始日（计算方式一致）。
+    返回 {key: {"dual": bool, "ann": float|None, "code": str|None}}；
+    只算从业>10 年者（其余无双十可能，省 nav 读取）。
+    """
+    career: dict = {}
+    codes_of_key: dict = {}
+    for r in pairs.itertuples(index=False):
+        k = f"{r.mgr}|{r.company}"
+        cy = r.career_y
+        if cy is not None and cy == cy:
+            career[k] = max(career.get(k, 0.0), float(cy))
+        codes_of_key.setdefault(k, set()).add(r.code)
+    # 经理名 → [(start, code)]（f10 现任经理表没有公司名——按 key 的基金集合对齐，
+    # 防同名经理串数据）
+    starts: dict = {}
+    for code, info in f10s.items():
+        for m in (info or {}).get("managers") or []:
+            nm = m.get("name")
+            if not nm:
+                continue
+            try:
+                st = pd.Timestamp(str(m.get("start") or "")[:10])
+            except Exception:
+                continue
+            starts.setdefault(nm, []).append((st, code))
+    out: dict = {}
+    n_dual = n_career = 0
+    for k, cy in career.items():
+        if cy <= DUAL_CAREER_MIN_Y:
+            continue
+        n_career += 1
+        mgr = k.split("|", 1)[0]
+        mine = codes_of_key.get(k, set())
+        cands = [(st, c) for st, c in (starts.get(mgr) or []) if c in mine]
+        if not cands:
+            out[k] = dict(dual=False, ann=None, code=None)
+            continue
+        st, code = min(cands)                      # 最早上任 = 任职最久
+        nav = _read_nav_pickle(code)
+        ann = None
+        if nav is not None and not nav.empty:
+            # 起始日之后的首个净值（f10 start 可能比净值首日早1天 → 取≥start）
+            ns = nav[nav["date"] >= st]
+            nv = nav[nav["date"] <= pd.Timestamp.today().normalize()]
+            if not ns.empty and not nv.empty:
+                d0, d1 = ns["date"].iloc[0], nv["date"].iloc[-1]
+                days = (d1 - d0).days
+                if days > 30:
+                    ann = float((nv["nav"].iloc[-1] / ns["nav"].iloc[0])
+                                ** (365.0 / days) - 1)
+        dual = ann is not None and ann > DUAL_ANN_MIN
+        if dual:
+            n_dual += 1
+        out[k] = dict(dual=dual, ann=ann, code=code)
+    log(f"      双十判定：从业>10年 {n_career} 人 → "
+        f"双十(年化>{DUAL_ANN_MIN:.0%}) {n_dual} 人（免考卷免门槛直通）")
+    return out
+
+
 # ---------------------------------------------------------------- 2. 特征（指纹缓存）
-def _feat_fingerprint() -> tuple:
-    """特征 = f(净值, 风格分类, 合成基准)；任一变动即失效。"""
+def _feat_fingerprint(styles: dict | None = None) -> tuple:
+    """特征 = f(净值, 风格分类, 合成基准, 风格字典内容)；任一变动即失效。
+
+    风格字典哈希（2026-11-13 加）：持仓校验降级会改 styles 但不改 eqgate 缓存
+    文件 mtime——必须把字典内容本身纳入指纹，否则降级后特征缓存不刷新。
+    """
     def _stat(path: Path):
         try:
             return path.stat().st_mtime_ns
@@ -298,15 +505,19 @@ def _feat_fingerprint() -> tuple:
                         pass
     except OSError:
         pass
+    sty_h = hashlib.md5(
+        json.dumps(sorted((styles or {}).items()),
+                   ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
     return (nav_n, nav_mx, _stat(G.STYLE_CACHE),
-            _stat(NAV_DIR / "bond_index_wealth.pkl"), hs_mx)
+            _stat(NAV_DIR / "bond_index_wealth.pkl"), hs_mx, sty_h)
 
 
 def build_features(pool: pd.DataFrame, styles: dict, log) -> dict:
     """S4 人群特征：back0..4 逐年收益 + ps_0..4 同格逐年分位 + cexc 合成超额
     + ret5y + nav_end（断档判定）。锚点 o = 构建日；指纹没变直接复用缓存。
     """
-    fp = _feat_fingerprint()
+    fp = _feat_fingerprint(styles)
     if FEAT_CACHE.exists():
         try:
             hit = pd.read_pickle(FEAT_CACHE)
@@ -619,13 +830,22 @@ def save_roster(state: dict) -> None:
 
 # ---------------------------------------------------------------- 6. 候选
 def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
-                     fch: pd.Series, f10s: dict, nav_ok: set) -> dict:
+                     fch: pd.Series, f10s: dict, nav_ok: set,
+                     feat: pd.DataFrame | None = None,
+                     dual: dict | None = None) -> dict:
     """{mgr|company: {...}}——通道按本人从业；过考基金=本人入围基金里过本人卷的。
 
     B 卷还要求**基金通道=B**（验证脚本同口径：与资深共管的基金算资深的卷，
     新锐不能借它入新锐榜）。data_complete：本人所有在管基金都有可用 F10
     （否则"资格失效 vs 数据不全"分不清 → 冻结不判）。
+
+    2026-11-13 两条新规则（用户拍板）：
+      · **双十直通**：dual[key]=True（从业>10年且从业年化>10%）→ 免考卷免门槛，
+        pass_funds = 全部入围基金（"双十经理全部上榜"）。
+      · **绝对门槛**：非双十的过考基金须 5 年年化 ≥ABS_RET_MIN 才能作计分基金
+        ——先按门槛滤基金、再由引擎取最高分作计分/代表作，展示的计分数字必然≥0。
     """
+    dual = dual or {}
     qf: dict = {}
     if not qual.empty:
         for r in qual.itertuples(index=False):
@@ -639,7 +859,8 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
         cand[key] = dict(mgr=mgr, company=company, name=mgr,
                          career=None, channel="unknown",
                          qual_funds=[], pass_funds=[],
-                         data_complete=False, has_pairs=True)
+                         data_complete=False, has_pairs=True,
+                         dual=False, career_ann=None)
     # 本人从业 = 名下 pair 最大值
     for r in pairs.itertuples(index=False):
         key = f"{r.mgr}|{r.company}"
@@ -648,19 +869,39 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
             cur = cand[key]["career"]
             if cur is None or cy > cur:
                 cand[key]["career"] = float(cy)
+
+    def _r5(code):
+        if feat is None or code not in feat.index:
+            return None
+        v = feat.at[code, "ret5y"]
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return None
+        return None if np.isnan(v) else v
+
     for key, c in cand.items():
         c["channel"] = G.channel(c["career"])
         rows = qf.get(key, [])
         c["qual_funds"] = [r.code for r in rows]
-        for r in rows:
-            tag = exams.get(r.code)
-            if not tag:
-                continue
-            if c["channel"] == "A" and "G3s" in tag:
-                c["pass_funds"].append(r.code)
-            elif (c["channel"] == "B" and "G4s" in tag
-                  and fch.get(r.code) == "B"):
-                c["pass_funds"].append(r.code)
+        info = dual.get(key) or {}
+        c["dual"] = bool(info.get("dual"))
+        c["career_ann"] = info.get("ann")
+        if c["dual"] and c["channel"] == "A":
+            c["pass_funds"] = list(c["qual_funds"])   # 双十直通：免考卷免门槛
+        else:
+            exam_pass = []
+            for r in rows:
+                tag = exams.get(r.code)
+                if not tag:
+                    continue
+                if c["channel"] == "A" and "G3s" in tag:
+                    exam_pass.append(r.code)
+                elif (c["channel"] == "B" and "G4s" in tag
+                      and fch.get(r.code) == "B"):
+                    exam_pass.append(r.code)
+            c["pass_funds"] = [x for x in exam_pass
+                               if (_r5(x) is not None and _r5(x) >= ABS_RET_MIN)]
         codes = pf.get(key, [])
         c["data_complete"] = (bool(codes)
                               and all(_f10_ok(f10s.get(x)) for x in codes)
@@ -674,11 +915,20 @@ def _nav_at(nav: pd.DataFrame, d):
     return float(sub["nav"].iloc[-1]) if len(sub) else None
 
 
-def _mgr_detail(codes: list[str], mgr: str, feat: pd.DataFrame,
+def _mgr_detail(codes: list[str], basis: list[str], mgr: str, feat: pd.DataFrame,
                 fdf: pd.DataFrame, f10s: dict, wealth: dict, o,
-                weekly_ex: dict) -> dict:
-    """代表作3只 + 5 分析块（a 净值曲线/b 逐年/c 逐季胜率/d 风格暴露/e 风险）。"""
-    # ---- 代表作：R1 任期最久 / R2 规模最大 / R3 业绩最佳（F1=同格平均排位），去重
+                weekly_ex: dict, inst_map: dict | None = None) -> dict:
+    """代表作 + 5 分析块（a 净值曲线/b 逐年/c 逐季胜率/d 风格暴露/e 风险）。
+
+    代表作规则（2026-11-13 用户反馈后改版，R1任期最久退役）：
+      ① 计分 = 撑起该经理分数的基金（basis 里 W3 最高分——行内/详情首卡都用它，
+        杜绝"展示-3.4%的基金、分数却来自+12%的基金"错位）
+      ② 规模最大 = A/C 份额按 base_name 合并后的规模合计最大基金
+      ③ 业绩最佳 = F1（同格平均排位）最高
+      按基金基础名去重（同基金 A/C 不重复展示）；规模显示=合并规模。
+    """
+    inst_map = inst_map or {}
+
     def _tenure(code):
         info = f10s.get(code) or {}
         best = -1
@@ -700,7 +950,7 @@ def _mgr_detail(codes: list[str], mgr: str, feat: pd.DataFrame,
             return None
 
     def _f1(code):
-        if code not in fdf.index:
+        if fdf is None or fdf.empty or code not in fdf.index:
             return None
         v = fdf.at[code, "F1"]
         try:
@@ -709,25 +959,60 @@ def _mgr_detail(codes: list[str], mgr: str, feat: pd.DataFrame,
             return None
         return None if np.isnan(v) else v
 
-    reps, seen = [], set()
-    picks = (
-        ("任期最久", max(codes, key=_tenure, default=None)),
-        ("规模最大", max((c for c in codes if _scale(c) is not None),
-                         key=_scale, default=None)),
-        ("业绩最佳", max((c for c in codes if _f1(c) is not None),
-                         key=_f1, default=None)))
-    for rule, code in picks:
-        if code is None or code in seen:
-            continue
-        seen.add(code)
-        info = f10s.get(code) or {}
-        mg = next((m for m in info.get("managers") or []
-                   if m.get("name") == mgr), None)
+    def _score(code):
+        if fdf is None or fdf.empty or code not in fdf.index:
+            return None
+        v = fdf.at[code, "score"]
         try:
-            ten = round((o - pd.Timestamp(str((mg or {}).get("start") or "")[:10])).days
-                        / 365.25, 1)
-        except Exception:
-            ten = None
+            v = float(v)
+        except (TypeError, ValueError):
+            return None
+        return None if np.isnan(v) else v
+
+    def _cname(code):
+        return feat.at[code, "name"] if code in feat.index else code
+
+    # ---- 计分基金（basis 中 score 最高者 = 分数来源）
+    sc_map = {c: _score(c) for c in (basis or [])}
+    sc_map = {c: v for c, v in sc_map.items() if v is not None}
+    count_code = max(sc_map, key=sc_map.get) if sc_map else None
+
+    # ---- A/C 份额合并：按基础名分组（同基金不重复展示，规模求和）
+    groups: dict = {}
+    for c in codes:
+        groups.setdefault(base_name(_cname(c)), []).append(c)
+
+    def _g_scale(b):
+        return sum(_scale(x) or 0.0 for x in groups[b])
+
+    def _g_f1(b):
+        vals = [_f1(x) for x in groups[b]]
+        vals = [v for v in vals if v is not None]
+        return max(vals) if vals else None
+
+    # ---- 三个规则位（按组选，组内展示份额：计分=计分份额，其余=规模最大份额）
+    picks: list = []
+    if count_code is not None:
+        picks.append(("计分", base_name(_cname(count_code)), count_code))
+    for b in sorted(groups, key=_g_scale, reverse=True):
+        if b not in {p[1] for p in picks} and (_g_scale(b) or 0) > 0:
+            picks.append(("规模最大", b, None))
+            break
+    for b in sorted(groups,
+                    key=lambda x: (_g_f1(x) is not None, _g_f1(x) or 0),
+                    reverse=True):
+        if b not in {p[1] for p in picks} and _g_f1(b) is not None:
+            picks.append(("业绩最佳", b, None))
+            break
+
+    reps = []
+    for rule, b, forced in picks:
+        g = groups[b]
+        if forced is not None:
+            code = forced
+        else:
+            code = max(g, key=lambda x: (_scale(x) or 0))   # 组内规模最大份额展示
+        ten = _tenure(code)
         r5 = feat.at[code, "ret5y"] if code in feat.index else None
         try:
             r5 = float(r5)
@@ -738,17 +1023,19 @@ def _mgr_detail(codes: list[str], mgr: str, feat: pd.DataFrame,
         t = feat.at[code, "type"] if code in feat.index else None
         comp5 = (comp_ann(wealth[t], o - pd.DateOffset(years=5), o)
                  if t in wealth else None)
-        reps.append(dict(code=code,
-                         name=feat.at[code, "name"] if code in feat.index else code,
-                         rule=rule, scale=_scale(code), tenure=ten,
+        reps.append(dict(code=code, name=_cname(code), rule=rule,
+                         scale=round(_g_scale(b), 2) if _g_scale(b) else None,
+                         n_shares=len(g),
+                         tenure=None if ten < 0 else round(ten / 365.25, 1),
                          ret5y=None if r5 is None else round(r5, 4),
                          excess=None if (r5 is None or comp5 is None)
-                         else round(r5 - comp5, 4)))
+                         else round(r5 - comp5, 4),
+                         inst=inst_map.get(code)))
     empty = dict(reps=reps, trend=None, yearly=[], quarterly=[],
                  style=None, risk=None)
     if not reps:
         return empty
-    primary = reps[0]["code"]                       # R1 任期最久 = 行内代表作
+    primary = reps[0]["code"]                       # 计分基金 = 分析块主体
     nav = _read_nav_pickle(primary)
     if nav is None:
         return empty
@@ -875,6 +1162,8 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
 
     styles = G.classify_styles(s4) or {}
     log(f"[3/6] 风格分类 {len(styles)} 只（缓存7天）")
+    # 持仓校验降级（2026-11-13）：前10重仓背离相关桶 → 同格降均衡（错格不公解法）
+    styles = apply_holdings_check(styles, refresh=refresh, log=log)
 
     feat_bundle = build_features(pool, styles, log)
     feat, o, asof = feat_bundle["feat"], feat_bundle["o"], feat_bundle["asof"]
@@ -886,6 +1175,7 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                          and G.channel(r.career_y) in ("A", "B")
                          and r.code in feat.index})
     f10s = _f10s(cand_codes, refresh, workers, log)
+    dual = career_dual_flags(pairs, f10s, log)      # 双十：从业>10y 且 年化>10%
     qual = qualify_pairs(pairs, feat, f10s, o)
     qset = set(qual["code"]) if not qual.empty else set()
     exams = exam_flags(feat)
@@ -901,8 +1191,9 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         sc = pd.to_numeric(fdf["score"], errors="coerce")
         log(f"[5/6] 因子可算 {len(fdf)} 只，均分 {sc.mean():.1f}")
 
-    # 候选 + 名单状态机
-    cand = build_candidates(pairs, qual, exams, fch, f10s, navres["ok"])
+    # 候选 + 名单状态机（双十直通 + 年化≥0 门槛在 build_candidates 内）
+    cand = build_candidates(pairs, qual, exams, fch, f10s, navres["ok"],
+                            feat=feat, dual=dual)
     today = str(pd.Timestamp.today().date())
     state = load_roster() or dict(members={}, exits=[], eval_no=0)
     last_eval = state.get("eval_date")
@@ -940,13 +1231,25 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         for k, g in qual.groupby(["mgr", "company"]):
             qual_by_key[f"{k[0]}|{k[1]}"] = g
 
-    def _score_of(key, c):
+    # 机构占比（代表作维度）：只抓在榜经理的入围基金；refresh 才联网
+    member_codes: set = set()
+    for key in state["members"]:
+        qg = qual_by_key.get(key)
+        if qg is not None:
+            member_codes.update(qg["code"].tolist())
+    inst_map = _inst_ratios(sorted(member_codes), refresh, workers, log)
+
+    def _basis_of(key, c):
+        """计分基准 = 在榜基金（roster 记录）∩可算分，回落入围基金——与分数同源。"""
         mem = state["members"].get(key)
-        basis = []
         if mem:
-            basis = [x for x in mem.get("funds", []) if x in fdf.index]
-        if not basis:
-            basis = [x for x in c["qual_funds"] if x in fdf.index]
+            b = [x for x in mem.get("funds", []) if x in fdf.index]
+            if b:
+                return b
+        return [x for x in c["qual_funds"] if x in fdf.index]
+
+    def _score_of(key, c):
+        basis = _basis_of(key, c)
         if not basis or fdf.empty:
             return None
         v = pd.to_numeric(fdf.loc[basis, "score"], errors="coerce").max()
@@ -959,11 +1262,12 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         if c is None:
             continue                                # 已被硬条件剔除
         sc = _score_of(key, c)
+        basis = _basis_of(key, c)
         qg = qual_by_key.get(key)
         qcodes = qg["code"].tolist() if qg is not None else []
         try:
-            det = _mgr_detail(qcodes, c["mgr"], feat, fdf, f10s, wealth,
-                              o, weekly_ex)
+            det = _mgr_detail(qcodes, basis, c["mgr"], feat, fdf, f10s, wealth,
+                              o, weekly_ex, inst_map)
         except Exception as e:
             log(f"      [warn] 明细构建失败 {key}: {e}")
             det = dict(reps=[], trend=None, yearly=[], quarterly=[],
@@ -973,6 +1277,7 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         if rep0 and rep0.get("code") in feat.index:
             bucket = display_bucket(feat.at[rep0["code"], "bucket"])
         entry = str(m.get("entry", today))
+        ann = c.get("career_ann")
         row = dict(key=key, name=c["name"], company=c["company"],
                    career=round(c["career"], 1) if c["career"] else None,
                    tenure=(round(float(qg["tenure_y"].max()), 1)
@@ -981,7 +1286,11 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                    is_new=(entry == state.get("eval_date")
                            and int(state.get("eval_no", 0)) > 1),
                    n_funds=len(c["qual_funds"]),
-                   rep_code=rep0.get("code"), rep_name=rep0.get("name"))
+                   rep_code=rep0.get("code"), rep_name=rep0.get("name"),
+                   # 2026-11-13 用户加：计分基金5年年化 + 从业年化（平台口径）
+                   ret5y=rep0.get("ret5y"),
+                   ann_career=(round(ann, 4) if ann is not None else None),
+                   dual=bool(c.get("dual")))
         lst = m.get("list")
         lists[lst if lst in ("vet", "new") else "vet"].append(row)
         detail[key] = det
@@ -997,7 +1306,7 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
             r["rank"] = i
 
     buckets = sorted({r["bucket"] for r in lists["vet"] + lists["new"]},
-                     key=lambda b: CANON7.index(b) if b in CANON7 else 99)
+                     key=lambda b: CANON3.index(b) if b in CANON3 else 99)
     payload = dict(asof=asof_s or None,
                    eval_date=state.get("eval_date"),
                    eval_no=int(state.get("eval_no", 0)),
@@ -1018,6 +1327,7 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                        channel=r.channel, tenure_y=r.tenure_y,
                        bucket=feat.at[r.code, "bucket"],
                        g3s="G3s" in tag, g4s="G4s" in tag,
+                       ret5y=feat.at[r.code, "ret5y"],
                        **{f"ps_{j}": feat.at[r.code, f"ps_{j}"] for j in range(5)})
             if fr is not None:
                 for k in ["F1", "F2", "F3", "F4", "F5", "F6", "score"]:

@@ -659,21 +659,25 @@ if (D.mgr && (D.mgr.vet || []).length){
   const _sec0 = SECTION;
   SECTION = 'mgr'; switchTab('mgr_vet');
   const mh = document.getElementById('list').innerHTML;
-  chk('老将榜行数=契约（D.mgr.vet）',
-      (mh.match(/class="fundcard mgr-row"/g) || []).length === D.mgr.vet.length);
-  chk('二级7桶筛选条渲染（默认全选）',
+  chk('老将榜两列卡片行数=契约（D.mgr.vet）',
+      (mh.match(/class="mgr-card"/g) || []).length === D.mgr.vet.length);
+  chk('测试中徽章（右上角）', mh.includes('test-badge') || document.getElementById('meta').innerHTML.includes('test-badge'));
+  chk('卡片双业绩（计分5年+从业年化）',
+      mh.includes('计分5年') && mh.includes('从业年化'));
+  chk('卡片无名次无分数', !mh.match(/class="rank /) && !mh.includes('心动值'));
+  chk('三类筛选条渲染（默认全选）',
       mh.includes('sub-filter') && (D.mgr.buckets || []).every(b => mh.indexOf('>' + b + '</button>') >= 0));
   const bk0 = (D.mgr.buckets || [])[0];
   if (bk0){
     mgrBkTgl(bk0);
     const mh2 = document.getElementById('list').innerHTML;
     const expect = D.mgr.vet.filter(r => r.bucket === bk0).length;
-    chk('桶筛选点选生效（只剩该桶）',
+    chk('桶筛选点选生效（只剩该类）',
         expect === 0 ? mh2.includes('empty-tip')
-        : (mh2.match(/class="fundcard mgr-row"/g) || []).length === expect);
+        : (mh2.match(/class="mgr-card"/g) || []).length === expect);
     mgrBkAll();
     chk('桶筛选"全部"恢复全量',
-        (document.getElementById('list').innerHTML.match(/class="fundcard mgr-row"/g) || []).length
+        (document.getElementById('list').innerHTML.match(/class="mgr-card"/g) || []).length
         === D.mgr.vet.length);
   }
   const k0 = D.mgr.vet[0].key;
@@ -683,6 +687,10 @@ if (D.mgr && (D.mgr.vet || []).length){
       + document.getElementById('d-code').textContent;
   chk('经理详情5块+代表作齐',
       ['代表作', '净值走势', '逐年收益', '超额胜率', '风格暴露', '风险指标'].every(s => db.includes(s)));
+  chk('代表作=计分基金规则+机构占比+合并规模',
+      db.includes('>计分<') && db.includes('机构占比') && db.includes('合并规模'));
+  chk('详情头部含从业年化（平台口径）',
+      document.getElementById('d-code').textContent.includes('从业年化'));
   chk('经理详情无 NaN/undefined 泄漏', !/NaN|undefined|null年|null%|null亿/.test(dAll));
   chk('经理分数标注"池内相对评分"（AG §4-3）',
       document.getElementById('d-score-label').textContent === '池内相对评分');

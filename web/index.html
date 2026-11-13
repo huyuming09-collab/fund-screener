@@ -107,14 +107,10 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 /* 通道徽章：老将=金棕 / 新锐=蓝青（§4.3 拍板配色）；"新"字标复用 .rk.new 橙红 */
 .rk.style.vet{background:#fdf3d8;color:#8a6d00;}
 .rk.style.nwx{background:#e3f2fd;color:#0b6bb5;}
-/* 风格桶徽章 ×7（按大区色系，§4.3） */
-.rk.style.b-tech{background:#e8f1fd;color:#1d5bb8;}
-.rk.style.b-med{background:#e0f6f4;color:#0d7a6f;}
-.rk.style.b-cons{background:#fdeee8;color:#c05621;}
-.rk.style.b-nev{background:#e8f6ec;color:#1a7f37;}
-.rk.style.b-val{background:#f3ecfd;color:#7237c0;}
-.rk.style.b-cyc{background:#f7efe4;color:#8a6d00;}
-.rk.style.b-bal{background:#f0f0ee;color:#666660;}
+/* 展示桶徽章 ×3（2026-11-13 用户定：不细分行业，成长/价值/均衡） */
+.rk.style.b-growth{background:#e8f6ec;color:#1a7f37;}   /* 成长=科技/新能源/医药 */
+.rk.style.b-value{background:#f3ecfd;color:#7237c0;}    /* 价值=价值/周期/消费 */
+.rk.style.b-bal{background:#f0f0ee;color:#666660;}      /* 均衡 */
 /* 二级页签：7 桶多选筛选条（默认全选，可折叠收起） */
 .sub-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
   padding:9px 14px 2px;border-bottom:1px solid var(--line);}
@@ -165,6 +161,28 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .q-strip{display:flex;gap:3px;align-items:flex-end;height:74px;margin-top:4px;}
 .q-strip i{flex:1;border-radius:2px;min-width:4px;}
 .q-note{font-size:11.5px;color:var(--sub);margin-top:6px;}
+/* 两列卡片页（2026-11-13 用户定：无排名无分数，按分排序，双业绩可见） */
+.mgr-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;
+  padding:10px 14px 4px;}
+.mgr-card{background:#fff;border:1px solid var(--line);border-radius:14px;
+  padding:11px 13px;cursor:pointer;transition:box-shadow .15s;}
+.mgr-card:active{box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.mc-top{display:flex;align-items:center;gap:6px;min-width:0;}
+.mc-name{font-size:15.5px;font-weight:700;color:var(--ink);line-height:1.3;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}
+.mc-tags{display:flex;gap:4px;flex-shrink:0;}
+.mc-org{font-size:11.5px;color:var(--sub);margin-top:4px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mc-perf{display:flex;gap:12px;margin-top:7px;font-size:12px;
+  font-variant-numeric:tabular-nums;flex-wrap:wrap;}
+.mc-perf .l{color:var(--sub);margin-right:3px;}
+.mc-perf b{font-weight:700;}
+.mc-rep{font-size:11.5px;color:var(--sub);margin-top:6px;padding-top:6px;
+  border-top:1px dashed var(--line);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;}
+.test-badge{float:right;background:#fff4ec;color:#a85100;
+  border:1px solid rgba(168,81,0,.35);border-radius:6px;
+  font-size:11px;font-weight:700;padding:2px 8px;}
 .md-risk{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
 .md-risk .m{background:#fff;border:1px solid var(--line);border-radius:12px;
   padding:10px 6px;text-align:center;}
@@ -1060,10 +1078,9 @@ document.getElementById('list').addEventListener('click', function(e){
 }, true);
 
 /* ============ 偏股雷达两榜（docs/20 §4，2026-11-13 实现） ============ */
-const MGR_BK_CLS = {'科技':'b-tech','医药':'b-med','消费':'b-cons','新能源':'b-nev',
-                    '价值':'b-val','周期':'b-cyc','均衡':'b-bal'};
-const MGR_BK_COLOR = {'科技':'#1d5bb8','医药':'#0d7a6f','消费':'#c05621',
-                      '新能源':'#1a7f37','价值':'#7237c0','周期':'#8a6d00','均衡':'#666666'};
+/* 展示桶=三类（2026-11-13 用户定）：成长(科技/新能源/医药)·价值(价值/周期/消费)·均衡 */
+const MGR_BK_CLS = {'成长': 'b-growth', '价值': 'b-value', '均衡': 'b-bal'};
+const MGR_BK_COLOR = {'成长': '#1a7f37', '价值': '#7237c0', '均衡': '#666666'};
 const mpct = v => v==null ? '—' : (v*100).toFixed(1)+'%';
 const mpp  = v => v==null ? '—' : (v>=0?'+':'')+(v*100).toFixed(1)+'pp';
 let MGR_SEL = null;      /* 二级桶筛选：null=全部；Set=选中桶（点空=回全部） */
@@ -1073,15 +1090,18 @@ let MGR_CUR = null;      /* 当前打开的经理详情 */
 function renderMgrList(cat){
   const m = D.mgr;
   const rows0 = (m && (cat==='mgr_vet' ? m.vet : m.new)) || [];
+  /* 测试中徽章（2026-11-13 用户定：右上角标注） */
   $('meta').innerHTML = m
     ? `数据基准 <b class="asof">${m.asof}</b> · ${catLabel(cat)} 上榜 <b>${rows0.length}</b> 人`
       + ` · 名单复评 ${m.eval_date}（第${m.eval_no}期）`
-    : `数据基准 <b class="asof">—</b> · ${catLabel(cat)}`;
+      + `<span class="test-badge">测试中</span>`
+    : `数据基准 <b class="asof">—</b> · ${catLabel(cat)}`
+      + `<span class="test-badge">测试中</span>`;
   if(!m || !rows0.length){
     $('list').innerHTML = '<div class="empty-tip">本期暂无上榜经理（数据源 data.mgr 缺失或为空）</div>';
     return;
   }
-  /* 二级页签：7 桶多选筛选条（默认全选=展示全部；可折叠收起，§4.2 拍板） */
+  /* 二级页签：三类多选筛选条（默认全选=展示全部；可折叠收起，§4.2 拍板） */
   const bkts = m.buckets || [];
   if (MGR_SEL){                                  /* 数据变化后收敛失效选中项 */
     MGR_SEL = new Set([...MGR_SEL].filter(b => bkts.indexOf(b) >= 0));
@@ -1092,27 +1112,34 @@ function renderMgrList(cat){
   const chips = bkts.map(b =>
     `<button class="bk-chip${on(b)?' on':''}" onclick="mgrBkTgl('${b}')">${b}</button>`).join('');
   const filterHTML = `<div class="sub-filter">`
-    + `<button class="sf-toggle" onclick="mgrFold()">${MGR_FOLD?'风格筛选 ▾':'风格筛选 ▴'}</button>`
+    + `<button class="sf-toggle" onclick="mgrFold()">${MGR_FOLD?'筛选 ▾':'筛选 ▴'}</button>`
     + (MGR_FOLD
-        ? `<span class="sf-sum">${nSel===bkts.length?'全部风格':nSel+' / '+bkts.length+' 桶'}</span>`
+        ? `<span class="sf-sum">${nSel===bkts.length?'全部风格':nSel+' / '+bkts.length+' 类'}</span>`
         : `<span class="sf-chips"><button class="bk-chip${!MGR_SEL?' on':''}" onclick="mgrBkAll()">全部</button>${chips}</span>`)
     + `</div>`;
   const rows = rows0.filter(r => on(r.bucket));
   if(!rows.length){
-    $('list').innerHTML = filterHTML + '<div class="empty-tip">该风格桶下本期暂无上榜经理</div>';
+    $('list').innerHTML = filterHTML + '<div class="empty-tip">该风格下本期暂无上榜经理</div>';
     return;
   }
-  $('list').innerHTML = filterHTML + rows.map(r => `
-    <div class="fundcard mgr-row" onclick='openMgrDetail(${JSON.stringify(r.key)})'>
-      <div class="fc-head">
-        <div class="rank ${r.rank<=3?'top'+r.rank:''}">${r.rank}</div>
-        <div style="flex:1;min-width:0">
-          <div class="fc-name">${r.name}<span class="rk style ${cat==='mgr_vet'?'vet':'nwx'}">${cat==='mgr_vet'?'老将':'新锐'}</span><span class="rk style ${MGR_BK_CLS[r.bucket]||'b-bal'}">${r.bucket||'均衡'}</span>${r.is_new?'<span class="rk new">新</span>':''}</div>
-          <div class="fc-code">${r.company}<span class="dot">·</span>自${r.entry}在榜<span class="dot">·</span>代表作 ${r.rep_name||'—'}</div>
-        </div>
-        <span class="mgr-go">›</span>
+  /* 两列卡片（2026-11-13 用户定）：按分排序但不展示分数与名次；
+     卡片展示 计分基金5年年化 + 经理从业年化（平台口径），红涨绿跌 */
+  const perf = (label, v) => `<span><span class="l">${label}</span>`
+    + `<b class="${v==null?'':(v>=0?'pos':'neg')}">${mpct(v)}</b></span>`;
+  $('list').innerHTML = filterHTML + `<div class="mgr-grid">` + rows.map(r => `
+    <div class="mgr-card" onclick='openMgrDetail(${JSON.stringify(r.key)})'>
+      <div class="mc-top">
+        <span class="mc-name">${r.name}</span>
+        <span class="mc-tags">
+          <span class="rk style ${cat==='mgr_vet'?'vet':'nwx'}">${cat==='mgr_vet'?'老将':'新锐'}</span>
+          <span class="rk style ${MGR_BK_CLS[r.bucket]||'b-bal'}">${r.bucket||'均衡'}</span>
+          ${r.is_new?'<span class="rk new">新</span>':''}
+        </span>
       </div>
-    </div>`).join('');
+      <div class="mc-org">${r.company} · 自${r.entry}在榜</div>
+      <div class="mc-perf">${perf('计分5年', r.ret5y)}${perf('从业年化', r.ann_career)}</div>
+      <div class="mc-rep">代表作 ${r.rep_name||'—'}</div>
+    </div>`).join('') + `</div>`;
 }
 function mgrBkTgl(b){
   if (!MGR_SEL) MGR_SEL = new Set([b]);           /* 全选态点某桶 → 只看该桶 */
@@ -1143,7 +1170,8 @@ function openMgrDetail(key){
   $('d-code').textContent = (row.bucket||'均衡')
     + ' · 从业' + (row.career==null?'—':row.career+'年')
     + ' · 任本基金' + (row.tenure==null?'—':row.tenure+'年')
-    + ' · 自' + row.entry + '在榜';
+    + ' · 自' + row.entry + '在榜'
+    + ' · 从业年化' + mpct(row.ann_career);        /* 2026-11-13 用户定：平台口径 */
   $('d-disc').textContent = ((D && D.disclaimer) || DISCLAIMER_FALLBACK)
     + ' 本页评分为池内相对评分，不同榜与不同期不可横向比较。';
   $('d-body').innerHTML = mgrBodyHTML(row, det);
@@ -1162,10 +1190,11 @@ function mgrBodyHTML(row, det){
         <div class="rep-top"><span class="rep-rule">${x.rule}</span>
           <span class="rep-name">${x.name}</span><span class="rep-code">${x.code||''}</span></div>
         <div class="rep-metrics">
-          <span>规模 <b>${x.scale==null?'—':(+x.scale).toFixed(1)+'亿'}</b></span>
+          <span>合并规模 <b>${x.scale==null?'—':(+x.scale).toFixed(1)+'亿'}${x.n_shares>1?` (${x.n_shares}类份额)`:''}</b></span>
           <span>任期 <b>${x.tenure==null?'—':x.tenure+'年'}</b></span>
           <span>5年年化 <b class="${cls(x.ret5y)}">${mpct(x.ret5y)}</b></span>
           <span>超额 <b class="${cls(x.excess)}">${mpp(x.excess)}</b></span>
+          <span>机构占比 <b>${x.inst==null?'—':fpct(x.inst)}</b></span>
         </div></div>`).join('') + '</div>'
     : '<div class="empty-tip">代表作数据缺失</div>';
 
@@ -2685,9 +2714,9 @@ function _drawWeatherExport(canvas, S, rowsLimit){
 }
 
 /* ---- 偏股雷达两榜导出（docs/20 §4.5：每榜前20，含新进标与榜龄，尾注完整名单见页面） ---- */
-const MGR_BK_BADGE = {'科技':['#e8f1fd','#1d5bb8'],'医药':['#e0f6f4','#0d7a6f'],
-  '消费':['#fdeee8','#c05621'],'新能源':['#e8f6ec','#1a7f37'],'价值':['#f3ecfd','#7237c0'],
-  '周期':['#f7efe4','#8a6d00'],'均衡':['#f0f0ee','#666660']};
+/* 展示桶=三类（2026-11-13 用户定） */
+const MGR_BK_BADGE = {'成长': ['#e8f6ec', '#1a7f37'], '价值': ['#f3ecfd', '#7237c0'],
+                      '均衡': ['#f0f0ee', '#666660']};
 function _drawMgrExport(canvas, S, pool, rows){
   const m = (D && D.mgr) || {};
   const list = exportRows(pool, rows || 20);          /* 每榜前 20（&rows 可覆盖） */
