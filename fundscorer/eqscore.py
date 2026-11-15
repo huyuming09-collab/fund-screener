@@ -108,6 +108,13 @@ POS_MIN_BY_TYPE = {"股票型": 50.0, "混合型-偏股": 50.0,
 # eq_cell_merge_eval 双起点判据全过：M1 考卷两期 Jaccard 0.312→0.377、
 # M2 小格秩分半信度 0.003→0.218（A下≈噪声）、M3 信号 IC 0.019→0.245。
 CELL_MERGE_N = 150
+# 双体系评分（2026-11-15 用户拍板"按推荐做"，留出期验证见 STATUS）：
+#   老将(A通道) = 近1年动量 + 风格超额 + 回撤浅者优 各1/3（IC_fwd +0.143 vs 旧W3 -0.016）
+#   新锐(B通道) = 风格超额 + 近1年动量 各1/2（+0.071 vs 旧 +0.036；加F1稀释→不加）
+#   F6资历/F2/F5/F1 退出评分（证据：F6对老将显著为负）；滚动walk-forward与固定等权均验证
+NEW_MDD_MAX = 0.55          # 拍板③A：新锐计分基金5年回撤闸（>55%不入榜；数据缺fail-open）
+DUAL_SCORE_BONUS = 2.0      # 拍板①A：双十改为加分项（不免考，仅影响排名）
+BIG_SCALE_YI = 100.0        # 拍板②A：规模不入分，≥100亿打"大"旗（仅展示）
 # 持仓校验降级（2026-11-13）：前10重仓中相关桶合计 <15% → 同格降均衡
 HOLD_MIN = 0.15
 HOLD_TTL_H = 24 * 30
@@ -575,7 +582,21 @@ def _feat_fingerprint(styles: dict | None = None) -> tuple:
     ).hexdigest()[:16]
     return (nav_n, nav_mx, _stat(G.STYLE_CACHE),
             _stat(NAV_DIR / "bond_index_wealth.pkl"), hs_mx, sty_h,
-            f"cellm{CELL_MERGE_N}")     # 2026-11-14 小格合并：逻辑变→旧特征作废
+            f"cellm{CELL_MERGE_N}", "mdd+dualw1")   # 11-14小格合并；11-15 mdd特征+双体系
+
+
+def windowed_mdd(nav: pd.DataFrame, T, years: int = 5) -> float | None:
+    """[T-years, T] 窗口内相对区间高点的最大回撤（正数）；样本不足 → None。"""
+    sub = nav[nav["date"] <= T]
+    if sub.empty:
+        return None
+    end = sub["date"].max()
+    w = sub[sub["date"] > end - pd.DateOffset(years=years)]
+    if len(w) < 100:
+        return None
+    v = w["nav"].values
+    peak = np.maximum.accumulate(v)
+    return float(((peak - v) / peak).max())
 
 
 def build_features(pool: pd.DataFrame, styles: dict, log) -> dict:
@@ -613,6 +634,7 @@ def build_features(pool: pd.DataFrame, styles: dict, log) -> dict:
         sty = styles.get(r.code) or G.style_bucket(r.name)
         rows.append(dict(code=r.code, name=r.name, type=r.type_text, bucket=sty,
                          nav_end=dmax, ret5y=nav_ann_to(nav, o, 5),
+                         mdd=windowed_mdd(nav, o),
                          back=[nav_yearly(nav, a, b) for a, b in back_win]))
         if i % 3000 == 0:
             log(f"      特征 {i}/{len(pool)} {time.strftime('%H:%M:%S')}")
@@ -837,20 +859,51 @@ def build_factors(o, feat: pd.DataFrame, qual_funds: set,
     df["car"] = pairs.groupby("code")["career_y"].max().reindex(df.index)
     df["F6"] = pd.to_numeric(df["ten"], errors="coerce").add(
         pd.to_numeric(df["car"], errors="coerce"), fill_value=np.nan) / 2
-    # 合格池内分位（0-100）→ W3 加权
+    # 合格池内分位（0-100，展示用 F1..F6，口径不变）
     for col in ["F1", "F2", "F3", "F4", "F5", "F3s", "F5s", "ten", "car"]:
         v = pd.to_numeric(df[col], errors="coerce")
         df[col + "_p"] = (v.rank(pct=True) * 100).round(2)
     df["F6_p"] = df[["ten_p", "car_p"]].mean(axis=1)
-    # 分数选源：raw=原产线（单代理/合成）；scaled=6代理β尺度化（复测通过才切换）
-    _s = W3_FACTOR_SRC == "scaled"
-    pick = {"F1": "F1_p", "F2": "F2_p", "F6": "F6_p",
-            "F3": ("F3s_p" if _s else "F3_p"),
-            "F5": ("F5s_p" if _s else "F5_p")}
-    cols = [pick[k] for k in W3]
-    m = df[cols].astype(float)
-    wts = pd.Series([W3[k] for k in W3], index=cols)
-    df["score"] = ((m * wts).sum(axis=1) / sum(W3.values())).round(1)
+    # ---- 双体系评分（2026-11-15 拍板"按推荐做"；固定等权，留出期验证见 STATUS）----
+    # 老将A = 近1年动量 + 风格超额 + 回撤浅者优 各1/3（IC_fwd +0.143 vs 旧W3 -0.016）
+    # 新锐B = 风格超额 + 近1年动量 各1/2（+0.071 vs 旧 +0.036）
+    # 分位在**通道内**取（与回测口径一致）；F6/F2/F5/F1 退出评分（证据见设计提案§1.1）
+    carv = pd.to_numeric(df["car"], errors="coerce")
+    chan = pd.Series(np.where(carv > DUAL_CAREER_MIN_Y, "A",
+                              np.where(carv > 6, "B", None)), index=df.index)
+    mom1 = pd.Series([float(feat.at[c, "back0"]) if c in feat.index else np.nan
+                      for c in df.index], index=df.index, dtype="float64")
+    mdd5 = pd.Series([float(feat.at[c, "mdd"]) if c in feat.index else np.nan
+                      for c in df.index], index=df.index, dtype="float64")
+
+    def _chan_pct(s: pd.Series, flip: bool = False) -> pd.Series:
+        """通道内分位（0-100）；该通道<10只时回退全池分位。"""
+        out = pd.Series(np.nan, index=df.index)
+        pooled = pd.to_numeric(s, errors="coerce")
+        for ch in ("A", "B"):
+            idx = df.index[chan == ch]
+            v = pooled.loc[idx]
+            if flip:
+                v = -v
+            if len(idx) >= 10:
+                out.loc[idx] = v.rank(pct=True) * 100
+            else:
+                pv = -pooled if flip else pooled
+                out.loc[idx] = pv.rank(pct=True) * 100
+        return out
+
+    f3_cp = _chan_pct(pd.to_numeric(df["F3"], errors="coerce"))
+    mom_cp = _chan_pct(mom1)
+    mdd_cp = _chan_pct(mdd5, flip=True)          # 浅回撤=高分（老将体系第三因子）
+    score = pd.Series(np.nan, index=df.index)
+    a, b = chan == "A", chan == "B"
+    score[a] = (mom_cp[a] + f3_cp[a] + mdd_cp[a]) / 3
+    score[b] = (f3_cp[b] + mom_cp[b]) / 2
+    # 通道分位与原始因子留列（回核 + 后续"因子拆解/差距归因"展示用）
+    df["chan"] = chan
+    df["mom1"], df["mdd5"] = mom1, mdd5
+    df["mom1_cp"], df["F3_cp"], df["mdd_cp"] = mom_cp, f3_cp, mdd_cp
+    df["score"] = score.round(1)
     return df
 
 
@@ -1037,6 +1090,19 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
                 return False                              # G3 低仓位
         return True
 
+    def _mdd_ok(code, channel):
+        """拍板③A（2026-11-15）：新锐 B 通道计分基金 5 年回撤 ≤ NEW_MDD_MAX；
+        A 通道不设（老将体系把回撤当因子）；数据缺失 fail-open 不冤枉。"""
+        if channel != "B" or feat is None or code not in feat.index:
+            return True
+        if "mdd" not in feat.columns:
+            return True
+        try:
+            v = float(feat.at[code, "mdd"])
+        except (TypeError, ValueError):
+            return True
+        return True if np.isnan(v) else v <= NEW_MDD_MAX
+
     for key, c in cand.items():
         c["channel"] = G.channel(c["career"])
         rows = qf.get(key, [])
@@ -1044,24 +1110,22 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
         info = dual.get(key) or {}
         c["dual"] = bool(info.get("dual"))
         c["career_ann"] = info.get("ann")
-        if c["dual"] and c["channel"] == "A":
-            # 双十直通：免考卷免0%门槛；但 G1/G2/G3 三硬闸仍生效（"全部上榜"
-            # 不覆盖壳基金/深亏/非权益行为——2026-11-13 用户"不合理要排除"）
-            c["pass_funds"] = [x for x in c["qual_funds"] if _hard_ok(x)]
-        else:
-            exam_pass = []
-            for r in rows:
-                tag = exams.get(r.code)
-                if not tag:
-                    continue
-                if c["channel"] == "A" and "G3s" in tag:
-                    exam_pass.append(r.code)
-                elif (c["channel"] == "B" and "G4s" in tag
-                      and fch.get(r.code) == "B"):
-                    exam_pass.append(r.code)
-            c["pass_funds"] = [x for x in exam_pass
-                               if (_r5(x) is not None and _r5(x) >= ABS_RET_MIN
-                                   and _hard_ok(x))]
+        # 2026-11-15 拍板①A：双十不再免考卷免0%门槛（严格回测：仅直通组最弱+3.4%、
+        # 仅考卷组最强+9.5%）——所有人同路：考卷 + 0%门槛 + 三硬闸；
+        # 双十降为加分项（DUAL_SCORE_BONUS，仅影响排名）与展示标签。
+        exam_pass = []
+        for r in rows:
+            tag = exams.get(r.code)
+            if not tag:
+                continue
+            if c["channel"] == "A" and "G3s" in tag:
+                exam_pass.append(r.code)
+            elif (c["channel"] == "B" and "G4s" in tag
+                  and fch.get(r.code) == "B"):
+                exam_pass.append(r.code)
+        c["pass_funds"] = [x for x in exam_pass
+                           if (_r5(x) is not None and _r5(x) >= ABS_RET_MIN
+                               and _hard_ok(x) and _mdd_ok(x, c["channel"]))]
         codes = pf.get(key, [])
         c["data_complete"] = (bool(codes)
                               and all(_f10_ok(f10s.get(x)) for x in codes)
@@ -1463,7 +1527,11 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         if not basis or fdf.empty:
             return None
         v = pd.to_numeric(fdf.loc[basis, "score"], errors="coerce").max()
-        return None if pd.isna(v) else float(v)
+        if pd.isna(v):
+            return None
+        if c.get("dual"):                     # 拍板①A：双十加分（仅排名不改资格）
+            v = v + DUAL_SCORE_BONUS
+        return float(v)
 
     lists = {"vet": [], "new": []}
     detail = {}
@@ -1501,7 +1569,11 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                    # 2026-11-13 用户加：计分基金5年年化 + 从业年化（平台口径）
                    ret5y=rep0.get("ret5y"),
                    ann_career=(round(ann, 4) if ann is not None else None),
-                   dual=bool(c.get("dual")))
+                   dual=bool(c.get("dual")),
+                   # 拍板②A（2026-11-15）：规模不入分，计分基金基础名合并≥100亿打"大"旗
+                   big_scale=(base_scale.get(
+                       base_name(str(rep0.get("name") or "")), 0.0)
+                       >= BIG_SCALE_YI))
         lst = m.get("list")
         lists[lst if lst in ("vet", "new") else "vet"].append(row)
         detail[key] = det
@@ -1539,6 +1611,12 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                        bucket=feat.at[r.code, "bucket"],
                        g3s="G3s" in tag, g4s="G4s" in tag,
                        ret5y=feat.at[r.code, "ret5y"],
+                       # 双体系配套（2026-11-15）：5年回撤 + ≥100亿"大"旗
+                       mdd=(feat.at[r.code, "mdd"]
+                            if "mdd" in feat.columns else None),
+                       big=(base_scale.get(
+                           base_name(str(feat.at[r.code, "name"])), 0.0)
+                           >= BIG_SCALE_YI),
                        **{f"ps_{j}": feat.at[r.code, f"ps_{j}"] for j in range(5)})
             if fr is not None:
                 for k in ["F1", "F2", "F3", "F4", "F5", "F6", "score"]:

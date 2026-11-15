@@ -637,9 +637,10 @@ def run(skip_refresh: bool = False, top: int | None = None,
                                       pool_stats=stats, eq_index=eq_payload,
                                       mgr=mgr_payload)
         # 市场情绪（v2.0）：嵌入 data.js（周更随 data.js 自动提交；失败只跳过不影响基金）
+        # 2026-11-15：尊重 --skip-refresh（不联网只用缓存），修"asof不变数值漂移"
         try:
             from . import market as MK
-            mkt = MK.build_market(log=log)
+            mkt = MK.build_market(log=log, refresh=not skip_refresh)
             if mkt:
                 payload["market"] = mkt
         except Exception as e:                      # noqa: BLE001
@@ -692,10 +693,10 @@ def run_index_only(log=print) -> int:
                 payload["eq_index"] = fresh
         except Exception as e:                      # noqa: BLE001
             log(f"[7][指数估值] 段级构建失败，沿用上期：{type(e).__name__}: {e}")
-    # 市场情绪
+    # 市场情绪（段级=周五真抓取场，refresh=True）
     try:
         from . import market as MK
-        mkt = MK.build_market(log=log)
+        mkt = MK.build_market(log=log, refresh=True)
         if mkt:
             payload["market"] = mkt
     except Exception as e:                          # noqa: BLE001

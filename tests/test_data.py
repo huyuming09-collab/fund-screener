@@ -231,3 +231,33 @@ class TestFetchF10Options:
         monkeypatch.setattr(D, "_http", lambda *a, **k: calls.append(1) or "")
         info = D.fetch_f10("999003", with_manager=False)
         assert info["benchmark"] == "x" and not calls
+
+
+# ---------------------------------------------------------------- market 抓取开关
+class TestMarketRefreshFlag:
+    """2026-11-15 修复：--skip-refresh 时市场段只用现有缓存（含过期），不联网。
+    背景：原24h TTL+PE段强制刷新 → asof 不变数值漂移（59.9→63.8），违反 AGENTS §8。"""
+
+    def test_ttl_contract(self):
+        from fundscorer import market as MK
+        MK._REFRESH[0] = True
+        assert MK._ttl() == 24
+        MK._REFRESH[0] = False
+        try:
+            assert MK._ttl() == 87600                      # 10年=形同不过期
+        finally:
+            MK._REFRESH[0] = True
+
+    def test_fetch_passes_stretched_ttl_without_refresh(self, monkeypatch):
+        """refresh=False → 抓取函数按超长 TTL 查缓存（命中即不联网）。"""
+        from fundscorer import market as MK
+        calls = []
+        MK._REFRESH[0] = False
+        monkeypatch.setattr(MK.D, "_load_cache",
+                            lambda k, h: (calls.append(h), "STALE")[1])
+        try:
+            out = MK._fetch_bond10()
+        finally:
+            MK._REFRESH[0] = True
+        assert out == "STALE"
+        assert calls == [87600]

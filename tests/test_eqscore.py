@@ -340,6 +340,12 @@ class TestW3Contract:
         assert ES.W3 == {"F1": 0.27, "F3": 0.25, "F5": 0.19,
                          "F2": 0.15, "F6": 0.14}
 
+    def test_dual_system_constants(self):
+        """双体系拍板常量（2026-11-15）：新锐回撤闸55% / 双十分+2 / 大基金旗100亿。"""
+        assert ES.NEW_MDD_MAX == 0.55
+        assert ES.DUAL_SCORE_BONUS == 2.0
+        assert ES.BIG_SCALE_YI == 100.0
+
 
 # ---------------------------------------------------------------- 6. 因子与评分
 def _factor_env():
@@ -348,6 +354,7 @@ def _factor_env():
     rows = []
     for i, c in enumerate(codes):
         rows.append(dict(bucket="科技", type="股票型", ret5y=0.10 + 0.02 * i,
+                         mdd=[0.30, 0.20, 0.25][i],   # 双体系第三因子（非单调，区分A/B公式）
                          **{f"ps_{j}": 50.0 + 10 * i for j in range(5)},
                          **{f"back{j}": 0.05 + 0.01 * i for j in range(5)},
                          **{f"cexc_{j}": 0.02 + 0.01 * i for j in range(5)}))
@@ -360,36 +367,53 @@ def _factor_env():
 
 
 class TestBuildFactors:
+    """双体系评分（2026-11-15 拍板）：A=动量/超额/回撤 三因子等权，B=超额/动量 两因子，
+    通道内分位；F1/F2/F4/F5/F6 退出评分（证据见设计提案 §1.1）。"""
+
     def test_score_column_and_range(self):
         o, feat, qual, pairs, f10s, wealth = _factor_env()
         df = ES.build_factors(o, feat, qual, pairs, f10s, wealth)
         assert "score" in df.columns
         assert df["score"].between(0, 100).all()
 
-    def test_percentile_monotone_vs_f1(self):
-        """F1（同格逐年排位均值）越高 → 分位越高 → 分数不低。"""
+    def test_channel_score_monotone(self):
+        """通道三因子同向时（超额↑动量↑回撤浅↑）→ 分数随序单调不减。"""
         o, feat, qual, pairs, f10s, wealth = _factor_env()
-        df = ES.build_factors(o, feat, qual, pairs, f10s, wealth).sort_values("F1_p")
-        assert df["F1_p"].is_monotonic_increasing
+        df = ES.build_factors(o, feat, qual, pairs, f10s,
+                              wealth).sort_values("F3_p")
+        assert df["F3_p"].is_monotonic_increasing
         assert df["score"].is_monotonic_increasing
 
-    def test_w3_formula_matches_validation(self):
-        """与 scripts/eq_score_test.scores 同款：Σ(w·pct)/Σw（缺因子跳过、固定分母）。"""
+    def test_a_channel_formula(self):
+        """老将A通道分数 = (动量+超额+回撤浅) 三通道分位等权（精确公式）。"""
         o, feat, qual, pairs, f10s, wealth = _factor_env()
         df = ES.build_factors(o, feat, qual, pairs, f10s, wealth)
-        r = df.iloc[0]
-        expect = sum(ES.W3[f] * r[f + "_p"] for f in ES.W3) / sum(ES.W3.values())
-        assert abs(r["score"] - round(expect, 1)) < 1e-9
+        assert (df["chan"] == "A").all()
+        for _, r in df.iterrows():
+            expect = (r["mom1_cp"] + r["F3_cp"] + r["mdd_cp"]) / 3
+            assert abs(r["score"] - round(expect, 1)) < 1e-9
+
+    def test_b_channel_uses_two_factors(self):
+        """新锐B通道分数 = (超额+动量) 两因子等权——不含回撤（回撤是闸不是分）。"""
+        o, feat, qual, pairs, f10s, wealth = _factor_env()
+        pairs = pairs.copy()
+        pairs["career_y"] = 8.0                     # → B 通道
+        df = ES.build_factors(o, feat, qual, pairs, f10s, wealth)
+        assert (df["chan"] == "B").all()
+        for _, r in df.iterrows():
+            expect = (r["F3_cp"] + r["mom1_cp"]) / 2
+            assert abs(r["score"] - round(expect, 1)) < 1e-9
+        # 与A通道公式结果不同（mdd非单调制造差异）
+        df_a = ES.build_factors(o, feat, qual, _factor_env()[3], f10s, wealth)
+        assert not np.allclose(df["score"].values, df_a["score"].values)
 
     def test_f4_present_but_not_in_score(self):
         o, feat, qual, pairs, f10s, wealth = _factor_env()
         df = ES.build_factors(o, feat, qual, pairs, f10s, wealth)
         assert "F4" in df.columns                    # 算了（CSV 供回核）
-        # score 与 F4_p 无关：把 F4_p 全改99 分数不变
-        r = df.iloc[0]
-        base = r["score"]
-        expect = sum(ES.W3[f] * r[f + "_p"] for f in ES.W3) / sum(ES.W3.values())
-        assert abs(base - round(expect, 1)) < 1e-9
+        r = df.iloc[0]                               # score 只含三因子通道分位
+        expect = (r["mom1_cp"] + r["F3_cp"] + r["mdd_cp"]) / 3
+        assert abs(r["score"] - round(expect, 1)) < 1e-9
 
     def test_empty_qual_returns_empty(self):
         o, feat, _q, pairs, f10s, wealth = _factor_env()
@@ -528,17 +552,20 @@ class TestHoldingsCheck:
 
 # ---------------------------------------------------------------- 10. 双十与年化门槛
 def _cand_env(ret5y=-0.01, exam="G3s", career=12.0, dual=None, key="张三|某公司",
-              positions=None, base_scale=None):
+              positions=None, base_scale=None, mdd=None):
     pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
                                career_y=career)])
     qual = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
                               career_y=career, channel="A", tenure_y=6.0)])
     exams = {"000001": exam} if exam else {}
-    fch = pd.Series({"000001": "A"})
+    ch = "A" if career > 10 else ("B" if career > 6 else "A")
+    fch = pd.Series({"000001": ch})
     f10s = {"000001": {"managers": [{"name": "张三", "start": "2019-01-01"}]}}
     feat = pd.DataFrame({"ret5y": [ret5y], "name": ["优选混合A"],
                          "type": ["混合型-偏股"]},
                         index=pd.Index(["000001"], name="code"))
+    if mdd is not None:
+        feat["mdd"] = [mdd]
     cand = ES.build_candidates(pairs, qual, exams, fch, f10s, {"000001"},
                                feat=feat, dual=dual or {},
                                positions=positions or {},
@@ -547,18 +574,24 @@ def _cand_env(ret5y=-0.01, exam="G3s", career=12.0, dual=None, key="张三|某�
 
 
 class TestDualAndGate:
-    def test_dual_bypasses_exam(self):
+    def test_dual_still_needs_exam(self):
+        """2026-11-15 拍板①A：双十不再免考卷——没过考卷就不上
+        （严格回测：仅直通组最弱+3.4%、仅考卷组最强+9.5%）。"""
         key, c = _cand_env(exam=None,
                            dual={"张三|某公司": dict(dual=True, ann=0.15,
                                                      code="000001")})
-        assert c[key]["pass_funds"] == ["000001"]      # 免考卷直通
+        assert c[key]["pass_funds"] == []
 
-    def test_dual_bypasses_zero_floor(self):
-        """双十免0%门槛：小亏（-3%）仍上；但深亏见 G2 测试。"""
-        key, c = _cand_env(ret5y=-0.03, exam=None,
+    def test_dual_zero_floor_applies(self):
+        """双十也吃0%门槛：小亏(-3%)即使过考 → 不上；过考+正收益 → 上。"""
+        key, c = _cand_env(ret5y=-0.03, exam="G3s",
                            dual={"张三|某公司": dict(dual=True, ann=0.15,
                                                      code="000001")})
-        assert c[key]["pass_funds"] == ["000001"]      # 免0%门槛（"全部上榜"）
+        assert c[key]["pass_funds"] == []
+        key, c = _cand_env(ret5y=0.02, exam="G3s",
+                           dual={"张三|某公司": dict(dual=True, ann=0.15,
+                                                     code="000001")})
+        assert c[key]["pass_funds"] == ["000001"]   # 资格：双十与否同路
 
     def test_gate_filters_negative(self):
         key, c = _cand_env(ret5y=-0.01, exam="G3s")   # 非双十
@@ -714,35 +747,50 @@ class TestHardGates:
     DUAL = {"张三|某公司": dict(dual=True, ann=0.15, code="000001")}
 
     def test_g1_shell_fund_cut_even_if_dual(self):
-        """规模<2亿 → 出局，双十也不例外（含"数据缺失 fail-open"对照）。"""
-        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+        """规模<2亿 → 出局（2026-11-15 起双十与所有人同路过考卷，闸照吃）。"""
+        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
                            base_scale={"优选混合": 1.5})
         assert c[key]["pass_funds"] == []
-        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
                            base_scale={"优选混合": 3.0})
         assert c[key]["pass_funds"] == ["000001"]      # ≥2亿放行
-        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
                            base_scale={})              # 无规模数据 → fail-open
         assert c[key]["pass_funds"] == ["000001"]
 
     def test_g2_deep_loss_cut_even_if_dual(self):
-        """5年年化<-5% → 出局，双十也不例外；-5%边界放行。"""
-        key, c = _cand_env(ret5y=-0.06, exam=None, dual=self.DUAL)
+        """深亏出局；2026-11-15 双十同路后考卷路径吃0%门槛（≥0），比 G2(≥-5%) 更严
+        ——任何负收益先被0%门槛拦下，G2 作为纵深保留（fail-open语义不变）。"""
+        key, c = _cand_env(ret5y=-0.06, exam="G3s", dual=self.DUAL)
         assert c[key]["pass_funds"] == []
-        key, c = _cand_env(ret5y=-0.05, exam=None, dual=self.DUAL)
-        assert c[key]["pass_funds"] == ["000001"]      # 边界（不低于-5%）
+        key, c = _cand_env(ret5y=-0.03, exam="G3s", dual=self.DUAL)
+        assert c[key]["pass_funds"] == []              # 0%门槛拦（含G2边界区间）
+        key, c = _cand_env(ret5y=0.0, exam="G3s", dual=self.DUAL)
+        assert c[key]["pass_funds"] == ["000001"]      # 0%边界放行
 
     def test_g3_position_gate_type_aware(self):
         """偏股型仓位50%线、灵活型30%线；缺数据 fail-open。"""
-        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
                            positions={"000001": 45.0})   # 偏股型<50% → 出局
         assert c[key]["pass_funds"] == []
-        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
                            positions={"000001": 55.0})   # ≥50% 放行
         assert c[key]["pass_funds"] == ["000001"]
-        key, c = _cand_env(ret5y=0.10, exam=None, dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
                            positions={})                  # 缺数据 → fail-open
         assert c[key]["pass_funds"] == ["000001"]
+
+    def test_new_channel_mdd_gate(self):
+        """拍板③A（2026-11-15）：新锐B通道计分基金5年回撤≤55%；
+        >55%出局；缺数据 fail-open；A通道不设回撤闸（回撤是老将的因子）。"""
+        key, c = _cand_env(ret5y=0.10, exam="G4s", career=8.0, mdd=0.60)
+        assert c[key]["pass_funds"] == []               # 60% > 55% → 出局
+        key, c = _cand_env(ret5y=0.10, exam="G4s", career=8.0, mdd=0.50)
+        assert c[key]["pass_funds"] == ["000001"]       # 放行
+        key, c = _cand_env(ret5y=0.10, exam="G4s", career=8.0)   # 缺列 fail-open
+        assert c[key]["pass_funds"] == ["000001"]
+        key, c = _cand_env(ret5y=0.10, exam="G3s", career=12.0, mdd=0.70)
+        assert c[key]["pass_funds"] == ["000001"]       # A 通道不设
 
     def test_gates_also_apply_to_nongate_path(self):
         """非双十路径同样吃三闸（考卷+0%门槛之外）。"""

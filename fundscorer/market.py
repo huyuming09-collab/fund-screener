@@ -196,6 +196,18 @@ def _pm(v) -> pd.Timestamp:
     return pd.Timestamp(f"{m.group(1)}-{int(m.group(2)):02d}-01") if m else pd.NaT
 
 
+# 抓取开关（2026-11-15 修复）：build_market(refresh=False) → 全部抓取只用现有缓存
+# （含过期缓存，TTL 拉长到10年），首跑无缓存仍会联网（fail-open）。
+# 背景：原实现24h TTL + PE段强制刷新，导致 --skip-refresh 跑管线时市场段照抓不误、
+# 数值在 asof 不变的情况下漂移（2026-11-15 实测 iVIX/M1M2 变、分59.9→63.8），
+# 违反 AGENTS §8"平时跑管线一律 --skip-refresh 不联网"。
+_REFRESH = [True]
+
+
+def _ttl(hours: float = 24) -> float:
+    return hours if _REFRESH[0] else hours * 3650
+
+
 def _fetch_pe_close() -> tuple:
     """中证全指 PE + 收盘点位（一次 load_cs，省一次请求）+ 真实数据最大日。
 
@@ -203,7 +215,7 @@ def _fetch_pe_close() -> tuple:
     标签是桶右沿的周五——会把 11-02 的数据标成 11-06（未来日期），页面"数据基准"
     曾因此显示未来 3 天。故额外返回原始行的最大日期，asof 一律用它。
     """
-    raw = E.load_cs("000985", refresh=True) or {}
+    raw = E.load_cs("000985", refresh=_REFRESH[0]) or {}
     pe = E._pairs_series(raw.get("pe") or [])
     close = E._pairs_series(raw.get("close") or [])
     ts = []
@@ -221,7 +233,7 @@ def _fetch_pe_close() -> tuple:
 
 def _fetch_bond10() -> pd.Series:
     key = "bond10_yield"
-    cached = D._load_cache(key, 24)
+    cached = D._load_cache(key, _ttl())
     if cached is not None:
         return cached
     import akshare as ak
@@ -235,7 +247,7 @@ def _fetch_bond10() -> pd.Series:
 
 def _fetch_m1m2() -> pd.DataFrame:
     key = "m1m2"
-    cached = D._load_cache(key, 24)
+    cached = D._load_cache(key, _ttl())
     if cached is not None:
         return cached
     import akshare as ak
@@ -257,7 +269,7 @@ def _fetch_margin() -> pd.Series:
     """全市场两融余额 = 沪市 + 深市（Phase3 2026-11-02：改 inner join，
     仅两市均有观测日求和，消除 ffill 人工填充误差；审计C4实测分位差3.94不显著）。"""
     key = "margin_all"
-    cached = D._load_cache(key, 24)
+    cached = D._load_cache(key, _ttl())
     if cached is not None:
         return cached
     import akshare as ak
@@ -277,7 +289,7 @@ def _fetch_margin() -> pd.Series:
 def _fetch_ivix() -> pd.Series:
     """iVIX 波指（50ETF期权隐含波动率，日频）。"""
     key = "ivix"
-    cached = D._load_cache(key, 24)
+    cached = D._load_cache(key, _ttl())
     if cached is not None:
         return cached
     import akshare as ak
@@ -296,7 +308,7 @@ def _fetch_newfund() -> pd.Series:
     权益情绪，避免未来失真）。
     """
     key = "newfund"
-    cached = D._load_cache(key, 24)
+    cached = D._load_cache(key, _ttl())
     if cached is not None:
         return cached
     import akshare as ak
@@ -315,7 +327,7 @@ def _fetch_newfund() -> pd.Series:
 def _fetch_buffett() -> pd.Series:
     """巴菲特指数 = A股总市值 / 过去4季度滚动GDP（%）。"""
     key = "buffett"
-    cached = D._load_cache(key, 24)
+    cached = D._load_cache(key, _ttl())
     if cached is not None:
         return cached
     import akshare as ak
@@ -369,7 +381,7 @@ def _fetch_buffett() -> pd.Series:
 def _fetch_breaknet() -> pd.Series:
     """全市场破净率（%，日频）。"""
     key = "breaknet"
-    cached = D._load_cache(key, 24)
+    cached = D._load_cache(key, _ttl())
     if cached is not None:
         return cached
     import akshare as ak
@@ -403,8 +415,11 @@ def _ind(key: str, series: pd.Series, unit_scale: float = 1.0, window: int = 5) 
             "caveat": meta.get("caveat")}
 
 
-def build_market(log=print) -> dict | None:
-    """组装 market.js：8 指标（含序列）+ 综合温度 + 牛熊对照回测。任何异常降级。"""
+def build_market(log=print, refresh: bool = True) -> dict | None:
+    """组装 market.js：8 指标（含序列）+ 综合温度 + 牛熊对照回测。任何异常降级。
+
+    refresh=False（--skip-refresh 场）：所有抓取只用现有缓存（含过期），不联网。"""
+    _REFRESH[0] = refresh
     t0 = time.time()
     try:
         pe, close, real_last = _fetch_pe_close()
