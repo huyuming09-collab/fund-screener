@@ -212,7 +212,21 @@ def main() -> int:
             if len(fut) and (T + pd.DateOffset(years=1) - fut["date"].iloc[-1]).days <= 45 \
                     and nav_T > 0:
                 fwd = float(fut["nav"].iloc[-1] / nav_T - 1)
-            frames[T][code] = dict(yearly=yearly, r5=r5, bkt=bkt, fwd=fwd)
+            # 候选因子（两套体系用）：5年最大回撤 / 年化波动 / 近1年与近2年动量
+            w5 = sub[sub["date"] > sub["date"].max() - pd.DateOffset(years=5)]
+            mdd = None
+            if len(w5) >= 100:
+                v = w5["nav"].values
+                peak = np.maximum.accumulate(v)
+                mdd = float(((peak - v) / peak).max())
+            rf5 = w5.set_index("date")["nav"].resample("W-FRI").last() \
+                .pct_change().dropna()
+            vol = float(rf5.std() * (52 ** 0.5)) if len(rf5) >= 100 else None
+            mom1 = yearly[0]
+            mom2 = ((yearly[0] + yearly[1]) / 2
+                    if yearly[1] is not None else None)
+            frames[T][code] = dict(yearly=yearly, r5=r5, bkt=bkt, fwd=fwd,
+                                   mdd=mdd, vol=vol, mom1=mom1, mom2=mom2)
         if i % 3000 == 0:
             print(f"  nav {i}/{len(codes)} {time.strftime('%H:%M:%S')}")
     print(f"帧构建完成 {(time.time()-t0)/60:.1f}min")
@@ -364,11 +378,29 @@ def main() -> int:
                  if sub["fwd"].notna().any() else np.nan)
             fr_ = pd.to_numeric(sub["fut_rank"], errors="coerce")
             fr_ = float(fr_.mean()) if fr_.notna().any() else np.nan
+
+            def _mean(col):
+                s = pd.to_numeric(sub[col], errors="coerce")
+                return float(s.mean()) if s.notna().any() else np.nan
+
+            def _worst(col):
+                s = pd.to_numeric(sub[col], errors="coerce")
+                return float(s.max()) if s.notna().any() else np.nan
+
+            scales = [base_scale.get(ES.base_name(str(name_of.get(c, c))), np.nan)
+                      for c in fs]
+            scales = [s for s in scales if s == s]
             panel_rows.append(dict(
                 origin=str(T.date()), key=k, chan=chan, score=score,
                 dual=bool(dual), exam=bool(hard[hard["g3s" if chan == "A" else "g4s"]]
                                             .shape[0]), on=bool(on), via=via,
                 n_funds=len(fs), fwd1y=fwd, fut_rank=fr_,
+                # 两套体系的候选因子（经理层=成员基金均值；mdd 取最深）
+                F1=_mean("F1"), F2=_mean("F2"), F3=_mean("F3r"),
+                F5=_mean("F5r"), F6=_mean("F6"),
+                mdd=_worst("mdd"), vol=_mean("vol"),
+                mom1=_mean("mom1"), mom2=_mean("mom2"),
+                scale=(float(np.mean(scales)) if scales else np.nan),
                 eligible=True))
         n_on = sum(1 for r in panel_rows if r["origin"] == str(T.date()) and r["on"])
         n_el = sum(1 for r in panel_rows if r["origin"] == str(T.date()))
