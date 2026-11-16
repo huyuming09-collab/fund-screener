@@ -341,10 +341,11 @@ class TestW3Contract:
                          "F2": 0.15, "F6": 0.14}
 
     def test_dual_system_constants(self):
-        """双体系拍板常量（2026-11-15）：新锐回撤闸55% / 双十分+2 / 大基金旗100亿。"""
+        """双体系拍板常量（2026-11-15）：新锐回撤闸55% / 大基金旗100亿；
+        双十加分已于 2026-11-16 删除（仅展示标签，不参与计分）。"""
         assert ES.NEW_MDD_MAX == 0.55
-        assert ES.DUAL_SCORE_BONUS == 2.0
         assert ES.BIG_SCALE_YI == 100.0
+        assert not hasattr(ES, "DUAL_SCORE_BONUS")
 
 
 # ---------------------------------------------------------------- 6. 因子与评分
@@ -797,3 +798,44 @@ class TestHardGates:
         key, c = _cand_env(ret5y=0.10, exam="G3s",
                            base_scale={"优选混合": 1.0})
         assert c[key]["pass_funds"] == []              # 壳基金过考也出局
+
+
+# ---------------------------------------------------------------- 14. 生涯四因子评分
+class TestCareerScoring:
+    """生涯四因子（2026-11-16 用户拍板上线）：经理分=通道内分位加权
+    (c1水平0.2/c2超额0.2/c3年度胜率0.2/c4回撤反向0.4)；
+    复合口径 c1≈支付宝（刘旭我们10.93 vs 支付宝11.62）；缺因子=50中性；全缺不产出。"""
+
+    def test_weights_constant(self):
+        assert ES.CAREER_W == {"c1": 0.2, "c2": 0.2, "c3": 0.2, "c4r": 0.4}
+        assert abs(sum(ES.CAREER_W.values()) - 1.0) < 1e-9
+
+    def test_channel_percentile_weighted(self):
+        """同通道内：四因子全好 > 全差（c4 反向生效）。"""
+        facts = {"a|c": dict(c1=12.0, c2=8.0, c3=0.8, c4=0.25),
+                 "b|c": dict(c1=6.0, c2=3.0, c3=0.5, c4=0.55),
+                 "c|c": dict(c1=9.0, c2=5.0, c3=0.65, c4=0.40)}
+        chan = {"a|c": "A", "b|c": "A", "c|c": "A"}
+        sc = ES.career_weighted_scores(facts, chan)
+        assert sc["a|c"] > sc["c|c"] > sc["b|c"]
+        assert sc["a|c"] == 100.0                      # 通道内全因子第一
+
+    def test_missing_factor_is_neutral(self):
+        """缺的因子按50分位中性，不改变其余因子的排序方向。"""
+        facts = {"a|c": dict(c1=10.0, c2=None, c3=float("nan"), c4=0.3),
+                 "b|c": dict(c1=5.0, c2=None, c3=float("nan"), c4=0.6)}
+        sc = ES.career_weighted_scores(facts, {"a|c": "A", "b|c": "A"})
+        assert sc["a|c"] > sc["b|c"]
+        assert sc["a|c"] == 80.0 and sc["b|c"] == 50.0  # 100/50 分位 × (0.2+0.4) + 50×0.4
+
+    def test_all_nan_not_scored(self):
+        """全因子缺失 → 不产出（调用方回落基金分），不给50混榜。"""
+        facts = {"a|c": dict(c1=None, c2=float("nan"), c3=None, c4=float("nan"))}
+        assert ES.career_weighted_scores(facts, {"a|c": "A"}) == {}
+
+    def test_channels_score_independently(self):
+        """通道隔离：单人通道自己是自己通道的100分位（跨通道不可比）。"""
+        facts = {"a|c": dict(c1=10.0, c2=1.0, c3=0.9, c4=0.2),
+                 "b|c": dict(c1=1.0, c2=10.0, c3=0.1, c4=0.9)}
+        sc = ES.career_weighted_scores(facts, {"a|c": "A", "b|c": "B"})
+        assert sc["a|c"] == 100.0 and sc["b|c"] == 100.0

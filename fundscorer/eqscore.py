@@ -113,8 +113,13 @@ CELL_MERGE_N = 150
 #   新锐(B通道) = 风格超额 + 近1年动量 各1/2（+0.071 vs 旧 +0.036；加F1稀释→不加）
 #   F6资历/F2/F5/F1 退出评分（证据：F6对老将显著为负）；滚动walk-forward与固定等权均验证
 NEW_MDD_MAX = 0.55          # 拍板③A：新锐计分基金5年回撤闸（>55%不入榜；数据缺fail-open）
-DUAL_SCORE_BONUS = 2.0      # 拍板①A：双十改为加分项（不免考，仅影响排名）
 BIG_SCALE_YI = 100.0        # 拍板②A：规模不入分，≥100亿打"大"旗（仅展示）
+# 双十：2026-11-16 用户拍板"加分也删"——仅作展示标签，不参与任何计分（DUAL_SCORE_BONUS 已移除）
+# 生涯四因子权重（2026-11-16 用户拍板上线）：(c1水平, c2超额, c3年度胜率, c4回撤反向)
+# = 0.2/0.2/0.2/0.4——回撤加倍有前瞻IC背书（四因子里 c4r 最高 +0.142）；
+# 权重网格验证三验尺全进前4（周云#1/徐彦#3/刘旭#4，吴博俊压#13）；复合口径 c1≈支付宝
+#（刘旭我们10.93% vs 支付宝11.62%，差0.69pp 在验证 MAE0.60 带内）。
+CAREER_W = {"c1": 0.2, "c2": 0.2, "c3": 0.2, "c4r": 0.4}
 # 持仓校验降级（2026-11-13）：前10重仓中相关桶合计 <15% → 同格降均衡
 HOLD_MIN = 0.15
 HOLD_TTL_H = 24 * 30
@@ -532,9 +537,111 @@ def career_dual_flags(pairs: pd.DataFrame, f10s: dict, log) -> dict:
         n_none += ann is None
         out[k] = dict(dual=dual, ann=ann, code=None)
     log(f"      双十判定：从业>10年 {len(keys)} 人 → "
-        f"双十(等权组合年化>{DUAL_ANN_MIN:.0%}) {n_dual} 人（免考卷免门槛直通；"
-        f"年化不可得 {n_none} 人按非双十）")
+        f"双十(等权组合年化>{DUAL_ANN_MIN:.0%}) {n_dual} 人（2026-11-16 起仅展示标签、"
+        f"不参与计分；年化不可得 {n_none} 人按非双十）")
     return out
+
+
+# ---------------------------------------------------------------- 生涯四因子（2026-11-16 上线）
+def career_factors_for(key: str, qg, f10s: dict, mkt):
+    """单经理生涯四因子@今天（用户2026-11-15 规格：所有管理过的含已离职、共管不拆）。
+
+    c1 = 等权复合年化（`D.manager_career_ann`，≈支付宝口径，MAE0.60）；
+    c2 = 逐产品 (任职年化−同期市场年化) 按管理天数加权；
+    c3 = 复合曲线年度胜率（≥3年才可算）；c4 = 复合曲线最大回撤。
+    产品窗 [start, min(end, 今天)]，≥250天；任一失败该因子 NaN（装配时中性50分位）。"""
+    codes = set(qg["code"].tolist())
+    mid = _manager_id_of(key.split("|", 1)[0], codes, f10s)
+    if not mid:
+        return None
+    c1 = D.manager_career_ann(mid)
+    spans = D._manager_products_spans(mid) or []
+    now = pd.Timestamp.today()
+    num2 = den2 = 0.0
+    rets = []
+    for p in spans:
+        s0 = p.get("start")
+        e0 = p.get("end") or now
+        try:
+            s0 = pd.Timestamp(s0) if s0 is not None else None
+            e0 = min(pd.Timestamp(e0), now)
+        except (ValueError, TypeError):
+            continue
+        if s0 is None or e0 <= s0:
+            continue
+        nav = _read_nav_pickle(p.get("code"))
+        if nav is None or nav.empty:
+            try:
+                nav = D.fetch_nav(p.get("code"))
+            except Exception:
+                nav = None
+        if nav is None or nav.empty:
+            continue
+        sl = nav[(nav["date"] >= s0) & (nav["date"] <= e0)]
+        if len(sl) < 250:
+            continue
+        days = (sl["date"].iloc[-1] - sl["date"].iloc[0]).days
+        if days < 250:
+            continue
+        try:
+            ann = float(sl["nav"].iloc[-1] / sl["nav"].iloc[0]) ** (365.0 / days) - 1
+        except (ZeroDivisionError, OverflowError, ValueError):
+            continue
+        rets.append(sl.set_index("date")["nav"].pct_change().dropna())
+        if mkt is not None:
+            try:
+                m = s_ann(mkt, s0, e0)
+            except Exception:
+                m = None
+            if m is not None and m == m:
+                num2 += days * (ann - m)
+                den2 += days
+    c2 = (num2 / den2) if den2 > 0 else float("nan")
+    c3 = c4 = float("nan")
+    if rets:
+        try:
+            port = pd.concat(rets, axis=1).mean(axis=1, skipna=True).dropna()
+            if len(port) >= 500:
+                curve = (1 + port).cumprod()
+                yr = curve.resample("YE").last().pct_change().dropna()
+                if len(yr) >= 3:
+                    c3 = float((yr > 0).mean())
+                peak = curve.cummax()
+                c4 = float(((peak - curve) / peak).max())
+        except Exception:
+            pass
+    return dict(c1=c1, c2=c2, c3=c3, c4=c4)
+
+
+def career_weighted_scores(facts: dict, chan_of: dict) -> dict:
+    """生涯四因子 → 通道内分位加权分（纯函数，供单测）。
+
+    每因子在**本通道内**对非缺失值取分位（0-100），缺失=50 中性；
+    c4 反向（回撤浅=高分）；加权和 = CAREER_W；全因子缺失的 key 不产出（调用方回落）。"""
+    out: dict = {}
+    for ch in ("A", "B"):
+        keys = [k for k in facts
+                if chan_of.get(k) == ch and facts[k] is not None]
+        if not keys:
+            continue
+        for f, w in CAREER_W.items():
+            src = "c4" if f == "c4r" else f
+            vals = {k: facts[k].get(src) for k in keys}
+            ok = {k: v for k, v in vals.items()
+                  if v is not None and v == v}          # NaN 排除
+            s = pd.Series(ok, dtype=float)              # 空 → 全通道中性50（刻度恒满）
+            if f == "c4r":
+                s = -s                                  # 回撤浅=高分
+            pct = s.rank(pct=True) * 100
+            for k in keys:
+                out.setdefault(k, 0.0)
+                out[k] += float(pct.get(k, 50.0)) * w   # 缺失因子=50 中性
+
+    def _has_num(d: dict) -> bool:
+        return any(v is not None and v == v for v in d.values())
+
+    return {k: round(v, 1) for k, v in out.items()
+            if _has_num(facts.get(k) or {})}
 
 
 # ---------------------------------------------------------------- 2. 特征（指纹缓存）
@@ -1112,7 +1219,7 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
         c["career_ann"] = info.get("ann")
         # 2026-11-15 拍板①A：双十不再免考卷免0%门槛（严格回测：仅直通组最弱+3.4%、
         # 仅考卷组最强+9.5%）——所有人同路：考卷 + 0%门槛 + 三硬闸；
-        # 双十降为加分项（DUAL_SCORE_BONUS，仅影响排名）与展示标签。
+        # 双十降为纯展示标签（2026-11-16 用户拍板：加分也删，不参与计分）。
         exam_pass = []
         for r in rows:
             tag = exams.get(r.code)
@@ -1513,6 +1620,30 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
             member_codes.update(qg["code"].tolist())
     inst_map = _inst_ratios(sorted(member_codes), refresh, workers, log)
 
+    # ---- 生涯四因子评分（2026-11-16 用户拍板上线；替代"计分基金分MAX"）
+    # 全候选（A/B 通道）并行：c1=复合年化(≈支付宝) c2=超额时间加权 c3=年度胜率 c4=回撤反向
+    # 权重 CAREER_W=(0.2/0.2/0.2/0.4)，通道内分位；近期三因子(mom1/F3/mdd)降为展示列。
+    t_car = time.time()
+    mkt_c = G._load_close(G.STYLE_MARKET)
+    cand_keys = [k for k, c in cand.items() if c.get("channel") in ("A", "B")]
+
+    def _cf(k):
+        qg = qual_by_key.get(k)
+        if qg is None:
+            return k, None
+        try:
+            return k, career_factors_for(k, qg, f10s, mkt_c)
+        except Exception:
+            return k, None
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        facts = dict(ex.map(_cf, cand_keys))
+    facts = {k: v for k, v in facts.items() if v}
+    car_scores = career_weighted_scores(
+        facts, {k: cand[k]["channel"] for k in facts})
+    log(f"      生涯四因子：可算 {len(facts)}/{len(cand_keys)} 人"
+        f"（复合口径，权重 {CAREER_W}），耗时 {time.time() - t_car:.0f}s")
+
     def _basis_of(key, c):
         """计分基准 = 在榜基金（roster 记录）∩可算分，回落入围基金——与分数同源。"""
         mem = state["members"].get(key)
@@ -1523,15 +1654,16 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         return [x for x in c["qual_funds"] if x in fdf.index]
 
     def _score_of(key, c):
+        # 2026-11-16 上线：经理分 = 生涯四因子通道分位加权（复合口径≈支付宝）
+        if key in car_scores:
+            return car_scores[key]
+        # 回落：生涯因子全缺 → 计分基金分MAX（fail-open 不冤枉）
         basis = _basis_of(key, c)
         if not basis or fdf.empty:
             return None
         v = pd.to_numeric(fdf.loc[basis, "score"], errors="coerce").max()
-        if pd.isna(v):
-            return None
-        if c.get("dual"):                     # 拍板①A：双十加分（仅排名不改资格）
-            v = v + DUAL_SCORE_BONUS
-        return float(v)
+        # 双十加分已删（2026-11-16 用户拍板），双十仅作展示标签
+        return None if pd.isna(v) else float(v)
 
     lists = {"vet": [], "new": []}
     detail = {}
@@ -1573,7 +1705,14 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                    # 拍板②A（2026-11-15）：规模不入分，计分基金基础名合并≥100亿打"大"旗
                    big_scale=(base_scale.get(
                        base_name(str(rep0.get("name") or "")), 0.0)
-                       >= BIG_SCALE_YI))
+                       >= BIG_SCALE_YI),
+                   # 生涯四因子原值（回核/后续因子拆解；c1=ann_career 列已有）
+                   **{f"car_{f}": (round(facts[key][f], 4)
+                                   if key in facts
+                                   and facts[key].get(f) is not None
+                                   and facts[key].get(f) == facts[key].get(f)
+                                   else None)
+                      for f in ("c2", "c3", "c4")})
         lst = m.get("list")
         lists[lst if lst in ("vet", "new") else "vet"].append(row)
         detail[key] = det
