@@ -490,9 +490,16 @@ def fetch_manager_products_ann(manager_id: str) -> list[float]:
 
 
 def _manager_products_spans(manager_id: str, refresh: bool = False) -> list[dict]:
-    """天天经理页 → 产品清单（含任职起止）：非债、非货基、起止可解析、start<end。
-    缓存 7 天（`mgrprods_v1_{id}`）；同一经理页可能有第二张重复表（无起止列），跳过。"""
-    ck = f"mgrprods_v1_{manager_id}"
+    """天天经理页 → 产品清单（含任职起止）：**含债全部产品、仅排除货基**
+    （2026-11-17 用户拍板改口径，起止可解析、start<end）。
+
+    口径修订证据：11-14 的"非债"过滤基于10个支付宝样本（MAE0.60），11-17 六人复测
+    **不成立**——含债全历史复合 MAE 1.41pp（八种口径最好）vs 非债 2.5pp；过钧
+    （6.79 vs 非债9.67）/李耀柱（6.86 vs8.23）的偏差主因就是债基被剔。含债也与用户
+    "所有管理过的含已离职都算"的生涯规格一致（货基仍排除：现金管理不计业绩）。
+    缓存 7 天（`mgrprods_v2_{id}`，v1=非债口径作废）；同一经理页可能有第二张重复表
+    （无起止列），跳过。"""
+    ck = f"mgrprods_v2_{manager_id}"
     if not refresh:
         v = _load_cache(ck, 24 * 7)
         if v is not None:
@@ -506,8 +513,8 @@ def _manager_products_spans(manager_id: str, refresh: bool = False) -> list[dict
                      for c in re.findall(r"<td[^>]*>(.*?)</td>", r, re.S)]
             if len(cells) < 8 or not re.match(r"^\d{6}$", cells[0]):
                 continue
-            if _is_bond_like(cells[0], cells[1]) or "货币" in cells[1]:
-                continue                      # 偏股口径：债类/货基不参与（拟合样本验证）
+            if "货币" in cells[1]:
+                continue                      # 货基仍排除（现金管理不计业绩）；债类 2026-11-17 起纳入
             mm = re.match(r"(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2}|至今)",
                           cells[5]) if len(cells) > 5 else None
             if not mm:
@@ -525,16 +532,16 @@ def _manager_products_spans(manager_id: str, refresh: bool = False) -> list[dict
 
 
 def manager_career_ann(manager_id: str, refresh: bool = False) -> float | None:
-    """经理**从业年化 = 等权组合复合年化**（2026-11-14 定稿，拟合支付宝口径）。
+    """经理**从业年化 = 等权组合复合年化**（2026-11-17 口径修订：含债全历史）。
 
-    口径：该经理全部非债、非货基产品（含已离任、含各份额），**各自上任日起**
-    的日收益等权平均 → 复合 → 年化。10 个支付宝样本对照 **MAE=0.60pp**
-    （8/10 在 ±0.6pp 内，最差马翔 -1.92——差额来自缺净值/份额细节）；
-    反例：逐产品年化取均值 MAE4.6、取中位 MAE5.4、最长单基金 MAE4.4——全被否。
-    产品清单缓存 7 天；净值走 fetch_nav（20h 缓存，池内基金与周更共用）；
-    结果缓存 7 天（`mgrann_v1_{id}`，周更自然重算）。缺净值/解析失败的产品跳过；
+    口径：该经理**全部产品含债、不含货基**（含已离任、含各份额），各自上任日起的
+    日收益等权平均 → 复合 → 年化。修订证据（2026-11-17 用户授权"选最合适的方案"）：
+    六人支付宝复测——含债全历史 MAE **1.41pp**（八种口径最好）vs 非债 2.5pp；
+    过钧/李耀柱偏差主因=债基被剔；货基仍排除。11-14 的非债口径（10样本MAE0.60）
+    未通过11-17复测，作废。产品清单缓存 7 天；净值走 fetch_nav（20h 缓存）；
+    结果缓存 7 天（`mgrann_v2_{id}`，v1=非债口径作废）；缺净值/解析失败的产品跳过；
     任一产品都没有 → None（调用方按"非双十/不显示"处理）。"""
-    ck = f"mgrann_v1_{manager_id}"
+    ck = f"mgrann_v2_{manager_id}"
     if not refresh:
         v = _load_cache(ck, 24 * 7)
         if v is not None:
