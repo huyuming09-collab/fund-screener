@@ -51,6 +51,7 @@ for (const f of D.funds) {
   if (/NaN|undefined|null年|null%/.test(txt)) bad.push(f.code+' 显示层泄漏');
 }
 chk('全量卡渲染无 NaN/undefined 泄漏', D.funds.length===expectedN && bad.length===0);
+if (bad.length) console.log('  泄漏明细(前5):', bad.slice(0,5));
 chk('卡数与契约一致（单池 D.n / 多池 pools 合计）', D.funds.length===expectedN);
 
 // 2. 列表页常显免责底栏
@@ -661,9 +662,55 @@ if (D.mgr && (D.mgr.vet || []).length){
   const mh = document.getElementById('list').innerHTML;
   chk('老将榜两列卡片行数=契约（D.mgr.vet）',
       (mh.match(/class="mgr-card"/g) || []).length === D.mgr.vet.length);
-  chk('测试中徽章（右上角）', mh.includes('test-badge') || document.getElementById('meta').innerHTML.includes('test-badge'));
-  chk('卡片双业绩（计分5年+从业年化）',
-      mh.includes('计分5年') && mh.includes('从业年化'));
+  chk('摘除"测试中"徽章（2026-11-17 界面优化项3）',
+      !mh.includes('test-badge') && !document.getElementById('meta').innerHTML.includes('test-badge'));
+  chk('卡片双业绩（近五年年化+从业年化）',
+      mh.includes('近五年年化') && mh.includes('从业年化'));
+  chk('界面优化项1/2/3/7/8 源码契约（占位/适配/摘徽章/点查/堆叠/评分口径）',
+      html.includes('calc(6px + env(safe-area-inset-bottom))')   /* 项1/2：免责坐底 */
+      && html.includes('min-width:0')                              /* 项3：两列不横滚 */
+      && !html.includes('test-badge')                              /* 项3：摘徽章 */
+      && html.includes('attachInspect') && html.includes('drawInspect')  /* 项7：点查 */
+      && html.includes('drawStackedArea')                          /* 项8a：堆叠子图 */
+      && html.includes('β 是什么')                                 /* 项8a：折叠说明 */
+      && html.includes('评分口径')                                 /* 项8b：评分口径块 */
+      && !html.includes('不许手挑'));                              /* 项5：删开发注记 */
+
+  /* 项7：点查交互单元断言——桩 cv 捕获监听器，pointermove 归一 0..1、pointerleave 清准星 */
+  (() => {
+    const h = {}, calls = [];
+    const fake = {
+      style: {},
+      addEventListener: (t, fn) => { h[t] = fn; },
+      getBoundingClientRect: () => ({left: 100, width: 200})
+    };
+    attachInspect(fake, v => calls.push(v));
+    h.pointermove({clientX: 200});            /* (200-100)/200 = 0.5 */
+    h.pointerleave();
+    chk('点查交互（move归一0..1 / leave清准星 / 重复挂载幂等）',
+        calls.length === 2 && calls[0] === 0.5 && calls[1] === null);
+    attachInspect(fake, () => {});            /* 第二次挂载被 _insp 拦下 */
+    chk('点查交互幂等（不重复挂监听）', Object.keys(h).length === 3);
+  })();
+
+  /* 项5/6/8：经理详情运行时——真实调用 openMgrDetail，核对新块渲染无异常 */
+  (() => {
+    const k0 = ((D.mgr && D.mgr.vet && D.mgr.vet[0]) || {}).key;
+    let ok = false, err = '';
+    try {
+      openMgrDetail(k0);
+      const db = document.getElementById('d-body').innerHTML;
+      const rep = (D.mgr.detail && D.mgr.detail[k0] && D.mgr.detail[k0].reps || [])[0] || {};
+      ok = document.getElementById('detail').style.display === 'block'
+        && db.includes('评分口径') && db.includes('生涯超额')
+        && db.includes('资产结构与风格暴露') && db.includes('β 是什么')
+        && db.includes('5年回撤') && db.includes('夏普')
+        && db.includes('代表作')
+        && (rep.mdd5 != null || db.includes('代表作数据缺失'));
+      closeDetail();
+    } catch(e){ err = e.message; }
+    chk('经理详情运行时（评分口径/代表作回撤夏普/资产结构/折叠说明）' + (err ? ' ERR:'+err : ''), ok);
+  })();
   chk('卡片无名次无分数', !mh.match(/class="rank /) && !mh.includes('心动值'));
   chk('三类筛选条渲染（默认全选）',
       mh.includes('sub-filter') && (D.mgr.buckets || []).every(b => mh.indexOf('>' + b + '</button>') >= 0));
@@ -687,8 +734,8 @@ if (D.mgr && (D.mgr.vet || []).length){
       + document.getElementById('d-code').textContent;
   chk('经理详情5块+代表作齐',
       ['代表作', '净值走势', '逐年收益', '超额胜率', '风格暴露', '风险指标'].every(s => db.includes(s)));
-  chk('代表作=计分基金规则+机构占比+合并规模',
-      db.includes('>计分<') && db.includes('机构占比') && db.includes('合并规模'));
+  chk('代表作=评分最高规则（2026-11-17由"计分"改名）+机构占比+合并规模',
+      db.includes('>评分最高<') && db.includes('机构占比') && db.includes('合并规模'));
   chk('详情头部含从业年化（平台口径）',
       document.getElementById('d-code').textContent.includes('从业年化'));
   chk('经理详情无 NaN/undefined 泄漏', !/NaN|undefined|null年|null%|null亿/.test(dAll));

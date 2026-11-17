@@ -162,10 +162,11 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .q-strip i{flex:1;border-radius:2px;min-width:4px;}
 .q-note{font-size:11.5px;color:var(--sub);margin-top:6px;}
 /* 两列卡片页（2026-11-13 用户定：无排名无分数，按分排序，双业绩可见） */
-.mgr-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;
-  padding:10px 14px 4px;}
+.mgr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
+  padding:10px 14px 4px;}   /* 项3：minmax(0,1fr) 强制轨道可收缩，移动端两列不横滑 */
 .mgr-card{background:#fff;border:1px solid var(--line);border-radius:14px;
-  padding:11px 13px;cursor:pointer;transition:box-shadow .15s;}
+  padding:11px 13px;cursor:pointer;transition:box-shadow .15s;
+  min-width:0;}   /* 项3：网格项可收缩，nowrap 子项不再撑爆两列（移动端不横滑） */
 .mgr-card:active{box-shadow:0 2px 8px rgba(0,0,0,.08);}
 .mc-top{display:flex;align-items:center;gap:6px;min-width:0;}
 .mc-name{font-size:15.5px;font-weight:700;color:var(--ink);line-height:1.3;
@@ -180,9 +181,6 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
 .mc-rep{font-size:11.5px;color:var(--sub);margin-top:6px;padding-top:6px;
   border-top:1px dashed var(--line);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;}
-.test-badge{float:right;background:#fff4ec;color:#a85100;
-  border:1px solid rgba(168,81,0,.35);border-radius:6px;
-  font-size:11px;font-weight:700;padding:2px 8px;}
 .md-risk{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
 .md-risk .m{background:#fff;border:1px solid var(--line);border-radius:12px;
   padding:10px 6px;text-align:center;}
@@ -516,15 +514,16 @@ table.yr tr:last-child td{border-bottom:none;}
 .mgr-cards .mc .v{font-size:15px;font-weight:650;color:var(--accent-ink);}
 .mgr-cards .mc .l{font-size:10.5px;color:var(--sub);margin-top:2px;}
 .disclaimer{font-size:11px;color:#69707e;line-height:1.7;padding:6px 16px 26px;}
-/* v1.5 免责常显（用户 2026-10-31）：免责声明不再折叠、免点击直接显示，紧贴底部留白上方；
-   底部 58px 留白仍为对比浮条预留（cmp-bar 浮底时会盖住免责尾部——只有用对比功能才遮挡）。
-   账号行与免责之间无大留白，消除旧版"空白上移"问题。 */
+/* v1.5 免责常显（用户 2026-10-31）：免责声明不再折叠、免点击直接显示。
+   2026-11-17 界面优化项1/2：底部 58px 预留空白撤销——免责文字坐到底部占满
+   （偏债心动榜/指数温度计/偏股雷达三处不再有空白）；.cmp-bar 浮底激活时
+   直接盖住免责尾部（只有用对比功能才遮挡）。 */
 .page-foot{flex:0 0 auto;display:flex;align-items:center;
   padding:5px 12px 3px;background:var(--bg);
   border-top:1px solid var(--line);font-size:11px;color:var(--sub);}
 .page-foot b{color:var(--accent-ink);font-weight:650;}
 .page-disc{flex:0 0 auto;font-size:10.5px;color:#69707e;line-height:1.6;text-align:left;
-  padding:3px 14px calc(58px + env(safe-area-inset-bottom));background:var(--bg);}
+  padding:3px 14px calc(6px + env(safe-area-inset-bottom));background:var(--bg);}
 .redline-tag{display:inline-block;background:#fff0f0;color:var(--up);border-radius:6px;
              font-size:11px;padding:1px 6px;margin-left:6px;}
 /* ---------- 隐藏导出模式：?export=<pool>（仅 URL 触发，页面无入口） ----------
@@ -1080,7 +1079,10 @@ document.getElementById('list').addEventListener('click', function(e){
 /* ============ 偏股雷达两榜（docs/20 §4，2026-11-13 实现） ============ */
 /* 展示桶=三类（2026-11-13 用户定）：成长(科技/新能源/医药)·价值(价值/周期/消费)·均衡 */
 const MGR_BK_CLS = {'成长': 'b-growth', '价值': 'b-value', '均衡': 'b-bal'};
-const MGR_BK_COLOR = {'成长': '#1a7f37', '价值': '#7237c0', '均衡': '#666666'};
+/* 项8a：补6风格色（堆叠子图②用）——原3键导致风格线全灰（"很丑"成因之一） */
+const MGR_BK_COLOR = {'成长': '#1a7f37', '价值': '#7237c0', '均衡': '#666666',
+                      '科技': '#2f6fbb', '医药': '#b3261e', '消费': '#e8a33d',
+                      '新能源': '#2e9d8f', '周期': '#8a6d3b'};
 const mpct = v => v==null ? '—' : (v*100).toFixed(1)+'%';
 const mpp  = v => v==null ? '—' : (v>=0?'+':'')+(v*100).toFixed(1)+'pp';
 let MGR_SEL = null;      /* 二级桶筛选：null=全部；Set=选中桶（点空=回全部） */
@@ -1090,13 +1092,11 @@ let MGR_CUR = null;      /* 当前打开的经理详情 */
 function renderMgrList(cat){
   const m = D.mgr;
   const rows0 = (m && (cat==='mgr_vet' ? m.vet : m.new)) || [];
-  /* 测试中徽章（2026-11-13 用户定：右上角标注） */
+  /* 项3（2026-11-17）：摘掉"测试中"徽章 */
   $('meta').innerHTML = m
     ? `数据基准 <b class="asof">${m.asof}</b> · ${catLabel(cat)} 上榜 <b>${rows0.length}</b> 人`
       + ` · 名单复评 ${m.eval_date}（第${m.eval_no}期）`
-      + `<span class="test-badge">测试中</span>`
-    : `数据基准 <b class="asof">—</b> · ${catLabel(cat)}`
-      + `<span class="test-badge">测试中</span>`;
+    : `数据基准 <b class="asof">—</b> · ${catLabel(cat)}`;
   if(!m || !rows0.length){
     $('list').innerHTML = '<div class="empty-tip">本期暂无上榜经理（数据源 data.mgr 缺失或为空）</div>';
     return;
@@ -1122,10 +1122,13 @@ function renderMgrList(cat){
     $('list').innerHTML = filterHTML + '<div class="empty-tip">该风格下本期暂无上榜经理</div>';
     return;
   }
-  /* 两列卡片（2026-11-13 用户定）：按分排序但不展示分数与名次；
-     卡片展示 计分基金5年年化 + 经理从业年化（平台口径），红涨绿跌 */
+  /* 两列卡片（2026-11-13 用户定；2026-11-17 重设计项4）：
+     删机构名与"自X在榜"→ 管理规模（aum，经理在管总规模）；
+     "计分5年"改名"近五年年化"；按分排序但不展示分数与名次，红涨绿跌 */
   const perf = (label, v) => `<span><span class="l">${label}</span>`
     + `<b class="${v==null?'':(v>=0?'pos':'neg')}">${mpct(v)}</b></span>`;
+  const aumTxt = r => r.aum==null ? '管理规模 —'
+    : '管理规模 ' + (+r.aum).toFixed(1) + '亿';
   $('list').innerHTML = filterHTML + `<div class="mgr-grid">` + rows.map(r => `
     <div class="mgr-card" onclick='openMgrDetail(${JSON.stringify(r.key)})'>
       <div class="mc-top">
@@ -1136,8 +1139,8 @@ function renderMgrList(cat){
           ${r.is_new?'<span class="rk new">新</span>':''}
         </span>
       </div>
-      <div class="mc-org">${r.company} · 自${r.entry}在榜</div>
-      <div class="mc-perf">${perf('计分5年', r.ret5y)}${perf('从业年化', r.ann_career)}</div>
+      <div class="mc-org">${aumTxt(r)}</div>
+      <div class="mc-perf">${perf('近五年年化', r.ret5y)}${perf('从业年化', r.ann_career)}</div>
       <div class="mc-rep">代表作 ${r.rep_name||'—'}</div>
     </div>`).join('') + `</div>`;
 }
@@ -1178,7 +1181,9 @@ function openMgrDetail(key){
   const el = $('detail'); el.style.display = 'block';
   requestAnimationFrame(()=>el.classList.add('show'));
   drawMgrTrend();
-  drawMgrBeta();
+  attachInspect($('mgr-trend'), drawMgrTrend);   /* 项7：点查交互 */
+  drawMgrAlloc();                                /* 项8a：资产结构堆叠子图 */
+  drawMgrBeta();                                 /* 项8a：风格暴露堆叠子图 */
   document.body.style.overflow = 'hidden';
 }
 
@@ -1193,7 +1198,9 @@ function mgrBodyHTML(row, det){
           <span>合并规模 <b>${x.scale==null?'—':(+x.scale).toFixed(1)+'亿'}${x.n_shares>1?` (${x.n_shares}类份额)`:''}</b></span>
           <span>任期 <b>${x.tenure==null?'—':x.tenure+'年'}</b></span>
           <span>5年年化 <b class="${cls(x.ret5y)}">${mpct(x.ret5y)}</b></span>
+          <span>5年回撤 <b>${x.mdd5==null?'—':(x.mdd5*100).toFixed(1)+'%'}</b></span>
           <span>超额 <b class="${cls(x.excess)}">${mpp(x.excess)}</b></span>
+          <span>夏普 <b>${x.sharpe5==null?'—':(+x.sharpe5).toFixed(2)}</b></span>
           <span>机构占比 <b>${x.inst==null?'—':fpct(x.inst)}</b></span>
         </div></div>`).join('') + '</div>'
     : '<div class="empty-tip">代表作数据缺失</div>';
@@ -1232,14 +1239,36 @@ function mgrBodyHTML(row, det){
     <div class="q-note">近${q.length}季跑赢 <b class="${wins>=q.length/2?'pos':'neg'}">${wins}</b> 季（${(wins/q.length*100).toFixed(0)}%）· 柱高=|超额|，红=跑赢绿=跑输</div>`
     : '<div class="empty-tip">季度数据不足</div>';
 
-  /* d. 风格暴露时序（滚动1年超额 β，季频） */
+  /* d. 项8a（2026-11-17）：两个100%堆叠子图 + 折叠说明
+     子图① 股/债/现金/其他（季报资产配置史 det.alloc）
+     子图② 股票内部6风格（滚动β 正向归一 → 暴露占比） */
   const st = det.style;
-  const styleHTML = (st && st.d && st.d.length > 1)
+  const alloc = det.alloc;
+  const hasAlloc = alloc && alloc.d && alloc.d.length > 1;
+  const hasStyle = st && st.d && st.d.length > 1
+    && Object.keys(st.s || {}).some(k => (st.s[k] || []).some(v => v != null));
+  const allocHTML = hasAlloc
+    ? `<canvas class="md-canvas" id="mgr-alloc"></canvas>
+       <div class="md-legend">
+         <span><i style="background:#e53935"></i>股票</span>
+         <span><i style="background:#5b7390"></i>债券</span>
+         <span><i style="background:#2e7d5b"></i>现金</span>
+         <span><i style="background:#c9c2b2"></i>其他</span>
+         <span>· 季报资产配置，堆叠100%</span></div>`
+    : '<div class="empty-tip">资产配置数据不足（需联网刷新一次周更）</div>';
+  const styleHTML = hasStyle
     ? `<canvas class="md-canvas" id="mgr-beta"></canvas>
        <div class="md-legend">${Object.keys(st.s).map(k =>
          `<span><i style="background:${MGR_BK_COLOR[k]||'#999'}"></i>${k}</span>`).join('')}
-       <span>· 滚动 1 年超额 β vs 各风格指数，季频</span></div>`
+         <span><i style="background:#c9c2b2"></i>低暴露</span>
+         <span>· 股票风格暴露占比（滚动1年β归一，季频）</span></div>`
     : '<div class="empty-tip">风格暴露数据不足</div>';
+  const foldHTML = `<details class="eq-meth"><summary>β 是什么？这两张图咋看</summary>
+    <div class="eq-meth-body">
+      <div class="eq-meth-row"><span class="k">β 是什么</span><span class="v">基金相对某个风格指数的"跟随强度"：β&gt;0 表示同向涨跌（数值越大跟得越紧）、β≈0 基本不跟、β&lt;0 反着走。按滚动 1 年的周收益计算，每季度更新。</span></div>
+      <div class="eq-meth-row"><span class="k">子图① 咋看</span><span class="v">股票/债券/现金/其他 四块堆到 100%：股票色块变厚 = 加仓权益（进攻），变薄 = 降仓避险；债券色块是底仓厚度——看的是"仓位结构随时间怎么漂移"。</span></div>
+      <div class="eq-meth-row"><span class="k">子图② 咋看</span><span class="v">看他股票仓里押了哪种风格：某色块变厚 = 该风格暴露上升（如成长变厚 = 更偏成长）；"低暴露"带表示当期对 6 个风格都接近零或为负（无明显倾向）。口径：由滚动 β 归一化而来（正值按比例摊到 100%），是"暴露占比"不是真实持仓占比。</span></div>
+    </div></details>`;
 
   /* e. 风险指标（5 年窗） */
   const rk = det.risk || {};
@@ -1250,15 +1279,87 @@ function mgrBodyHTML(row, det){
   </div>
   <div class="q-note">审计参考：过考经理回撤中位约45%、最深74%——防"只看收益"。</div>`;
 
-  return `<div class="md-h">代表作（规则自动选取，不许手挑）</div>${repHTML}`
+  /* 项8b（2026-11-17）：评分口径块——生涯四因子+权重+入场资格（字段 data.js 现成） */
+  const fc = (v, d0) => v == null ? '—' : (v * 100).toFixed(d0) + '%';
+  const ruleHTML = `<div class="md-risk" style="grid-template-columns:repeat(4,1fr)">
+    <div class="m"><div class="v">${fc(row.ann_career,1)}</div><div class="l">复合年化 · 0.2</div></div>
+    <div class="m"><div class="v">${fc(row.car_c2,1)}</div><div class="l">生涯超额 · 0.2</div></div>
+    <div class="m"><div class="v">${fc(row.car_c3,0)}</div><div class="l">年度胜率 · 0.2</div></div>
+    <div class="m"><div class="v">${fc(row.car_c4,0)}</div><div class="l">生涯回撤 · 0.4</div></div>
+  </div>
+  <div class="q-note">分数 = 上述四因子在同通道（老将/新锐）内的分位加权（0.2/0.2/0.2/0.4，回撤越浅分越高）。入场 = 考卷（近 5 年 ≥3 年进同类前 25%）+ 三硬闸（规模≥5亿 / 经理任职≥5年 / 类型仓位线）；双十仅展示标签、不计分；池内相对评分，不同榜与不同期不可横向比较。</div>`;
+
+  return `<div class="md-h">评分口径</div>${ruleHTML}`
+    + `<div class="md-h">代表作</div>${repHTML}`
     + `<div class="md-h">5 年净值走势 vs 类型合成基准</div>${trendHTML}`
     + `<div class="md-h">逐年收益与超额（右红正 / 左绿负）</div>${yrHTML}`
     + `<div class="md-h">近 20 季超额胜率</div>${qHTML}`
-    + `<div class="md-h">风格暴露时序（有没有追涨）</div>${styleHTML}`
+    + `<div class="md-h">资产结构与风格暴露</div>${allocHTML}${styleHTML}${foldHTML}`
     + `<div class="md-h">风险指标（5 年窗）</div>${riskHTML}`;
 }
 
-function drawMgrTrend(){
+/* 项7（2026-11-17）：图表点查共享交互——鼠标移动/手指拖动 → 准星+圆点+浮层
+   （日期/数值/超额），移出隐藏；touch-action:pan-y 保证竖向翻页不受影响。
+   drawFn(frac) 自带重绘（底图+覆盖层），frac=画布宽归一 0..1，null=清准星。 */
+function attachInspect(cv, drawFn){
+  if(!cv || cv._insp || typeof cv.addEventListener !== 'function') return;
+  cv._insp = true;
+  if (cv.style) cv.style.touchAction = 'pan-y';   /* 竖向翻页不受影响（桩无style容错） */
+  const frac = e => {
+    const r = cv.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  };
+  cv.addEventListener('pointermove', e => drawFn(frac(e)));
+  cv.addEventListener('pointerdown', e => drawFn(frac(e)));
+  cv.addEventListener('pointerleave', () => drawFn(null));
+}
+
+/* 点查覆盖层：准星竖线 + 两线圆点 + 白底浮层（rows=[日期, 名称值...]） */
+function drawInspect(ctx, X, Y, series, hover, n, W, H, PADL, PADR, nm){
+  const lx = PADL + hover * (W - PADL - PADR);
+  let i = Math.round((lx - PADL) / ((W - PADL - PADR) / (n - 1)));
+  i = Math.max(0, Math.min(n - 1, i));
+  const x = X(i);
+  ctx.save();
+  ctx.strokeStyle = '#c05a28'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(x, 14); ctx.lineTo(x, H - 24); ctx.stroke();
+  ctx.setLineDash([]);
+  const dot = (v, c) => {
+    ctx.beginPath(); ctx.arc(x, Y(v), 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = c; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  };
+  const rows = [series.d[i]];
+  if (series.b != null){
+    dot(series.b[i], '#9aa0a6');
+    rows.push(`基准 ${(series.b[i]*100).toFixed(2)}%`);
+  }
+  dot(series.f[i], '#ff6a00');
+  rows.unshift(`${nm} ${(series.f[i]*100).toFixed(2)}%`);
+  if (series.b != null){
+    const ex = (series.f[i] - series.b[i]) * 100;
+    rows.push(`超额 ${(ex>=0?'+':'')}${ex.toFixed(2)}pp`);
+  }
+  ctx.font = '16px sans-serif';
+  const bw = Math.max(...rows.map(s => ctx.measureText(s).width)) + 22;
+  const bh = rows.length * 22 + 14;
+  let bx = x + 12; if (bx + bw > W - 4) bx = x - bw - 12;
+  const by = 16;
+  ctx.fillStyle = 'rgba(255,255,255,.96)';
+  ctx.strokeStyle = '#e2dbcc'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 8);
+  else ctx.rect(bx, by, bw, bh);
+  ctx.fill(); ctx.stroke();
+  rows.forEach((s, r) => {
+    ctx.fillStyle = r === 0 ? '#ff6a00'
+      : (s.indexOf('基准') === 0 ? '#9aa0a6' : '#2a2e35');
+    ctx.fillText(s, bx + 11, by + 23 + r * 22);
+  });
+  ctx.restore();
+}
+
+function drawMgrTrend(hover){
   const cv = $('mgr-trend');
   if(!cv || typeof cv.getContext !== 'function' || !MGR_CUR) return;
   const t = MGR_CUR.det.trend;
@@ -1295,56 +1396,116 @@ function drawMgrTrend(){
   };
   line(t.b, '#9aa0a6', 2.5);          /* 类型合成基准：灰 */
   line(t.f, '#ff6a00', 3);            /* 基金净值：橙 */
+  /* 项7：x轴4个刻度（首、1/3、2/3、尾）——原只有首尾2个 */
   ctx.fillStyle = '#9aa0a6'; ctx.font = '18px sans-serif';
-  ctx.fillText(t.d[0].slice(2), PADL, H-6);
-  const last = t.d[t.d.length-1].slice(2);
-  ctx.fillText(last, W-PADR-ctx.measureText(last).width, H-6);
+  const nT = t.d.length;
+  const tickI = [...new Set([0, Math.round((nT-1)/3),
+                             Math.round((nT-1)*2/3), nT-1])];
+  tickI.forEach((i, k) => {
+    const lbl = t.d[i].slice(2);
+    let tx = X(i);
+    if (k === 0) tx = PADL;
+    if (k === tickI.length - 1) tx = W - PADR - ctx.measureText(lbl).width;
+    ctx.fillText(lbl, tx, H - 6);
+  });
+  if (hover != null) drawInspect(ctx, X, Y, t, hover, nT, W, H, PADL, PADR, '基金');
 }
 
-function drawMgrBeta(){
-  const cv = $('mgr-beta');
-  if(!cv || typeof cv.getContext !== 'function' || !MGR_CUR) return;
-  const st = MGR_CUR.det.style;
-  if(!st || !st.d || st.d.length < 2) return;
+/* 项8a（2026-11-17）：100% 堆叠面积图（颜色块）通用绘制
+   series=[{name,color,vals}]，vals 与 d 对齐；每期归一到100%（负值截0），
+   全为0时期归入末位序列（调用方把"低暴露"放末位兜底）。 */
+function drawStackedArea(cv, d, series){
+  if(!cv || typeof cv.getContext !== 'function') return;
+  if(!d || d.length < 2 || !series.length) return;
   const ctx = cv.getContext('2d');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const dispW = cv.clientWidth || 710, dispH = cv.clientHeight || 200;
-  const LW = 710, LH = 200;
+  const dispW = cv.clientWidth || 710, dispH = cv.clientHeight || 170;
+  const LW = 710, LH = 170;
   if (cv.width !== Math.round(dispW*dpr) || cv.height !== Math.round(dispH*dpr)){
     cv.width = Math.round(dispW*dpr); cv.height = Math.round(dispH*dpr);
   }
   ctx.setTransform(dpr*dispW/LW, 0, 0, dpr*dispH/LH, 0, 0);
-  const W = LW, H = LH, PADL = 54, PADR = 12, PADT = 14, PADB = 24;
+  const W = LW, H = LH, PADL = 44, PADR = 12, PADT = 10, PADB = 24;
   ctx.clearRect(0, 0, W, H);
-  const all = Object.values(st.s).flat().filter(v => v != null);
-  if (!all.length) return;
-  const y1 = Math.max(...all, 0), y2 = Math.min(...all, 0);
-  const span = (y1 - y2) || 1;
-  const X = i => PADL + i * (W - PADL - PADR) / (st.d.length - 1);
-  const Y = v => PADT + (y1 - v) / span * (H - PADT - PADB);
-  ctx.font = '18px sans-serif'; ctx.fillStyle = '#9aa0a6';
-  ctx.strokeStyle = '#eef0f3'; ctx.lineWidth = 1.5;
-  for (let g = 0; g <= 4; g++){
-    const v = y2 + span*g/4, y = Y(v);
-    ctx.beginPath(); ctx.moveTo(PADL, y); ctx.lineTo(W-PADR, y); ctx.stroke();
-    ctx.fillText(v.toFixed(1), 6, y+6);
+  const n = d.length;
+  const X = i => PADL + i * (W - PADL - PADR) / (n - 1);
+  /* 每期归一：负/空→0，和=100；全0→末位（低暴露）100 兜底 */
+  const m = series.map(() => new Array(n).fill(0));
+  for (let i = 0; i < n; i++){
+    let sum = 0;
+    series.forEach((s, k) => {
+      const v = +(s.vals[i] || 0);
+      m[k][i] = v > 0 ? v : 0;
+      sum += m[k][i];
+    });
+    if (sum <= 0){
+      series.forEach((s, k) => { m[k][i] = (k === series.length - 1) ? 100 : 0; });
+    } else {
+      series.forEach((s, k) => { m[k][i] = m[k][i] / sum * 100; });
+    }
   }
-  ctx.strokeStyle = '#d0d4da'; ctx.setLineDash([6,5]);
-  ctx.beginPath(); ctx.moveTo(PADL, Y(0)); ctx.lineTo(W-PADR, Y(0)); ctx.stroke();
-  ctx.setLineDash([]);
-  Object.keys(st.s).forEach(k => {
-    const arr = st.s[k];
-    ctx.beginPath();
-    let started = false;
-    arr.forEach((v,i) => { if(v==null) return;
-      if(!started){ ctx.moveTo(X(i), Y(v)); started = true; }
-      else ctx.lineTo(X(i), Y(v)); });
-    ctx.strokeStyle = MGR_BK_COLOR[k] || '#999'; ctx.lineWidth = 2.5; ctx.stroke();
+  const Y = v => PADT + (100 - v) / 100 * (H - PADT - PADB);
+  ctx.font = '15px sans-serif';
+  [0, 50, 100].forEach(g => {
+    const y = Y(g);
+    ctx.strokeStyle = '#eef0f3'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(PADL, y); ctx.lineTo(W - PADR, y); ctx.stroke();
+    ctx.fillStyle = '#9aa0a6'; ctx.fillText(g + '%', 4, y + 5);
   });
-  ctx.fillStyle = '#9aa0a6'; ctx.font = '18px sans-serif';
-  ctx.fillText(st.d[0].slice(2), PADL, H-6);
-  const last = st.d[st.d.length-1].slice(2);
-  ctx.fillText(last, W-PADR-ctx.measureText(last).width, H-6);
+  /* 自下而上堆叠多边形 + 白色分隔描边 */
+  const lower = new Array(n).fill(0);
+  series.forEach((s, k) => {
+    const upper = lower.map((v, i) => v + m[k][i]);
+    ctx.beginPath();
+    upper.forEach((v, i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v)));
+    for (let i = n - 1; i >= 0; i--) ctx.lineTo(X(i), Y(lower[i]));
+    ctx.closePath();
+    ctx.fillStyle = s.color; ctx.globalAlpha = .92; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    upper.forEach((v, i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v)));
+    ctx.stroke();
+    for (let i = 0; i < n; i++) lower[i] = upper[i];
+  });
+  /* x轴：首/中/尾 日期 */
+  ctx.fillStyle = '#9aa0a6'; ctx.font = '15px sans-serif';
+  const tickI = [...new Set([0, Math.round((n-1)/2), n-1])];
+  tickI.forEach((i, k) => {
+    const lbl = (d[i] || '').slice(2);
+    let tx = X(i);
+    if (k === 0) tx = PADL;
+    if (k === tickI.length - 1) tx = W - PADR - ctx.measureText(lbl).width;
+    ctx.fillText(lbl, tx, H - 6);
+  });
+}
+
+/* 子图①：股票/债券/现金/其他（季报资产配置史，_asset_hist → det.alloc） */
+function drawMgrAlloc(){
+  const cv = $('mgr-alloc');
+  if(!cv || !MGR_CUR) return;
+  const a = MGR_CUR.det.alloc;
+  if(!a || !a.d || a.d.length < 2) return;
+  drawStackedArea(cv, a.d, [
+    {name:'股票', color:'#e53935', vals: a.gp || []},
+    {name:'债券', color:'#5b7390', vals: a.zq || []},
+    {name:'现金', color:'#2e7d5b', vals: a.hb || []},
+    {name:'其他', color:'#c9c2b2', vals: a.qt || []}
+  ]);
+}
+
+/* 子图②：股票内部风格暴露占比（滚动1年β 正向归一；末位"低暴露"兜底全负期） */
+function drawMgrBeta(){
+  const cv = $('mgr-beta');
+  if(!cv || !MGR_CUR) return;
+  const st = MGR_CUR.det.style;
+  if(!st || !st.d || st.d.length < 2) return;
+  const keys = Object.keys(st.s || {})
+    .filter(k => (st.s[k] || []).some(v => v != null));
+  if (!keys.length) return;
+  const series = keys.map(k => ({name: k, color: MGR_BK_COLOR[k] || '#999',
+                                 vals: (st.s[k] || []).map(v => v == null ? 0 : v)}));
+  series.push({name: '低暴露', color: '#c9c2b2', vals: st.d.map(() => 0)});
+  drawStackedArea(cv, st.d, series);
 }
 
 /* ============ 指数估值（v5.22，债指之外的指数型基金：卡片=指数，不含基金） ============ */
@@ -2206,6 +2367,7 @@ function openDetail(code){
   const el = $('detail'); el.style.display='block';
   requestAnimationFrame(()=>el.classList.add('show'));
   drawTrend();
+  attachInspect($('trend'), drawTrend);          /* 项7：点查交互（指数/基金趋势） */
   document.body.style.overflow='hidden';
 }
 function closeDetail(){
@@ -2384,7 +2546,7 @@ function trendSeries(f, win){
   return [];
 }
 
-function drawTrend(){
+function drawTrend(hover){
   const cv = $('trend'); if(!cv || !CUR) return;
   const pts = trendSeries(CUR, WIN); if(pts.length<2) return;
   const ctx = cv.getContext('2d');
@@ -2422,13 +2584,24 @@ function drawTrend(){
   ys.forEach((v,i)=>ctx.lineTo(X(i),Y(v)));
   ctx.strokeStyle='#ff6a00'; ctx.lineWidth=3; ctx.stroke();
   ctx.lineTo(X(ys.length-1),H-PADB); ctx.lineTo(X(0),H-PADB); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
-  // 首尾日期
-  ctx.fillStyle='#9aa0a6'; ctx.fillText(pts[0][0].slice(2), PADL, H-6);
-  const last = pts[pts.length-1][0].slice(2);
-  ctx.fillText(last, W-PADR-ctx.measureText(last).width, H-6);
+  // 项7：x轴4个刻度（首、1/3、2/3、尾）
+  ctx.fillStyle='#9aa0a6';
+  const nT = pts.length;
+  const tickI = [...new Set([0, Math.round((nT-1)/3),
+                             Math.round((nT-1)*2/3), nT-1])];
+  tickI.forEach((ti, k) => {
+    const lbl = pts[ti][0].slice(2);
+    let tx = X(ti);
+    if (k === 0) tx = PADL;
+    if (k === tickI.length - 1) tx = W - PADR - ctx.measureText(lbl).width;
+    ctx.fillText(lbl, tx, H-6);
+  });
   // 端点值
   ctx.fillStyle='#ff6a00'; ctx.fillText((ys[ys.length-1]*100).toFixed(2)+'%',
      Math.max(PADL, X(ys.length-1)-90), Math.max(PADT+14, Y(ys[ys.length-1])-10));
+  // 项7：点查准星+浮层（单序列：日期/累计值）
+  if (hover != null) drawInspect(ctx, X, Y,
+    {d: pts.map(p => p[0]), f: ys}, hover, nT, W, H, PADL, PADR, '净值');
 }
 
 /* ============ 隐藏导出模式（?export=<pool>|all，页面无入口，仅 URL 触发） ============

@@ -720,13 +720,17 @@ class TestMgrDetailReps:
         o, codes, feat, fdf, f10s = self._env()
         det = ES._mgr_detail(codes, ["000001"], "张三", feat, fdf, f10s,
                              {}, o, {"mkt": None, "prox": {}},
-                             inst_map={"000001": 0.62})
+                             inst_map={"000001": 0.62}, refresh=False)
         reps = det["reps"]
-        # 计分基金主位（000001 score90）；A/C 同基础名合并为一条、规模=2+3
-        assert reps[0]["rule"] == "计分" and reps[0]["code"] == "000001"
+        # 评分最高基金主位（000001 score90；标签 2026-11-17 由"计分"改名）；
+        # A/C 同基础名合并为一条、规模=2+3
+        assert reps[0]["rule"] == "评分最高" and reps[0]["code"] == "000001"
         assert reps[0]["scale"] == pytest.approx(5.0)
         assert reps[0]["n_shares"] == 2
         assert reps[0]["inst"] == pytest.approx(0.62)
+        # 项6：代表作带 5年回撤与夏普（本 fixture 线性净值 → 回撤0、夏普可算）
+        assert reps[0]["mdd5"] == pytest.approx(0.0, abs=1e-6)
+        assert reps[0]["sharpe5"] is not None
         # 规模最大=成长混合A(10亿)；同基金 C 份额不重复出现
         assert reps[1]["rule"] == "规模最大" and reps[1]["code"] == "000003"
         names = [r["name"] for r in reps]
@@ -737,8 +741,9 @@ class TestMgrDetailReps:
         monkeypatch.setattr(ES, "_read_nav_pickle", lambda c: self._nav())
         o, codes, feat, fdf, f10s = self._env()
         det = ES._mgr_detail(codes, ["000001"], "张三", feat, fdf, f10s,
-                             {}, o, {"mkt": None, "prox": {}})
-        assert det["risk"] is not None                # 分析块跑在计分基金上
+                             {}, o, {"mkt": None, "prox": {}}, refresh=False)
+        assert det["risk"] is not None                # 分析块跑在评分最高基金上
+        assert "alloc" in det                         # 项8a：资产配置键存在（离线=None）
 
 
 # ---------------------------------------------------------------- 13. P0 三硬闸
@@ -839,3 +844,44 @@ class TestCareerScoring:
                  "b|c": dict(c1=1.0, c2=10.0, c3=0.1, c4=0.9)}
         sc = ES.career_weighted_scores(facts, {"a|c": "A", "b|c": "B"})
         assert sc["a|c"] == 100.0 and sc["b|c"] == 100.0
+
+
+# ---------------------------------------------------------------- 15. 资产配置史（项8a）
+class TestAssetHist:
+    """东财 FundMNAssetAllocation → [{d,gp,zq,hb,qt}]（100%堆叠子图数据源）；
+    GP 缺失行剔除；缓存 30 天；refresh=False 只读缓存不联网。"""
+
+    def test_parses_gp_zq_hb_qt_and_caches(self, monkeypatch, tmp_path):
+        import json as _json
+        import fundscorer.eqscore as ES2
+        payload = _json.dumps({"Datas": [
+            {"FSRQ": "2026-09-30", "GP": "13.7", "ZQ": "81.68",
+             "HB": "0.01", "QT": "4.61", "JZC": "439.5"},
+            {"FSRQ": "2026-06-30", "GP": "--", "ZQ": "80",
+             "HB": "1", "QT": "5"},
+        ]}).encode()
+
+        class _Resp:
+            def read(self):
+                return payload
+
+        monkeypatch.setattr(ES2.urllib.request, "urlopen",
+                            lambda req, timeout=None: _Resp())
+        monkeypatch.setattr(ES2, "NAV_DIR", tmp_path)
+        out = ES2._asset_hist("000001", refresh=True)
+        assert out and len(out) == 1                 # GP=-- 的行剔除
+        assert out[0] == dict(d="2026-09-30", gp=13.7, zq=81.68,
+                              hb=0.01, qt=4.61)
+        # 缓存命中：refresh=False 读回且不再联网
+        monkeypatch.setattr(ES2.urllib.request, "urlopen",
+                            lambda *a, **k: (_ for _ in ()).throw(
+                                AssertionError("refresh=False 不得联网")))
+        assert ES2._asset_hist("000001", refresh=False) == out
+
+    def test_no_cache_and_no_refresh_returns_none(self, monkeypatch, tmp_path):
+        import fundscorer.eqscore as ES2
+        monkeypatch.setattr(ES2, "NAV_DIR", tmp_path)
+        monkeypatch.setattr(ES2.urllib.request, "urlopen",
+                            lambda *a, **k: (_ for _ in ()).throw(
+                                AssertionError("refresh=False 不得联网")))
+        assert ES2._asset_hist("000002", refresh=False) is None

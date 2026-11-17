@@ -423,6 +423,56 @@ def _positions(codes: list[str], refresh: bool, workers: int, log) -> dict:
     return out
 
 
+def _asset_hist(code: str, refresh: bool) -> list | None:
+    """季报资产配置史 [{d,gp,zq,hb,qt}...]（东财 FundMNAssetAllocation，缓存30天）。
+
+    项8a（2026-11-17）：详情页"股票/债券/现金/其他"100%堆叠子图的数据源。
+    字段已实测（110017 样例：GP/ZQ/HB/QT 四项+FSRQ 日期）。
+    与 G3 仓位闸的 `_positions` 同一 API、不同缓存键——互不影响。
+    refresh=False 只读未过期缓存（平时跑管线不联网，AGENTS §8）。"""
+    p = NAV_DIR / f"posa_{code}.pkl"
+    if p.exists():
+        try:
+            age_h = (time.time() - p.stat().st_mtime) / 3600
+            if not refresh or age_h < HOLD_TTL_H:
+                return pd.read_pickle(p)
+        except Exception:
+            pass
+    if not refresh:
+        return None
+    try:
+        u = ("https://fundmobapi.eastmoney.com/FundMNewApi/"
+             f"FundMNAssetAllocation?FCODE={code}&deviceid=Wap"
+             "&plat=Wap&product=EFund&version=6.2.8")
+        req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+        raw = json.loads(urllib.request.urlopen(req, timeout=12)
+                         .read().decode("utf-8", "ignore"))
+
+        def _num(v):
+            try:
+                x = float(v or "")
+                return None if x != x else x
+            except (TypeError, ValueError):
+                return None
+
+        hist = []
+        for r in (raw.get("Datas") or []):
+            gp = _num(r.get("GP"))
+            if r.get("FSRQ") and gp is not None:
+                hist.append(dict(d=str(r["FSRQ"]), gp=gp, zq=_num(r.get("ZQ")),
+                                 hb=_num(r.get("HB")), qt=_num(r.get("QT"))))
+        hist.sort(key=lambda x: x["d"])          # API 最新在前 → 升序（时间轴从旧到新）
+        if hist:
+            try:
+                pd.to_pickle(hist, p)
+            except Exception:
+                pass
+            return hist
+        return None
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------- 1b. 持仓校验降级
 def fetch_hold_top10(code: str, refresh: bool = True) -> list | None:
     """前10重仓 [(行业, 占净值比例)]——天天基金移动 API（申万行业标签自带）。
@@ -1250,15 +1300,18 @@ def _mgr_detail(codes: list[str], basis: list[str], mgr: str, feat: pd.DataFrame
                 fdf: pd.DataFrame, f10s: dict, wealth: dict, o,
                 weekly_ex: dict, inst_map: dict | None = None,
                 base_scale: dict | None = None,
-                base_n: dict | None = None) -> dict:
-    """代表作 + 5 分析块（a 净值曲线/b 逐年/c 逐季胜率/d 风格暴露/e 风险）。
+                base_n: dict | None = None,
+                refresh: bool = True) -> dict:
+    """代表作 + 5 分析块（a 净值曲线/b 逐年/c 逐季胜率/d 风格暴露/e 风险）+ 资产配置史。
 
     代表作规则（2026-11-13 用户反馈后改版，R1任期最久退役）：
-      ① 计分 = 撑起该经理分数的基金（basis 里 W3 最高分——行内/详情首卡都用它，
-        杜绝"展示-3.4%的基金、分数却来自+12%的基金"错位）
+      ① 评分最高 = 撑起该经理分数的基金（basis 里基金分最高——行内/详情首卡都用它，
+        杜绝"展示-3.4%的基金、分数却来自+12%的基金"错位；标签 2026-11-17 由"计分"改名）
       ② 规模最大 = A/C 份额按 base_name 合并后的规模合计最大基金
       ③ 业绩最佳 = F1（同格平均排位）最高
       按基金基础名去重（同基金 A/C 不重复展示）；规模显示=合并规模。
+      2026-11-17（界面优化项6/8a）：每张代表作补 5年最大回撤+夏普；产出 alloc 资产
+      配置史（股/债/现金/其他堆叠子图，refresh=False 时只读未过期缓存）。
     """
     inst_map = inst_map or {}
 
@@ -1323,10 +1376,10 @@ def _mgr_detail(codes: list[str], basis: list[str], mgr: str, feat: pd.DataFrame
         vals = [v for v in vals if v is not None]
         return max(vals) if vals else None
 
-    # ---- 三个规则位（按组选，组内展示份额：计分=计分份额，其余=规模最大份额）
+    # ---- 三个规则位（按组选，组内展示份额：评分最高=该位基金，其余=规模最大份额）
     picks: list = []
     if count_code is not None:
-        picks.append(("计分", base_name(_cname(count_code)), count_code))
+        picks.append(("评分最高", base_name(_cname(count_code)), count_code))
     for b in sorted(groups, key=_g_scale, reverse=True):
         if b not in {p[1] for p in picks} and (_g_scale(b) or 0) > 0:
             picks.append(("规模最大", b, None))
@@ -1339,6 +1392,20 @@ def _mgr_detail(codes: list[str], basis: list[str], mgr: str, feat: pd.DataFrame
             break
 
     reps = []
+
+    def _rep_risk(code):
+        """项6（2026-11-17）：单基金5年最大回撤 + 夏普（nav缓存内算，缺→None）。"""
+        nav_r = _read_nav_pickle(code)
+        if nav_r is None:
+            return dict(mdd5=None, sharpe5=None)
+        try:
+            mdd = M.max_drawdown(nav_r, 5)
+            sh = M.sharpe_ratio(M.ann_return(nav_r, 5), M.ann_vol(nav_r, 5))
+        except Exception:
+            return dict(mdd5=None, sharpe5=None)
+        return dict(mdd5=None if mdd is None else round(mdd, 4),
+                    sharpe5=None if sh is None else round(sh, 2))
+
     for rule, b, forced in picks:
         g = groups[b]
         if forced is not None:
@@ -1368,15 +1435,31 @@ def _mgr_detail(codes: list[str], basis: list[str], mgr: str, feat: pd.DataFrame
                          ret5y=None if r5 is None else round(r5, 4),
                          excess=None if (r5 is None or comp5 is None)
                          else round(r5 - comp5, 4),
-                         inst=inst_map.get(code)))
+                         inst=inst_map.get(code),
+                         # 项6（2026-11-17）：代表作补 5年回撤 + 夏普（rf=SHARPE_RF）
+                         **_rep_risk(code)))
     empty = dict(reps=reps, trend=None, yearly=[], quarterly=[],
                  style=None, risk=None)
     if not reps:
         return empty
-    primary = reps[0]["code"]                       # 计分基金 = 分析块主体
+    primary = reps[0]["code"]                       # 评分最高基金 = 分析块主体
+    # 项8a（2026-11-17）：资产配置史（股/债/现金/其他 堆叠子图）——refresh=False 时
+    # 只读未过期缓存（平时跑管线不联网，AGENTS §8）
+    alloc = None
+    try:
+        raw_hist = _asset_hist(primary, refresh)
+        if raw_hist:
+            hist = sorted(raw_hist, key=lambda x: str(x.get("d") or ""))
+            alloc = dict(d=[x["d"] for x in hist],
+                         gp=[x.get("gp") for x in hist],
+                         zq=[x.get("zq") for x in hist],
+                         hb=[x.get("hb") for x in hist],
+                         qt=[x.get("qt") for x in hist])
+    except Exception:
+        alloc = None
     nav = _read_nav_pickle(primary)
     if nav is None:
-        return empty
+        return dict(empty, alloc=alloc)
     t = feat.at[primary, "type"] if primary in feat.index else None
     wealth_t = wealth.get(t)
 
@@ -1484,14 +1567,19 @@ def _mgr_detail(codes: list[str], basis: list[str], mgr: str, feat: pd.DataFrame
     except Exception:
         risk = None
     return dict(reps=reps, trend=trend, yearly=yearly, quarterly=quarterly,
-                style=style, risk=risk)
+                style=style, risk=risk, alloc=alloc)
 
 
 # ---------------------------------------------------------------- 8. 主构建
 def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     t0 = time.time()
     pool = _pool(refresh)
-    pairs = G.career_pairs(_mgr_table(refresh), pool["code"].tolist())
+    em = _mgr_table(refresh)
+    pairs = G.career_pairs(em, pool["code"].tolist())
+    # 管理规模（项4卡片，2026-11-17）：经理在管总规模（亿），em 同值重复行取一
+    aum_map = {k: v for k, v in zip(zip(em["姓名"].astype(str),
+                                        em["所属公司"].astype(str)),
+                                    em["现任基金资产总规模"])}
     log(f"[1/6] 池 {len(pool)} 只 / 从业对 {len(pairs)}")
 
     navres = _nav_stats(pool["code"].tolist(), refresh, workers, log)
@@ -1678,17 +1766,25 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         try:
             det = _mgr_detail(qcodes, basis, c["mgr"], feat, fdf, f10s, wealth,
                               o, weekly_ex, inst_map,
-                              base_scale=base_scale, base_n=base_n)
+                              base_scale=base_scale, base_n=base_n,
+                              refresh=refresh)
         except Exception as e:
             log(f"      [warn] 明细构建失败 {key}: {e}")
             det = dict(reps=[], trend=None, yearly=[], quarterly=[],
-                       style=None, risk=None)
+                       style=None, risk=None, alloc=None)
         rep0 = det["reps"][0] if det["reps"] else {}
         bucket = "均衡"
         if rep0 and rep0.get("code") in feat.index:
             bucket = display_bucket(feat.at[rep0["code"], "bucket"])
         entry = str(m.get("entry", today))
         ann = c.get("career_ann")
+        # 管理规模（项4，2026-11-17）：em 表现任基金资产总规模（亿，字符串容错）
+        av = aum_map.get((c["name"], c["company"]))
+        try:
+            av = (round(float(str(av).replace(",", "")), 2)
+                  if av not in (None, "", "--") else None)
+        except ValueError:
+            av = None
         row = dict(key=key, name=c["name"], company=c["company"],
                    career=round(c["career"], 1) if c["career"] else None,
                    tenure=(round(float(qg["tenure_y"].max()), 1)
@@ -1712,7 +1808,8 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                                    and facts[key].get(f) is not None
                                    and facts[key].get(f) == facts[key].get(f)
                                    else None)
-                      for f in ("c2", "c3", "c4")})
+                      for f in ("c2", "c3", "c4")},
+                   aum=av)
         lst = m.get("list")
         lists[lst if lst in ("vet", "new") else "vet"].append(row)
         detail[key] = det
