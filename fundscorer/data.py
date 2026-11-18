@@ -532,16 +532,21 @@ def _manager_products_spans(manager_id: str, refresh: bool = False) -> list[dict
 
 
 def manager_career_ann(manager_id: str, refresh: bool = False) -> float | None:
-    """经理**从业年化 = 等权组合复合年化**（2026-11-17 口径修订：含债全历史）。
+    """经理**从业年化 = 等权组合复合年化·剔债口径**（2026-11-18 用户拍板）。
 
-    口径：该经理**全部产品含债、不含货基**（含已离任、含各份额），各自上任日起的
-    日收益等权平均 → 复合 → 年化。修订证据（2026-11-17 用户授权"选最合适的方案"）：
-    六人支付宝复测——含债全历史 MAE **1.41pp**（八种口径最好）vs 非债 2.5pp；
-    过钧/李耀柱偏差主因=债基被剔；货基仍排除。11-14 的非债口径（10样本MAE0.60）
-    未通过11-17复测，作废。产品清单缓存 7 天；净值走 fetch_nav（20h 缓存）；
-    结果缓存 7 天（`mgrann_v2_{id}`，v1=非债口径作废）；缺净值/解析失败的产品跳过；
-    任一产品都没有 → None（调用方按"非双十/不显示"处理）。"""
-    ck = f"mgrann_v2_{manager_id}"
+    口径：该经理的**权益类产品**（剔除债券型/偏债混合；含已离任、含各份额；货基仍排除），
+    各自上任日起的日收益等权平均 → 复合 → 年化。
+
+    **为什么剔债**（2026-11-18 张清华案例，用户定模块定位）：偏股雷达评的是"把握市场
+    投资主动权益的能力"——债券只是不看好股市时的避险工具，不应作为主要持仓计入能力。
+    张清华48只产品一半偏债：含债口径把其近5年回撤从真实45.8%粉饰到28.7%、近5年年化
+    从-2.8%粉饰到+0.9%（支付宝显示11.49%也是含债口径，但那是偏债经理页的展示口径，
+    不是本模块的目标）。**11-17 六人对账结论**（含债 MAE1.41pp 最好）中"等权复合
+    算法"仍成立，"含债纳入"被模块定位取代——对账仅当核对偏债经理页展示时参考。
+
+    产品清单缓存7天；净值 fetch_nav（20h缓存）；结果缓存7天（`mgrann_v3_{id}`，
+    v2=含债口径作废）；剔债后无可用产品 → None（调用方按"非双十/不显示"处理）。"""
+    ck = f"mgrann_v3_{manager_id}"
     if not refresh:
         v = _load_cache(ck, 24 * 7)
         if v is not None:
@@ -549,6 +554,8 @@ def manager_career_ann(manager_id: str, refresh: bool = False) -> float | None:
     prods = _manager_products_spans(manager_id, refresh)
     rets: list[pd.Series] = []
     for p in prods:
+        if _is_bond_like(p.get("code", ""), p.get("name") or ""):
+            continue                            # 2026-11-18 剔债：债券/偏债不计权益能力
         try:
             nav = fetch_nav(p["code"])
         except Exception:

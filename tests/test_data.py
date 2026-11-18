@@ -58,6 +58,40 @@ def test_is_bond_like(monkeypatch):
     assert not D._is_bond_like("999992", "某均衡配置混合")
 
 
+def test_manager_career_ann_excludes_bonds(monkeypatch):
+    """2026-11-18 剔债口径（张清华案例，用户定模块定位）：
+    债券/偏债产品不进复合——权益能力只看权益产品；缓存键 v3（v2=含债口径作废）。"""
+    import pandas as pd
+    spans = [
+        dict(code="999991", name="某增强回报债券",
+             start=pd.Timestamp("2020-01-01"), end=None),
+        dict(code="999992", name="某某均衡配置混合",
+             start=pd.Timestamp("2020-01-01"), end=None),
+    ]
+    monkeypatch.setattr(D, "_fund_types", lambda: {})      # 类型表不覆盖 → 名称兜底
+    monkeypatch.setattr(D, "_manager_products_spans",
+                        lambda mid, refresh=False: spans)
+    monkeypatch.setattr(D, "_load_cache", lambda key, ttl: None)
+
+    def fake_nav(code):
+        n = 500
+        idx = pd.date_range("2020-01-01", periods=n, freq="B")
+        r = 0.0 if code == "999991" else 0.0004      # 债券0% / 权益≈+10.5%年化
+        return pd.DataFrame({"date": idx, "nav": (1 + r) ** pd.Series(range(n)).values})
+
+    monkeypatch.setattr(D, "fetch_nav", fake_nav)
+    saved = []
+    monkeypatch.setattr(D, "_save_cache", lambda key, info: saved.append((key, info)))
+    v = D.manager_career_ann("12345")
+    # 剔债 → ≈权益自身年化(~10.5%)；若含债会被0%产品摊到~5%（11-17 含债口径）
+    assert v is not None and v > 0.09, v
+    assert saved and saved[0][0].startswith("mgrann_v3_"), saved
+    # 全是债产品 → 剔完无产品 → None（非双十/不显示）
+    monkeypatch.setattr(D, "_manager_products_spans",
+                        lambda mid, refresh=False: spans[:1])
+    assert D.manager_career_ann("12345") is None
+
+
 def test_fetch_f10_reads_and_writes_same_v3_key(monkeypatch):
     """回归（2026-10-20 评审处置中发现）：fetch_f10 读端曾留在 v2、写端已在 v3——
     旧 v2 缓存 7 天内直接命中 → 永不重抓、managers 永远解析不出来，

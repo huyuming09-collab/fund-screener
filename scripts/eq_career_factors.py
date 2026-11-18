@@ -99,6 +99,8 @@ def main() -> int:
         rets = []
         num2 = den2 = 0.0
         for p in spans.get(k, []):
+            if D._is_bond_like(p.get("code", ""), p.get("name") or ""):
+                continue          # 2026-11-18 剔债（张清华案例，与引擎同口径）
             s0 = p.get("start")
             e0 = p.get("end") or T
             e0 = min(pd.Timestamp(e0), T)

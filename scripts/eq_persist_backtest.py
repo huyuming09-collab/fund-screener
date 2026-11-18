@@ -79,9 +79,12 @@ def style_at(nav, T, prox_w, mkt_w):
 
 
 def composite_ann_at(spans, T, nav_of):
-    """复合年化@T：产品各自 [start, min(end,T)] 日收益等权复合（口径同 manager_career_ann）。"""
+    """复合年化@T：产品各自 [start, min(end,T)] 日收益等权复合（口径同 manager_career_ann
+    ——2026-11-18 起剔债：债券/偏债产品不计，与引擎同口径）。"""
     rets = []
     for p in spans:
+        if D._is_bond_like(p.get("code", ""), p.get("name") or ""):
+            continue
         s0 = p["start"]
         if s0 is None or s0 > T:
             continue
@@ -289,6 +292,8 @@ def main() -> int:
 
             rets = []
             for p in spans:
+                if D._is_bond_like(p.get("code", ""), p.get("name") or ""):
+                    continue      # 2026-11-18 剔债（与引擎同口径）
                 s0 = p.get("start")
                 e0 = p.get("end") or T
                 try:
@@ -404,10 +409,11 @@ def main() -> int:
         # 考卷标签（产线阈值）
         df["g3s"] = (psm > ES.G3S_PCT).sum(axis=1) >= ES.G3S_MIN_TOP
         df["g4s"] = psm.mean(axis=1) >= ES.G4S_MEAN
-        # G1 现值近似 + G2
+        # G1 现值近似 + G2（G2 已于 2026-11-18 并入经理级比例闸 RATIO_MIN——
+        # 此处保留 -0.05 字面量，仅用于面板 exam/via 稳定性归因的历史语义列）
         df["g1"] = [base_scale.get(ES.base_name(str(name_of.get(c, c))), 0) >= 2.0
                     for c in df.index]
-        df["g2"] = pd.to_numeric(df["r5"], errors="coerce") >= ES.DEEP_LOSS_MIN
+        df["g2"] = pd.to_numeric(df["r5"], errors="coerce") >= -0.05
         df["hard"] = df["g1"] & df["g2"]           # G3仓位不回溯（披露）
         # 同格未来排位（1年，n≥10）
         df["cell"] = list(zip(df["type"], df["bkt"]))

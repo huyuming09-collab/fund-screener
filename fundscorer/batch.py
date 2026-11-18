@@ -126,6 +126,25 @@ def build_universe() -> pd.DataFrame:
         print(f"[分池] {len(unresolved)} 只债券指数久期文本+基准均判不出，临时按长债抓取、"
               f"由近5年实测波动终判（可转债/超长期限指数终判不入池）："
               + "、".join(unresolved[:6]), flush=True)
+    # 2026-11-18 用户拍板：权益类且10季平均股票仓位<30% 的基金 → 归入 fixed_plus 参评
+    # （偏股雷达 G3 闸把它们剔了；行为已近固收+，与其弃之不如让固收+漏斗自己判——
+    #  S6回撤≤10%/S7波动2.5-8% 会自然拦住"25%仓位但回撤大"的。仓位读 G3 的
+    #  10季缓存 pos_*.pkl（周更日引擎刷新）；无仓位数据 → 不入（不放水）。）
+    routed = 0
+    for code, _url, name, ptype, _py in arr:
+        if ptype in EXCLUDED_TYPES or ptype in BOND_TYPES:
+            continue
+        if ptype not in _EQUITY_ROUTE_TYPES:
+            continue
+        avg = _avg_pos10(code)
+        if avg is not None and avg < 30.0:
+            rows.append({"code": code, "name": name, "type_text": ptype,
+                         "pool": "fixed_plus"})
+            routed += 1
+    if routed:
+        print(f"[分池] 权益类仓位<30% 路由入固收+：{routed} 只（G3剔除者改由固收+漏斗判定）",
+              flush=True)
+    df = pd.DataFrame(rows).drop_duplicates("code").reset_index(drop=True)
     df.to_csv(UNIVERSE_PATH, index=False, encoding="utf-8-sig")
     print(f"全集 {len(df)} 只，排除封闭定开 {skipped_closed} 只、排除类型(FOF等) {skipped_excluded} 只"
           f"；分池 " + "、".join(f"{k} {v}" for k, v in df['pool'].value_counts().items()), flush=True)
@@ -142,6 +161,23 @@ def _f10_benchmark(code: str) -> str:
 _CLOSED_END_RE = re.compile(
     r"定开|定期开放|封闭式|封闭运作|\d+\s*年\s*封闭"
 )
+
+# 2026-11-18 路由用权益类型（镜像 eqgate.POOL_TYPES，避免 batch↔eqgate 循环依赖）：
+# 这些类型里10季平均仓位<30%者 → 归入 fixed_plus（G3 剔除者改由固收+漏斗判定）
+_EQUITY_ROUTE_TYPES = ("股票型", "混合型-偏股", "混合型-灵活", "混合型-平衡")
+
+
+def _avg_pos10(code: str) -> float | None:
+    """10季平均股票仓位(%)——读偏股雷达 G3 的 pos_*.pkl 缓存；无数据/解析失败 → None。"""
+    p = data.CACHE_DIR / f"pos_{code}.pkl"
+    if not p.exists():
+        return None
+    try:
+        hist = pd.read_pickle(p)
+        gps = [x.get("gp") for x in hist if x.get("gp") is not None]
+        return float(sum(gps) / len(gps)) if gps else None
+    except Exception:
+        return None
 
 
 def _is_closed_end(name: str) -> bool:

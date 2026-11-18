@@ -619,6 +619,10 @@ def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = N
     num2 = den2 = 0.0
     rets = []
     for p in spans:
+        # 2026-11-18 剔债（张清华案例，用户定模块定位）：债券/偏债产品不计主动权益能力，
+        # c2/c3/c4/r 与 c1（manager_career_ann 同款过滤）保持同一产品口径
+        if D._is_bond_like(p.get("code", ""), p.get("name") or ""):
+            continue
         s0 = p.get("start")
         e0 = p.get("end") or now
         try:
