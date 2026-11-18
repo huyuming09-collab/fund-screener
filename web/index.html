@@ -169,11 +169,13 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
   min-width:0;}   /* 项3：网格项可收缩，nowrap 子项不再撑爆两列（移动端不横滑） */
 .mgr-card:active{box-shadow:0 2px 8px rgba(0,0,0,.08);}
 .mc-top{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap;}
-  /* 2026-11-18 用户报：出现"新"标签时名字被挤到显示不全——允许标签行换行：
-     放得下=单行（原样），放不下=名字独占一行、标签折到下一行右对齐，名字永不截断 */
+  /* 2026-11-18 用户报"新"标挤掉名字（第一版 flex-wrap 无效——名字 flex:1 的
+     basis=0，换行判定里名字占0宽、标签永不触发换行）。改 flex-basis:auto：
+     名字按内容宽参与判定 → 放不下时标签整组折到下一行，名字独占一行永不截断 */
 .mc-name{font-size:15.5px;font-weight:700;color:var(--ink);line-height:1.3;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}
-.mc-tags{display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0;}
+.mc-tags{display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;
+  margin-left:auto;}   /* 折行后标签组贴右，不悬在左边 */
 .mc-org{font-size:11.5px;color:var(--sub);margin-top:4px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .mc-perf{display:flex;gap:12px;margin-top:7px;font-size:12px;
