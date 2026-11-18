@@ -138,45 +138,57 @@ class TestRosterEntry:
         st, _ = ES.roster_update(st, {"张三|某公司": c}, True, TODAY, "2026-11-11")
         assert "张三|某公司" not in st["members"]
 
+    def test_no_entry_when_gate_fails(self):
+        """2026-11-18：经理级比例/规模闸不过 → 不得入场。"""
+        st = _state()
+        c = _cand(gate_ok=False)
+        st, _ = ES.roster_update(st, {"张三|某公司": c}, True, TODAY, "2026-11-11")
+        assert "张三|某公司" not in st["members"]
 
-class TestDoubleWeekProtection:
-    def test_first_fail_stays(self):
+
+class TestGateReview:
+    """2026-11-18 用户拍板：考卷黄牌（首过不出/连续两期）随考卷删除——
+    名单=每期过闸者快照；闸只在 eval_now 判（节奏不变），即时硬条件每次构建都查。"""
+
+    def test_gate_fail_exits_no_yellow_card(self):
+        """比例/规模闸不过 → 复评当期即出，无黄牌缓冲。"""
         m = dict(list="vet", entry="2026-11-01", funds=["000001"], fails=0,
                  last_eval="2026-11-06", name="张三", company="某公司")
         st = _state({"张三|某公司": m})
-        c = _cand(pass_funds=[])                      # 本期考卷没过
+        c = _cand(gate_ok=False)
         st, ch = ES.roster_update(st, {"张三|某公司": c}, True, TODAY, "2026-11-11")
-        mm = st["members"]["张三|某公司"]
-        assert mm in st["members"].values()           # 首过不出
-        assert mm["fails"] == 1
-        assert any("首过不出" in s for s in ch)
+        assert "张三|某公司" not in st["members"]
+        assert st["exits"][-1]["reason"] == "经理闸未过（比例/规模）"
+        assert any("经理闸未过" in s for s in ch)
 
-    def test_second_fail_exits(self):
-        m = dict(list="vet", entry="2026-11-01", funds=["000001"], fails=1,
+    def test_no_pass_funds_exits(self):
+        """基金级 G1/G3 全不过（无过闸基金）→ 当期出。"""
+        m = dict(list="vet", entry="2026-11-01", funds=["000001"], fails=0,
                  last_eval="2026-11-06", name="张三", company="某公司")
         st = _state({"张三|某公司": m})
         st, ch = ES.roster_update(st, {"张三|某公司": _cand(pass_funds=[])},
                                   True, TODAY, "2026-11-11")
         assert "张三|某公司" not in st["members"]
-        assert st["exits"] and st["exits"][-1]["reason"] == "连续两次不过"
-        assert any("连续两次不过" in s for s in ch)
+        assert st["exits"][-1]["reason"] == "无过闸基金（G1/G3）"
 
-    def test_pass_resets_fails(self):
+    def test_gate_pass_keeps_member(self):
+        """过闸 → 留任，fails 归零（字段保留兼容旧档）。"""
         m = dict(list="vet", entry="2026-11-01", funds=["000001"], fails=1,
                  last_eval="2026-11-06", name="张三", company="某公司")
         st = _state({"张三|某公司": m})
         st, _ = ES.roster_update(st, {"张三|某公司": _cand()}, True, TODAY, "2026-11-11")
-        assert st["members"]["张三|某公司"]["fails"] == 0
+        mm = st["members"]["张三|某公司"]
+        assert mm["fails"] == 0 and mm["funds"] == ["000001"]
 
-    def test_eval_skip_keeps_member_and_fails(self):
-        """eval_now=False：不判卷、不入场，但硬条件仍即时执行。"""
-        m = dict(list="vet", entry="2026-11-01", funds=["000001"], fails=1,
+    def test_gate_not_judged_when_eval_skip(self):
+        """eval_now=False：闸不判、不入场，但硬条件仍即时执行。"""
+        m = dict(list="vet", entry="2026-11-01", funds=["000001"], fails=0,
                  last_eval="2026-11-06", name="张三", company="某公司")
         st = _state({"张三|某公司": m}, eval_no=3)
-        st, ch = ES.roster_update(st, {"张三|某公司": _cand(pass_funds=[])},
+        st, ch = ES.roster_update(st, {"张三|某公司": _cand(gate_ok=False)},
                                   False, TODAY, "2026-11-11")
-        assert st["members"]["张三|某公司"]["fails"] == 1   # 未判卷
-        assert st["eval_no"] == 3                          # 期数不涨
+        assert "张三|某公司" in st["members"]            # 未到节奏不判闸
+        assert st["eval_no"] == 3                       # 期数不涨
         assert ch == []
 
 
@@ -240,26 +252,27 @@ class TestGraduation:
         assert m.get("graduated") == TODAY
         assert any("换榜" in s for s in ch)
 
-    def test_graduation_fail_exits(self):
-        """毕业没过老将卷 → 即落榜（§2.4 毕业原文）。"""
+    def test_graduation_gate_fail_exits(self):
+        """2026-11-18：毕业卷随考卷删除——毕业（新→老）时经理闸不过即落榜。"""
         st = _state({"张三|某公司": self._member("new")})
-        c = _cand(channel="A", career=10.5, pass_funds=[])
+        c = _cand(channel="A", career=10.5, gate_ok=False)
         st, _ = ES.roster_update(st, {"张三|某公司": c}, True, TODAY, "2026-11-11")
         assert "张三|某公司" not in st["members"]
-        assert st["exits"][-1]["reason"] == "毕业未过老将卷"
+        assert st["exits"][-1]["reason"] == "经理闸未过（比例/规模）"
 
     def test_demotion_pass_migrates(self):
-        """数据修正 老→新：过新锐卷 → 迁移到新锐榜。"""
+        """数据修正 老→新：仍过闸 → 迁移到新锐榜。"""
         st = _state({"张三|某公司": self._member("vet")})
         c = _cand(channel="B", career=8.0)
         st, _ = ES.roster_update(st, {"张三|某公司": c}, True, TODAY, "2026-11-11")
         assert st["members"]["张三|某公司"]["list"] == "new"
 
-    def test_demotion_fail_exits(self):
+    def test_demotion_no_funds_exits(self):
+        """换榜时无过闸基金（G1/G3 全不过）→ 出。"""
         st = _state({"张三|某公司": self._member("vet")})
         c = _cand(channel="B", career=8.0, pass_funds=[])
         st, _ = ES.roster_update(st, {"张三|某公司": c}, True, TODAY, "2026-11-11")
-        assert st["exits"][-1]["reason"] == "换榜未过新锐卷"
+        assert st["exits"][-1]["reason"] == "无过闸基金（G1/G3）"
 
 
 # ---------------------------------------------------------------- 4. 资格闸
@@ -341,11 +354,14 @@ class TestW3Contract:
                          "F2": 0.15, "F6": 0.14}
 
     def test_dual_system_constants(self):
-        """双体系拍板常量（2026-11-15）：新锐回撤闸55% / 大基金旗100亿；
-        双十加分已于 2026-11-16 删除（仅展示标签，不参与计分）。"""
-        assert ES.NEW_MDD_MAX == 0.55
+        """2026-11-18 闸重构常量：比例闸0.05（8期回测4/4期+3.9pp）/规模闸10亿；
+        被合并的三闸常量（ABS_RET/DEEP_LOSS/NEW_MDD）与双十加分均已删除。"""
+        assert ES.RATIO_MIN == 0.05
+        assert ES.AUM_MIN_YI == 10.0
         assert ES.BIG_SCALE_YI == 100.0
-        assert not hasattr(ES, "DUAL_SCORE_BONUS")
+        for gone in ("ABS_RET_MIN", "DEEP_LOSS_MIN", "NEW_MDD_MAX",
+                     "DUAL_SCORE_BONUS"):
+            assert not hasattr(ES, gone), gone
 
 
 # ---------------------------------------------------------------- 6. 因子与评分
@@ -551,66 +567,49 @@ class TestHoldingsCheck:
             assert ind in ES.IND2BUCKET or ind == "综合", ind
 
 
-# ---------------------------------------------------------------- 10. 双十与年化门槛
-def _cand_env(ret5y=-0.01, exam="G3s", career=12.0, dual=None, key="张三|某公司",
+# ---------------------------------------------------------------- 10. 基金级闸（2026-11-18 重构）
+def _cand_env(ret5y=-0.01, career=12.0, dual=None, key="张三|某公司",
               positions=None, base_scale=None, mdd=None):
     pairs = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
                                career_y=career)])
     qual = pd.DataFrame([dict(mgr="张三", company="某公司", code="000001",
                               career_y=career, channel="A", tenure_y=6.0)])
-    exams = {"000001": exam} if exam else {}
-    ch = "A" if career > 10 else ("B" if career > 6 else "A")
-    fch = pd.Series({"000001": ch})
     f10s = {"000001": {"managers": [{"name": "张三", "start": "2019-01-01"}]}}
     feat = pd.DataFrame({"ret5y": [ret5y], "name": ["优选混合A"],
                          "type": ["混合型-偏股"]},
                         index=pd.Index(["000001"], name="code"))
     if mdd is not None:
-        feat["mdd"] = [mdd]
-    cand = ES.build_candidates(pairs, qual, exams, fch, f10s, {"000001"},
+        feat["mdd"] = [mdd]                      # 已不作闸，仅保证列存在
+    cand = ES.build_candidates(pairs, qual, f10s, {"000001"},
                                feat=feat, dual=dual or {},
                                positions=positions or {},
                                base_scale=base_scale or {})
     return key, cand
 
 
-class TestDualAndGate:
-    def test_dual_still_needs_exam(self):
-        """2026-11-15 拍板①A：双十不再免考卷——没过考卷就不上
-        （严格回测：仅直通组最弱+3.4%、仅考卷组最强+9.5%）。"""
-        key, c = _cand_env(exam=None,
-                           dual={"张三|某公司": dict(dual=True, ann=0.15,
-                                                     code="000001")})
-        assert c[key]["pass_funds"] == []
+class TestFundGates:
+    """2026-11-18 用户拍板重构：考卷/G2/0%门槛/新锐回撤闸删除——
+    pass_funds 只看基金级 G1+G3；经理级比例闸+规模闸由 build() 的 gate_ok 施加。"""
 
-    def test_dual_zero_floor_applies(self):
-        """双十也吃0%门槛：小亏(-3%)即使过考 → 不上；过考+正收益 → 上。"""
-        key, c = _cand_env(ret5y=-0.03, exam="G3s",
-                           dual={"张三|某公司": dict(dual=True, ann=0.15,
-                                                     code="000001")})
-        assert c[key]["pass_funds"] == []
-        key, c = _cand_env(ret5y=0.02, exam="G3s",
-                           dual={"张三|某公司": dict(dual=True, ann=0.15,
-                                                     code="000001")})
-        assert c[key]["pass_funds"] == ["000001"]   # 资格：双十与否同路
-
-    def test_gate_filters_negative(self):
-        key, c = _cand_env(ret5y=-0.01, exam="G3s")   # 非双十
-        assert c[key]["pass_funds"] == []              # 计分基金负收益→不上
-
-    def test_gate_keeps_positive(self):
-        key, c = _cand_env(ret5y=0.02, exam="G3s")
+    def test_no_exam_dependency(self):
+        """考卷删除：pass_funds 不再需要 G3s/G4s 标签（G1+G3 过即可）。"""
+        key, c = _cand_env(ret5y=0.02)
         assert c[key]["pass_funds"] == ["000001"]
 
-    def test_exam_still_required_for_nongate(self):
-        key, c = _cand_env(ret5y=0.02, exam=None)     # 没过考卷
-        assert c[key]["pass_funds"] == []
+    def test_negative_ret5y_not_cut_at_fund_level(self):
+        """0%门槛/G2 已并入经理级比例闸——负收益基金不在基金级被拦
+        （其经理 r<0.05 会在 build() 的 gate_ok 被拦，节奏在复评）。"""
+        key, c = _cand_env(ret5y=-0.03)
+        assert c[key]["pass_funds"] == ["000001"]
 
-    def test_ann_carried_for_display(self):
-        key, c = _cand_env(dual={"张三|某公司": dict(dual=True, ann=0.142,
+    def test_dual_is_display_only(self):
+        """双十仅展示标签：dual 标志与年化带出，不影响 pass_funds。"""
+        key, c = _cand_env(ret5y=-0.03,
+                           dual={"张三|某公司": dict(dual=True, ann=0.15,
                                                      code="000001")})
         assert c[key]["dual"] is True
-        assert c[key]["career_ann"] == pytest.approx(0.142)
+        assert c[key]["career_ann"] == pytest.approx(0.15)
+        assert c[key]["pass_funds"] == ["000001"]   # 双十与否同路
 
 
 # ---------------------------------------------------------------- 11. 从业年化
@@ -746,61 +745,50 @@ class TestMgrDetailReps:
         assert "alloc" in det                         # 项8a：资产配置键存在（离线=None）
 
 
-# ---------------------------------------------------------------- 13. P0 三硬闸
+# ---------------------------------------------------------------- 13. 基金级两闸
 class TestHardGates:
-    """G1 规模 / G2 深亏 / G3 类型感知仓位（2026-11-13 七问排查；对双十同样生效）。"""
+    """G1 规模 / G3 类型感知仓位（2026-11-18 起仅此两闸；
+    G2/0%/新锐回撤已并入经理级比例闸 RATIO_MIN，常量随之删除）。"""
 
     DUAL = {"张三|某公司": dict(dual=True, ann=0.15, code="000001")}
 
     def test_g1_shell_fund_cut_even_if_dual(self):
-        """规模<2亿 → 出局（2026-11-15 起双十与所有人同路过考卷，闸照吃）。"""
-        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
+        """规模<2亿 → 出局（双十与所有人同路）。"""
+        key, c = _cand_env(ret5y=0.10, dual=self.DUAL,
                            base_scale={"优选混合": 1.5})
         assert c[key]["pass_funds"] == []
-        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, dual=self.DUAL,
                            base_scale={"优选混合": 3.0})
         assert c[key]["pass_funds"] == ["000001"]      # ≥2亿放行
-        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, dual=self.DUAL,
                            base_scale={})              # 无规模数据 → fail-open
         assert c[key]["pass_funds"] == ["000001"]
 
-    def test_g2_deep_loss_cut_even_if_dual(self):
-        """深亏出局；2026-11-15 双十同路后考卷路径吃0%门槛（≥0），比 G2(≥-5%) 更严
-        ——任何负收益先被0%门槛拦下，G2 作为纵深保留（fail-open语义不变）。"""
-        key, c = _cand_env(ret5y=-0.06, exam="G3s", dual=self.DUAL)
-        assert c[key]["pass_funds"] == []
-        key, c = _cand_env(ret5y=-0.03, exam="G3s", dual=self.DUAL)
-        assert c[key]["pass_funds"] == []              # 0%门槛拦（含G2边界区间）
-        key, c = _cand_env(ret5y=0.0, exam="G3s", dual=self.DUAL)
-        assert c[key]["pass_funds"] == ["000001"]      # 0%边界放行
+    def test_deleted_return_gates_removed(self):
+        """G2/0%门槛/新锐回撤三闸已删（2026-11-18 并入比例闸）：常量不存在，
+        且负收益/深回撤基金在基金级不再被拦。"""
+        for gone in ("DEEP_LOSS_MIN", "ABS_RET_MIN", "NEW_MDD_MAX"):
+            assert not hasattr(ES, gone), gone
+        key, c = _cand_env(ret5y=-0.06, dual=self.DUAL)
+        assert c[key]["pass_funds"] == ["000001"]      # 负收益基金级放行（r在经理级拦）
+        key, c = _cand_env(ret5y=0.10, career=8.0, mdd=0.60)
+        assert c[key]["pass_funds"] == ["000001"]      # 新锐深回撤基金级放行
 
     def test_g3_position_gate_type_aware(self):
         """偏股型仓位50%线、灵活型30%线；缺数据 fail-open。"""
-        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, dual=self.DUAL,
                            positions={"000001": 45.0})   # 偏股型<50% → 出局
         assert c[key]["pass_funds"] == []
-        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, dual=self.DUAL,
                            positions={"000001": 55.0})   # ≥50% 放行
         assert c[key]["pass_funds"] == ["000001"]
-        key, c = _cand_env(ret5y=0.10, exam="G3s", dual=self.DUAL,
+        key, c = _cand_env(ret5y=0.10, dual=self.DUAL,
                            positions={})                  # 缺数据 → fail-open
         assert c[key]["pass_funds"] == ["000001"]
 
-    def test_new_channel_mdd_gate(self):
-        """拍板③A（2026-11-15）：新锐B通道计分基金5年回撤≤55%；
-        >55%出局；缺数据 fail-open；A通道不设回撤闸（回撤是老将的因子）。"""
-        key, c = _cand_env(ret5y=0.10, exam="G4s", career=8.0, mdd=0.60)
-        assert c[key]["pass_funds"] == []               # 60% > 55% → 出局
-        key, c = _cand_env(ret5y=0.10, exam="G4s", career=8.0, mdd=0.50)
-        assert c[key]["pass_funds"] == ["000001"]       # 放行
-        key, c = _cand_env(ret5y=0.10, exam="G4s", career=8.0)   # 缺列 fail-open
-        assert c[key]["pass_funds"] == ["000001"]
-        key, c = _cand_env(ret5y=0.10, exam="G3s", career=12.0, mdd=0.70)
-        assert c[key]["pass_funds"] == ["000001"]       # A 通道不设
-
-    def test_gates_also_apply_to_nongate_path(self):
-        """非双十路径同样吃三闸（考卷+0%门槛之外）。"""
-        key, c = _cand_env(ret5y=0.10, exam="G3s",
+    def test_gates_apply_regardless_of_dual(self):
+        """闸与双十/考卷无关（壳基金双十也出局）。"""
+        key, c = _cand_env(ret5y=0.10, dual=self.DUAL,
                            base_scale={"优选混合": 1.0})
         assert c[key]["pass_funds"] == []              # 壳基金过考也出局
 

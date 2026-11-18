@@ -5,10 +5,10 @@
 背景：单指标"生涯时间加权年化"（q_career_df）把吴博俊从第2打到第31（稀释了单基金
 归属噪声 ✓），但头部换成郑希/金梓才等、三个验尺落在 #11/#16/#9——单水平指标不构成
 "评分规则"。本脚本把生涯标准做成**四因子**，用8期回测面板做前瞻验证、按证据定权重：
-  C1 生涯时间加权年化（水平；全产品含已离职、按管理时长加权、共管不拆——用户规格）
+  C1 复合年化（水平；全产品含已离职、日收益等权复合→几何年化=引擎 manager_career_ann 同款）
   C2 生涯超额（同窗市场年化扣减 → 消除"生涯窗口年代不同"的不可比）
   C3 生涯年度胜率（复合曲线为正的年份占比 ≥3年才可算；一致性）
-  C4 生涯最大回撤（反向；复合曲线）
+  C4 **窗口内**最大回撤（反向；**老将10年/新锐6年**——2026-11-18 用户定通道窗口）
 验证：与面板 fwd1y/fut_rank 的逐期 Spearman（防未来函数）+ 留出期（前6定/后2验）；
 锚点检查：徐彦/刘旭/周云 在候选规则下的名次（**及格线，不作拟合目标**）。
 输入：data/eq_persist_panel.pkl（8期经理面板）+ 经理页 spans + 净值缓存
@@ -92,10 +92,11 @@ def main() -> int:
     mkt = G._load_close(G.STYLE_MARKET)
     mkt = mkt[mkt.index <= pd.Timestamp(origins[-1])]
 
-    def career_at(k, T: pd.Timestamp):
-        """四因子@T：产品窗 [start, min(end,T)]，≥250天；共管不拆（按用户规格）。"""
+    def career_at(k, T: pd.Timestamp, chan: str = "A"):
+        """四因子@T：产品窗 [start, min(end,T)]，≥250天；共管不拆（按用户规格）。
+        c1=复合年化（引擎同款：日收益等权→几何年化）；
+        c4=窗口内回撤，窗口按通道（2026-11-18 用户定：老将10年/新锐6年）。"""
         rets = []
-        num1 = den1 = 0.0
         num2 = den2 = 0.0
         for p in spans.get(k, []):
             s0 = p.get("start")
@@ -118,27 +119,35 @@ def main() -> int:
             except (ZeroDivisionError, OverflowError):
                 continue
             rets.append(sl.set_index("date")["nav"].pct_change().dropna())
-            num1 += days * ann
-            den1 += days
             m = ES.s_ann(mkt, s0, e0)
             if m is not None and m == m:
                 num2 += days * (ann - m)
                 den2 += days
-        if den1 == 0:
+        if not rets:
             return None
-        c1 = num1 / den1
+        port = pd.concat(rets, axis=1).mean(axis=1, skipna=True).dropna()
+        if len(port) < 500:
+            return None
+        tot_days = (port.index[-1] - port.index[0]).days
+        if tot_days < 365:
+            return None
+        try:
+            c1 = float((1 + port).prod()) ** (365.0 / tot_days) - 1
+        except (OverflowError, ZeroDivisionError):
+            return None
         c2 = (num2 / den2) if den2 > 0 else None
-        # C3/C4：他名下产品（截至T）的日收益等权复合曲线
+        # C3：全历史年度胜率；C4：通道窗口回撤（老将10年/新锐6年）
         c3 = c4 = None
-        if rets:
-            port = pd.concat(rets, axis=1).mean(axis=1, skipna=True).dropna()
-            if len(port) >= 500:
-                curve = (1 + port).cumprod()
-                yr = curve.resample("YE").last().pct_change().dropna()
-                if len(yr) >= 3:
-                    c3 = float((yr > 0).mean())
-                peak = curve.cummax()
-                c4 = float(((peak - curve) / peak).max())
+        curve = (1 + port).cumprod()
+        yr = curve.resample("YE").last().pct_change().dropna()
+        if len(yr) >= 3:
+            c3 = float((yr > 0).mean())
+        wy = 10.0 if chan == "A" else 6.0
+        cut = port.index[-1] - pd.DateOffset(years=wy)
+        seg = curve[curve.index > cut]
+        if len(seg) >= 200:
+            peak = seg.cummax()
+            c4 = float(((peak - seg) / peak).max())
         return dict(c1=c1, c2=c2, c3=c3, c4=c4, n=len(rets))
 
     # 逐 key×origin 计算（nav 缓存内；首跑含补抓）
@@ -150,7 +159,7 @@ def main() -> int:
         if ck in done:
             continue
         done.add(ck)
-        f = career_at(r.key, T)
+        f = career_at(r.key, T, getattr(r, "chan", "A"))
         if f:
             rows.append(dict(key=r.key, origin=r.origin, **f))
     cf = pd.DataFrame(rows)

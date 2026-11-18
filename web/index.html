@@ -1279,15 +1279,17 @@ function mgrBodyHTML(row, det){
   </div>
   <div class="q-note">审计参考：过考经理回撤中位约45%、最深74%——防"只看收益"。</div>`;
 
-  /* 项8b（2026-11-17）：评分口径块——生涯四因子+权重+入场资格（字段 data.js 现成） */
+  /* 项8b（2026-11-17）：评分口径块——生涯四因子+权重+入场资格（字段 data.js 现成）
+     2026-11-18：c4回撤窗口按通道（老将近10年/新锐近6年），标签与口径句同步 */
   const fc = (v, d0) => v == null ? '—' : (v * 100).toFixed(d0) + '%';
+  const c4lab = (row.career || 0) > 10 ? '近10年回撤' : '近6年回撤';
   const ruleHTML = `<div class="md-risk" style="grid-template-columns:repeat(4,1fr)">
     <div class="m"><div class="v">${fc(row.ann_career,1)}</div><div class="l">复合年化 · 0.2</div></div>
     <div class="m"><div class="v">${fc(row.car_c2,1)}</div><div class="l">生涯超额 · 0.2</div></div>
     <div class="m"><div class="v">${fc(row.car_c3,0)}</div><div class="l">年度胜率 · 0.2</div></div>
-    <div class="m"><div class="v">${fc(row.car_c4,0)}</div><div class="l">生涯回撤 · 0.4</div></div>
+    <div class="m"><div class="v">${fc(row.car_c4,0)}</div><div class="l">${c4lab} · 0.4</div></div>
   </div>
-  <div class="q-note">分数 = 上述四因子在同通道（老将/新锐）内的分位加权（0.2/0.2/0.2/0.4，回撤越浅分越高）。入场 = 考卷（近 5 年 ≥3 年进同类前 25%）+ 三硬闸（规模≥5亿 / 经理任职≥5年 / 类型仓位线）；双十仅展示标签、不计分；池内相对评分，不同榜与不同期不可横向比较。</div>`;
+  <div class="q-note">分数 = 上述四因子在同通道（老将/新锐）内的分位加权（0.2/0.2/0.2/0.4，回撤越浅分越高；<b>回撤窗口：老将近10年 / 新锐近6年</b>）。入场 = <b>比例闸</b>（同窗复合年化÷回撤 ≥0.05）+ <b>规模闸</b>（基金≥2亿 · 经理现任>10亿）+ 类型仓位线 + 本人任本基金≥5年；双十仅展示标签、不计分；池内相对评分，不同榜与不同期不可横向比较。</div>`;
 
   return `<div class="md-h">评分口径</div>${ruleHTML}`
     + `<div class="md-h">代表作</div>${repHTML}`

@@ -86,23 +86,27 @@ G3S_PCT = 75.0
 G4S_MEAN = 70.0
 # 净值断档阈值：末值距锚点超过此天数视为"断数据"→ 资格失效即时出（§2.4 L3）
 NAV_STALE_D = 180
-# 双十直通（2026-11-13 用户定）：从业>10年 且 从业年化>10% → 免考卷免绝对门槛
+# 双十（定义）：从业>10年 且 含债复合年化>10% → 仅展示标签（11-15 免考卷取消、11-16 加分删除）
 DUAL_CAREER_MIN_Y = 10.0
 DUAL_ANN_MIN = 0.10
-# 非双十绝对门槛（2026-11-13 用户选"1"）：计分基金5年年化 ≥0
-ABS_RET_MIN = 0.0
-# ---- P0 三硬闸（2026-11-13 七问排查，伪前瞻双起点验证后新增；对双十同样生效）----
+# ---- 基金级闸（2026-11-18 重构后保留）----
 # G1 规模闸：计分基金**基础名合并规模** ≥2 亿元（S5 落地；Tm起点 cut+17.2% vs
 #    kept+32.7%、T0 +1.5% vs +3.0%，池级两起点同向）
 SCALE_MIN_YI = 2.0
-# G2 深亏护栏：计分基金5年年化 ≥-5%（R1 伪前瞻两起点强验证：
-#    T0 cut-8.6% vs kept+1.9%、Tm +1.1% vs +31.5%；比0%线分离度更大）
-DEEP_LOSS_MIN = -0.05
 # G3 类型感知仓位闸：10季平均股票仓位（**百分数**）——股票型/偏股≥50%、灵活/平衡≥30%
 #    （偏股雷达要的是真权益管理者；8%仓位的"灵活"基金是债性产品。合同允许低仓的
 #     灵活/平衡用低阈值防误伤；R4组伪前瞻 Tm +6.7% vs kept+32.9%、T0 同格排位25 vs49）
 POS_MIN_BY_TYPE = {"股票型": 50.0, "混合型-偏股": 50.0,
                    "混合型-灵活": 30.0, "混合型-平衡": 30.0}
+# ---- 经理级两闸（2026-11-18 用户拍板：G2/0%门槛/新锐回撤 三闸合并为比例闸）----
+# 比例闸 r = 窗口复合年化 / 窗口复合最大回撤（窗口按通道：老将10年/新锐6年）。
+#   证据（eq_persist_backtest 8期回测）：T=0.05 过闸更好 4/4期、均值+3.90pp；
+#   r<0.05 组=深回撤(0.54 vs 0.42)零动量(0.00 vs +0.08)烂尾，前瞻+0.25% vs 全池+4.70%。
+#   T≥0.15 反转（高比值=防守型前瞻更差 -1.4~-3.1pp）→ 阈值只取有证据档 0.05。
+#   性质：r≥0.05 ⇒ 复合年化必为正 → G2(-5%)与0%门槛被严格蕴含。
+RATIO_MIN = 0.05
+# 规模闸：经理现任基金资产总规模 >10 亿（2026-11-18 用户拍板；数据缺失 fail-open）
+AUM_MIN_YI = 10.0
 # 小格合并（2026-11-14 七问排查 P1 落地）：A格(type×7桶)样本 < 此值 →
 # 改在（类型×三类）组内取年窗分位，大格不动。
 # eq_cell_merge_eval 双起点判据全过：M1 考卷两期 Jaccard 0.312→0.377、
@@ -112,7 +116,6 @@ CELL_MERGE_N = 150
 #   老将(A通道) = 近1年动量 + 风格超额 + 回撤浅者优 各1/3（IC_fwd +0.143 vs 旧W3 -0.016）
 #   新锐(B通道) = 风格超额 + 近1年动量 各1/2（+0.071 vs 旧 +0.036；加F1稀释→不加）
 #   F6资历/F2/F5/F1 退出评分（证据：F6对老将显著为负）；滚动walk-forward与固定等权均验证
-NEW_MDD_MAX = 0.55          # 拍板③A：新锐计分基金5年回撤闸（>55%不入榜；数据缺fail-open）
 BIG_SCALE_YI = 100.0        # 拍板②A：规模不入分，≥100亿打"大"旗（仅展示）
 # 双十：2026-11-16 用户拍板"加分也删"——仅作展示标签，不参与任何计分（DUAL_SCORE_BONUS 已移除）
 # 生涯四因子权重（2026-11-16 用户拍板上线）：(c1水平, c2超额, c3年度胜率, c4回撤反向)
@@ -593,12 +596,14 @@ def career_dual_flags(pairs: pd.DataFrame, f10s: dict, log) -> dict:
 
 
 # ---------------------------------------------------------------- 生涯四因子（2026-11-16 上线）
-def career_factors_for(key: str, qg, f10s: dict, mkt):
+def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = None):
     """单经理生涯四因子@今天（用户2026-11-15 规格：所有管理过的含已离职、共管不拆）。
 
-    c1 = 等权复合年化（`D.manager_career_ann`，≈支付宝口径，MAE0.60）；
+    c1 = 等权复合年化（`D.manager_career_ann`，≈支付宝口径，2026-11-17 含债修订 MAE1.42pp）；
     c2 = 逐产品 (任职年化−同期市场年化) 按管理天数加权；
-    c3 = 复合曲线年度胜率（≥3年才可算）；c4 = 复合曲线最大回撤。
+    c3 = 复合曲线年度胜率（≥3年才可算，全历史）；
+    c4 = **窗口内**复合最大回撤（2026-11-18 用户定：老将近10年/新锐近6年，
+         window_y 由调用方按通道传入；None=全历史回退）。窗口超过其生涯长度时取全部可得。
     产品窗 [start, min(end, 今天)]，≥250天；任一失败该因子 NaN（装配时中性50分位）。"""
     codes = set(qg["code"].tolist())
     mid = _manager_id_of(key.split("|", 1)[0], codes, f10s)
@@ -648,6 +653,7 @@ def career_factors_for(key: str, qg, f10s: dict, mkt):
                 den2 += days
     c2 = (num2 / den2) if den2 > 0 else float("nan")
     c3 = c4 = float("nan")
+    r = float("nan")
     if rets:
         try:
             port = pd.concat(rets, axis=1).mean(axis=1, skipna=True).dropna()
@@ -656,11 +662,27 @@ def career_factors_for(key: str, qg, f10s: dict, mkt):
                 yr = curve.resample("YE").last().pct_change().dropna()
                 if len(yr) >= 3:
                     c3 = float((yr > 0).mean())
-                peak = curve.cummax()
-                c4 = float(((peak - curve) / peak).max())
+                # c4：通道窗口（老将10年/新锐6年）；数据不足200点→NaN
+                seg = curve
+                if window_y:
+                    cut = port.index[-1] - pd.DateOffset(years=window_y)
+                    seg = curve[curve.index > cut]
+                if len(seg) >= 200:
+                    peak = seg.cummax()
+                    c4 = float(((peak - seg) / peak).max())
+                    # 比例闸 r（2026-11-18 用户定；回测4/4期+3.9pp，T=0.05）
+                    # = 同窗几何年化 / 同窗回撤（回撤0.05%下限防除零；负年化→负比自然淘汰）
+                    try:
+                        yrs_w = (seg.index[-1] - seg.index[0]).days / 365.0
+                        ann_w = (float(seg.iloc[-1] / seg.iloc[0]) ** (1.0 / yrs_w) - 1
+                                 if yrs_w >= 1 else float("nan"))
+                    except (ZeroDivisionError, OverflowError, ValueError, IndexError):
+                        ann_w = float("nan")
+                    if ann_w == ann_w:
+                        r = ann_w / (c4 if c4 > 0.0005 else 0.0005)
         except Exception:
             pass
-    return dict(c1=c1, c2=c2, c3=c3, c4=c4)
+    return dict(c1=c1, c2=c2, c3=c3, c4=c4, r=r)
 
 
 def career_weighted_scores(facts: dict, chan_of: dict) -> dict:
@@ -1070,11 +1092,13 @@ def roster_update(state: dict, cand: dict, eval_now: bool,
     """L3 复评状态机（纯函数，可单测）。
 
     cand = {key: {name, company, career, channel, qual_funds, pass_funds,
-                  data_complete, has_pairs}}
-      · 资格失效（离职/整组数据不全且无入围）→ 每次构建即时出，不受双周保护
-      · 考卷只在 eval_now（周节奏 + 净值有更新）时判：首过不出，连续两次不过才出
-      · 换榜（毕业 新→老 / 数据修正 老→新）当期即考目标榜卷：过则迁移（榜龄保留），
-        不过落榜（§2.4 毕业原文）
+                  gate_ok, data_complete, has_pairs}}
+      · 资格失效（离职/整组数据不全且无入围）→ 每次构建即时出，不受节奏保护
+      · **2026-11-18 用户拍板：考卷删除**——资格 = pass_funds（基金级 G1+G3）
+        ∧ gate_ok（经理级比例闸 r≥RATIO_MIN + 规模>AUM_MIN_YI）；复评时点判，
+        换榜（毕业 新→老）只看通道（career>10），不过目标闸即出（榜龄保留的
+        "毕业卷"随考卷一并删除）；首过不出/连续两期黄牌（考卷衍生）一并删除，
+        名单=每期过闸者快照（与 2026-11-13 禁迟滞拍板一致）。
     """
     members = state.setdefault("members", {})
     exits = state.setdefault("exits", [])
@@ -1103,7 +1127,7 @@ def roster_update(state: dict, cand: dict, eval_now: bool,
     if not eval_now:
         return state, changes
 
-    # 考卷复评 + 换榜
+    # 闸复评 + 换榜（2026-11-18：考卷删除；比例/规模两闸不过即出，无黄牌缓冲）
     for key in list(members):
         c = cand.get(key)
         m = members[key]
@@ -1112,33 +1136,30 @@ def roster_update(state: dict, cand: dict, eval_now: bool,
         if not c["qual_funds"]:
             continue                              # 数据不全冻结，留待下期
         target = "vet" if c["channel"] == "A" else "new"
-        passed = bool(c["pass_funds"])
-        if passed:
-            if m.get("list") != target:
-                changes.append(f"换榜 {key}: {m.get('list')}→{target}")
-                if target == "vet":
-                    m["graduated"] = today        # 毕业标记（榜龄保留=换榜非出榜）
-            m["list"] = target
-            m["funds"] = list(c["pass_funds"])
-            m["fails"] = 0
-        else:
-            if m.get("list") != target:
-                _exit(key, "毕业未过老将卷" if target == "vet" else "换榜未过新锐卷")
-                continue
-            m["fails"] = m.get("fails", 0) + 1
-            if m["fails"] >= 2:
-                _exit(key, "连续两次不过")         # 双周确认
-                continue
-            changes.append(f"首过不出 {key}（连续不过 {m['fails']}）")
+        if not c.get("gate_ok", True):
+            _exit(key, "经理闸未过（比例/规模）")
+            continue
+        if not c["pass_funds"]:
+            _exit(key, "无过闸基金（G1/G3）")
+            continue
+        if m.get("list") != target:
+            changes.append(f"换榜 {key}: {m.get('list')}→{target}")
+            if target == "vet":
+                m["graduated"] = today            # 毕业标记（榜龄保留=换榜非出榜）
+        m["list"] = target
+        m["funds"] = list(c["pass_funds"])
+        m["fails"] = 0
         m["last_eval"] = today
         m["name"] = c["name"]
         m["company"] = c["company"]
 
-    # 新候选入场
+    # 新候选入场（2026-11-18：过闸即入，无考卷）
     for key, c in cand.items():
         if key in members or not c["pass_funds"]:
             continue
         if c["channel"] not in ("A", "B"):
+            continue
+        if not c.get("gate_ok", True):
             continue
         members[key] = dict(list="vet" if c["channel"] == "A" else "new",
                             entry=today, funds=list(c["pass_funds"]),
@@ -1171,26 +1192,23 @@ def save_roster(state: dict) -> None:
 
 
 # ---------------------------------------------------------------- 6. 候选
-def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
-                     fch: pd.Series, f10s: dict, nav_ok: set,
+def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame,
+                     f10s: dict, nav_ok: set,
                      feat: pd.DataFrame | None = None,
                      dual: dict | None = None,
                      positions: dict | None = None,
                      base_scale: dict | None = None) -> dict:
-    """{mgr|company: {...}}——通道按本人从业；过考基金=本人入围基金里过本人卷的。
+    """{mgr|company: {...}}——通道按本人从业；pass_funds = 本人入围基金里过基金级闸的。
 
-    B 卷还要求**基金通道=B**（验证脚本同口径：与资深共管的基金算资深的卷，
-    新锐不能借它入新锐榜）。data_complete：本人所有在管基金都有可用 F10
-    （否则"资格失效 vs 数据不全"分不清 → 冻结不判）。
+    data_complete：本人所有在管基金都有可用 F10（否则"资格失效 vs 数据不全"分不清 → 冻结不判）。
 
-    2026-11-13 规则（用户拍板 + 七问排查 P0 三硬闸）：
-      · **双十直通**：dual[key]=True（从业>10年且从业年化>10%）→ 免考卷免0%门槛；
-      · **绝对门槛**：非双十过考基金须5年年化 ≥ABS_RET_MIN（先滤后取）；
-      · **G1 规模闸**：基础名合并规模 <SCALE_MIN_YI → 出局（对双十同样生效）；
-      · **G2 深亏护栏**：计分基金5年年化 <DEEP_LOSS_MIN → 出局（含双十；
-        伪前瞻两起点验证 cut 组未来显著更差）；
-      · **G3 类型感知仓位**：10季平均仓位 <类型阈值 → 出局；
-      三闸数据缺失一律 fail-open（跳过该闸不冤枉）。
+    2026-11-18 用户拍板重构（本次评审计划）：
+      · **考卷删除**（G3s/G4s 不再卡资格——同格=名字关键词分桶不准，用户批评成立；
+        exam_flags 仍计算，仅供展示/回核）；
+      · **G2/0%门槛/新锐回撤闸合并为经理级比例闸** r≥RATIO_MIN（在 build() 以
+        gate_ok 施加，证据与阈值见 RATIO_MIN 注释）；
+      · 新增经理级**规模闸** aum>AUM_MIN_YI（同在 build() gate_ok）；
+      · 基金级保留 **G1 规模 + G3 仓位**（缺数据 fail-open 不冤枉）。
     """
     dual = dual or {}
     positions = positions or {}
@@ -1219,46 +1237,20 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
             if cur is None or cy > cur:
                 cand[key]["career"] = float(cy)
 
-    def _r5(code):
-        if feat is None or code not in feat.index:
-            return None
-        v = feat.at[code, "ret5y"]
-        try:
-            v = float(v)
-        except (TypeError, ValueError):
-            return None
-        return None if np.isnan(v) else v
-
     def _hard_ok(code):
-        """G1 规模 / G2 深亏 / G3 仓位三硬闸（2026-11-13 P0）。
+        """G1 规模 / G3 仓位两闸（2026-11-18 起仅此两闸；G2 已并入经理级比例闸）。
         数据缺失 → 跳过该闸（fail-open，不因数据空洞冤枉人）。"""
         if feat is None or code not in feat.index:
             return False
         sc = base_scale.get(base_name(str(feat.at[code, "name"])))
         if sc is not None and 0 < sc < SCALE_MIN_YI:
             return False                                  # G1 壳基金
-        r5 = _r5(code)
-        if r5 is not None and r5 < DEEP_LOSS_MIN:
-            return False                                  # G2 深亏
         pos = positions.get(code)
         if pos is not None:
             need = POS_MIN_BY_TYPE.get(str(feat.at[code, "type"]), 30.0)
             if pos < need:
                 return False                              # G3 低仓位
         return True
-
-    def _mdd_ok(code, channel):
-        """拍板③A（2026-11-15）：新锐 B 通道计分基金 5 年回撤 ≤ NEW_MDD_MAX；
-        A 通道不设（老将体系把回撤当因子）；数据缺失 fail-open 不冤枉。"""
-        if channel != "B" or feat is None or code not in feat.index:
-            return True
-        if "mdd" not in feat.columns:
-            return True
-        try:
-            v = float(feat.at[code, "mdd"])
-        except (TypeError, ValueError):
-            return True
-        return True if np.isnan(v) else v <= NEW_MDD_MAX
 
     for key, c in cand.items():
         c["channel"] = G.channel(c["career"])
@@ -1267,22 +1259,9 @@ def build_candidates(pairs: pd.DataFrame, qual: pd.DataFrame, exams: dict,
         info = dual.get(key) or {}
         c["dual"] = bool(info.get("dual"))
         c["career_ann"] = info.get("ann")
-        # 2026-11-15 拍板①A：双十不再免考卷免0%门槛（严格回测：仅直通组最弱+3.4%、
-        # 仅考卷组最强+9.5%）——所有人同路：考卷 + 0%门槛 + 三硬闸；
-        # 双十降为纯展示标签（2026-11-16 用户拍板：加分也删，不参与计分）。
-        exam_pass = []
-        for r in rows:
-            tag = exams.get(r.code)
-            if not tag:
-                continue
-            if c["channel"] == "A" and "G3s" in tag:
-                exam_pass.append(r.code)
-            elif (c["channel"] == "B" and "G4s" in tag
-                  and fch.get(r.code) == "B"):
-                exam_pass.append(r.code)
-        c["pass_funds"] = [x for x in exam_pass
-                           if (_r5(x) is not None and _r5(x) >= ABS_RET_MIN
-                               and _hard_ok(x) and _mdd_ok(x, c["channel"]))]
+        # 2026-11-18：过闸即评分——pass_funds 只看基金级 G1+G3（考卷/0%/新锐回撤已删，
+        # 经理级比例闸+规模闸由 build() 的 gate_ok 施加在入场与复评上）
+        c["pass_funds"] = [r.code for r in rows if _hard_ok(r.code)]
         codes = pf.get(key, [])
         c["data_complete"] = (bool(codes)
                               and all(_f10_ok(f10s.get(x)) for x in codes)
@@ -1605,7 +1584,6 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     qual = qualify_pairs(pairs, feat, f10s, o)
     qset = set(qual["code"]) if not qual.empty else set()
     exams = exam_flags(feat)
-    fch = fund_channels(pairs)
     log(f"[4/6] 入围 pair {len(qual)} / 入围基金 {len(qset)}")
 
     # 因子 + W3 分
@@ -1617,7 +1595,8 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         sc = pd.to_numeric(fdf["score"], errors="coerce")
         log(f"[5/6] 因子可算 {len(fdf)} 只，均分 {sc.mean():.1f}")
 
-    # 候选 + 名单状态机（双十直通 +0%门槛 + G1/G2/G3 三硬闸在 build_candidates 内）
+    # 候选 + 名单状态机（2026-11-18：考卷删除——过闸即评分；基金级 G1+G3 在
+    # build_candidates，经理级比例闸+规模闸在下方 gate_ok；状态机只留即时出+闸复评）
     # 基础名合并规模（G1 与展示同源）：f10 全份额按 base_name 求和
     name_of = dict(zip(pool["code"], pool["name"]))
     base_scale: dict = {}
@@ -1632,15 +1611,10 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
             s = 0.0
         base_scale[b] = base_scale.get(b, 0.0) + s
         base_n[b] = base_n.get(b, 0) + 1
-    # 仓位（G3）：只抓需要判定的基金——过考基金 ∪ 双十候选的入围基金
-    dual_keys = {k for k, v in dual.items() if v.get("dual")}
-    need_pos = {c for c in qset if exams.get(c)}
-    if not qual.empty:
-        for r in qual.itertuples(index=False):
-            if f"{r.mgr}|{r.company}" in dual_keys:
-                need_pos.add(r.code)
+    # 仓位（G3）：全部入围基金都要判（考卷已删，不再只抓过考∪双十；缓存外缺数据 fail-open）
+    need_pos = set(qset)
     positions = _positions(sorted(need_pos), refresh, workers, log)
-    cand = build_candidates(pairs, qual, exams, fch, f10s, navres["ok"],
+    cand = build_candidates(pairs, qual, f10s, navres["ok"],
                             feat=feat, dual=dual,
                             positions=positions, base_scale=base_scale)
     today = str(pd.Timestamp.today().date())
@@ -1650,6 +1624,65 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     eval_now = (not last_eval) or (
         str(state.get("last_asof") or "") != asof_s
         and (pd.Timestamp.today() - pd.Timestamp(last_eval)).days >= 6)
+    qual_by_key: dict = {}
+    if not qual.empty:
+        for k, g in qual.groupby(["mgr", "company"]):
+            qual_by_key[f"{k[0]}|{k[1]}"] = g
+
+    # ---- 生涯四因子评分（2026-11-16 上线；2026-11-18 前移到名单复评之前——比例闸要用 r）----
+    # 全候选（A/B 通道）并行：c1=复合年化(≈支付宝) c2=超额时间加权 c3=年度胜率
+    # c4=通道窗口回撤(老将10年/新锐6年) r=同窗年化/回撤(比例闸)。
+    # 权重 CAREER_W=(0.2/0.2/0.2/0.4)，通道内分位；近期三因子(mom1/F3/mdd)降为展示列。
+    t_car = time.time()
+    mkt_c = G._load_close(G.STYLE_MARKET)
+    cand_keys = [k for k, c in cand.items() if c.get("channel") in ("A", "B")]
+
+    def _cf(k):
+        qg = qual_by_key.get(k)
+        if qg is None:
+            return k, None
+        # 2026-11-18 用户定：c4/比例闸窗口按通道——老将10年 / 新锐6年
+        wy = 10.0 if cand[k].get("channel") == "A" else 6.0
+        try:
+            return k, career_factors_for(k, qg, f10s, mkt_c, window_y=wy)
+        except Exception:
+            return k, None
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        facts = dict(ex.map(_cf, cand_keys))
+    facts = {k: v for k, v in facts.items() if v}
+    car_scores = career_weighted_scores(
+        facts, {k: cand[k]["channel"] for k in facts})
+    log(f"      生涯四因子：可算 {len(facts)}/{len(cand_keys)}"
+        f"（复合口径，权重 {CAREER_W}），耗时 {time.time() - t_car:.0f}s")
+
+    # ---- 经理级两闸（2026-11-18 用户拍板）：比例闸 r≥RATIO_MIN + 规模>AUM_MIN_YI ----
+    # 证据见 RATIO_MIN 注释（8期回测 T=0.05 过闸更好4/4期+3.90pp；T≥0.15反转）；
+    # 两闸数据缺失一律 fail-open（不冤枉），复评节奏由 roster_update 管。
+    n_rcut = n_acut = n_na = 0
+    for k, c in cand.items():
+        if c.get("channel") not in ("A", "B"):
+            continue
+        r = (facts.get(k) or {}).get("r")
+        r_ok = True
+        if r is None or r != r:
+            n_na += 1
+        elif r < RATIO_MIN:
+            r_ok = False
+            n_rcut += 1
+        try:
+            av = float(str(aum_map.get((c["name"], c["company"]))).replace(",", ""))
+        except (TypeError, ValueError):
+            av = None
+        aum_ok = True
+        if av is not None and av <= AUM_MIN_YI:
+            aum_ok = False
+            n_acut += 1
+        c["ratio"] = (r if r is not None and r == r else None)
+        c["aum"] = av
+        c["gate_ok"] = r_ok and aum_ok
+    log(f"      经理两闸：比例闸拦 {n_rcut}（r缺失放行 {n_na}）| 规模闸拦 {n_acut}")
+
     state, changes = roster_update(state, cand, eval_now, today, asof)
     save_roster(state)
     n_v = sum(1 for m in state["members"].values() if m["list"] == "vet")
@@ -1674,11 +1707,6 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                     pw - weekly_ex["mkt"].reindex(pw.index)).dropna()
     except Exception as e:
         log(f"      [warn] 风格周频序列不可用（{e}）→ 明细 d 块降级")
-
-    qual_by_key: dict = {}
-    if not qual.empty:
-        for k, g in qual.groupby(["mgr", "company"]):
-            qual_by_key[f"{k[0]}|{k[1]}"] = g
 
     # 从业年化补全（2026-11-14 等权组合口径，显示用）：双十集合只算了从业>10 年者，
     # 在榜其余成员的卡片也要显示从业年化 → 补算（经理页/净值均带缓存，8线程）
@@ -1707,30 +1735,6 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         if qg is not None:
             member_codes.update(qg["code"].tolist())
     inst_map = _inst_ratios(sorted(member_codes), refresh, workers, log)
-
-    # ---- 生涯四因子评分（2026-11-16 用户拍板上线；替代"计分基金分MAX"）
-    # 全候选（A/B 通道）并行：c1=复合年化(≈支付宝) c2=超额时间加权 c3=年度胜率 c4=回撤反向
-    # 权重 CAREER_W=(0.2/0.2/0.2/0.4)，通道内分位；近期三因子(mom1/F3/mdd)降为展示列。
-    t_car = time.time()
-    mkt_c = G._load_close(G.STYLE_MARKET)
-    cand_keys = [k for k, c in cand.items() if c.get("channel") in ("A", "B")]
-
-    def _cf(k):
-        qg = qual_by_key.get(k)
-        if qg is None:
-            return k, None
-        try:
-            return k, career_factors_for(k, qg, f10s, mkt_c)
-        except Exception:
-            return k, None
-
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        facts = dict(ex.map(_cf, cand_keys))
-    facts = {k: v for k, v in facts.items() if v}
-    car_scores = career_weighted_scores(
-        facts, {k: cand[k]["channel"] for k in facts})
-    log(f"      生涯四因子：可算 {len(facts)}/{len(cand_keys)} 人"
-        f"（复合口径，权重 {CAREER_W}），耗时 {time.time() - t_car:.0f}s")
 
     def _basis_of(key, c):
         """计分基准 = 在榜基金（roster 记录）∩可算分，回落入围基金——与分数同源。"""

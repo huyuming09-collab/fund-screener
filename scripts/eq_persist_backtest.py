@@ -243,6 +243,7 @@ def main() -> int:
 
     # 双十@T 懒计算（经理页+产品nav首跑联网，之后缓存）
     _dual_cache: dict = {}
+    _ratio_cache: dict = {}
 
     def dual_at(k, T, frame_codes):
         ck = (k, T)
@@ -269,6 +270,75 @@ def main() -> int:
             return D.fetch_nav(c)
         except Exception:
             return None
+
+    def ratio_at(k, T, frame_codes, car_t):
+        """比例闸回测指标@T（2026-11-18 用户定：窗口按当期从业 walk-forward——
+        当期>10年→10年窗，否则6年窗；附5y与全历史两对照窗）。
+        r = 窗口复合年化 / 窗口复合最大回撤（负年化→负比自然淘汰；回撤0.05%下限防除零）。"""
+        ck = ("ratio", k, T)
+        if ck in _ratio_cache:
+            return _ratio_cache[ck]
+        out = None
+        mid = ES._manager_id_of(k.split("|", 1)[0], frame_codes, f10_all)
+        if mid:
+            spans = D._manager_products_spans(mid) or []
+
+            def _nav_of(c):
+                v = ES._read_nav_pickle(c)
+                return v if v is not None and not v.empty else _fetch_nav_safe(c)
+
+            rets = []
+            for p in spans:
+                s0 = p.get("start")
+                e0 = p.get("end") or T
+                try:
+                    s0 = pd.Timestamp(s0) if s0 is not None else None
+                    e0 = min(pd.Timestamp(e0), T)
+                except (ValueError, TypeError):
+                    continue
+                if s0 is None or e0 <= s0:
+                    continue
+                nav = _nav_of(p.get("code"))
+                if nav is None or nav.empty:
+                    continue
+                s = nav[(nav["date"] >= s0) & (nav["date"] <= e0)]
+                if len(s) < 250:
+                    continue
+                r = s.set_index("date")["nav"].pct_change().dropna()
+                if len(r) >= 250:
+                    rets.append(r)
+            if rets:
+                port = pd.concat(rets, axis=1).mean(axis=1, skipna=True).dropna()
+
+                def _ratio(seg):
+                    if len(seg) < 200:
+                        return None
+                    yrs = (seg.index[-1] - seg.index[0]).days / 365.0
+                    if yrs < 1:
+                        return None
+                    try:
+                        ann = float((1 + seg).prod()) ** (1.0 / yrs) - 1
+                    except (OverflowError, ZeroDivisionError):
+                        return None
+                    if ann != ann:
+                        return None
+                    curve = (1 + seg).cumprod()
+                    pk = curve.cummax()
+                    mdd = float(((pk - curve) / pk).max())
+                    if mdd <= 0.0005:
+                        return (ann / 0.0005) if ann > 0 else None
+                    return ann / mdd
+
+                if len(port) >= 250:
+                    wy = (10.0 if (car_t == car_t and
+                                   car_t > ES.DUAL_CAREER_MIN_Y) else 6.0)
+                    cut_c = port.index[-1] - pd.DateOffset(years=wy)
+                    cut_5 = port.index[-1] - pd.DateOffset(years=5)
+                    out = dict(chan=_ratio(port[port.index > cut_c]),
+                               w5=_ratio(port[port.index > cut_5]),
+                               full=_ratio(port))
+        _ratio_cache[ck] = out
+        return out
 
     # ---------------- 逐期：经理层上榜集 ----------------
     panel_rows = []          # 每期每经理一行
@@ -361,6 +431,7 @@ def main() -> int:
             chan = "A" if car_t > ES.DUAL_CAREER_MIN_Y else "B"
             score = float(pd.to_numeric(sub["W3"], errors="coerce").mean())
             dual = dual_at(k, T, set(fs)) if chan == "A" else False
+            rat = ratio_at(k, T, set(fs), car_t)
             hard = sub[sub["hard"]]
             if chan == "A":
                 exam_pass = bool(hard[hard["g3s"]].shape[0]) or dual
@@ -401,6 +472,10 @@ def main() -> int:
                 mdd=_worst("mdd"), vol=_mean("vol"),
                 mom1=_mean("mom1"), mom2=_mean("mom2"),
                 scale=(float(np.mean(scales)) if scales else np.nan),
+                # 比例闸回测（2026-11-18）：r=窗口复合年化/回撤；chan=通道窗(10/6)，另附5y/full对照
+                ratio=(rat or {}).get("chan"),
+                ratio_w5=(rat or {}).get("w5"),
+                ratio_full=(rat or {}).get("full"),
                 eligible=True))
         n_on = sum(1 for r in panel_rows if r["origin"] == str(T.date()) and r["on"])
         n_el = sum(1 for r in panel_rows if r["origin"] == str(T.date()))
@@ -494,6 +569,71 @@ def main() -> int:
         print(f"  {name:<11} n={len(f):>4} fwd1y均值 {np.mean(f)*100:+.1f}%"
               f" | 同格排位均值 {np.mean(r):.1f}" if r else
               f"  {name:<11} n={len(f):>4} fwd1y均值 {np.mean(f)*100:+.1f}%")
+
+    # ---------------- 比例闸回测（2026-11-18 用户定：r=窗口复合年化/回撤，定T） ----------------
+    print("\n================ 比例闸 r 回测 ================")
+    rp = panel.dropna(subset=["ratio"]).copy()
+    print(f"ratio 可算 {len(rp)}/{len(panel)} 行")
+    for ch, lab in (("A", "老将"), ("B", "新锐")):
+        sub = rp[rp["chan"] == ch]
+        for col in ("ratio", "ratio_w5", "ratio_full"):
+            rr_f, rr_r, ns = [], [], []
+            for ts in origins_s:
+                d = sub[sub["origin"] == ts]
+                ok = d[col].notna() & d["fwd1y"].notna() & d["fut_rank"].notna()
+                d2 = d[ok]
+                if len(d2) < 25:
+                    continue
+                ns.append(ts)
+                rr_f.append(spearman(d2[col], d2["fwd1y"]))
+                rr_r.append(spearman(d2[col], d2["fut_rank"]))
+            if not ns:
+                continue
+            mf, mr = np.nanmean(rr_f), np.nanmean(rr_r)
+            cons = np.mean([np.sign(x) == np.sign(mf) for x in rr_f if x == x]) \
+                if mf == mf else np.nan
+            print(f"  {lab} {col:<11} IC_fwd {mf:+.3f} | IC_rank {mr:+.3f} "
+                  f"| 一致 {cons:.0%} | 期 {len(ns)}")
+    print("\n-- T 扫描（通道窗 r）：过闸 vs 被拦 的前瞻1年绝对收益 --")
+    for T in (0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50):
+        pass_f, fail_f, n_p, n_f = [], [], 0, 0
+        for ts in origins_s:
+            d = rp[rp["origin"] == ts]
+            ok = d["ratio"].notna() & d["fwd1y"].notna()
+            d = d[ok]
+            if len(d) < 25:
+                continue
+            p_, f_ = d[d["ratio"] >= T], d[d["ratio"] < T]
+            pass_f.extend(p_["fwd1y"].tolist())
+            fail_f.extend(f_["fwd1y"].tolist())
+            n_p += len(p_); n_f += len(f_)
+        if pass_f and fail_f:
+            print(f"  T={T:.2f} | 过 n={n_p:>4} fwd {np.mean(pass_f)*100:+.2f}%"
+                  f" | 拦 n={n_f:>4} fwd {np.mean(fail_f)*100:+.2f}%"
+                  f" | 差 {(np.mean(pass_f)-np.mean(fail_f))*100:+.2f}pp")
+    print("\n-- 窗口对照：通道窗(10/6) vs 5y vs 全历史（IC_fwd 均值·过拦差@T=0.15）--")
+    for col, lab in (("ratio", "通道窗10/6"), ("ratio_w5", "5年"),
+                     ("ratio_full", "全历史")):
+        rr = []
+        for ts in origins_s:
+            d = rp[rp["origin"] == ts]
+            ok = d[col].notna() & d["fwd1y"].notna()
+            d2 = d[ok]
+            if len(d2) >= 25:
+                rr.append(spearman(d2[col], d2["fwd1y"]))
+        spreads = []
+        for ts in origins_s:
+            d = rp[rp["origin"] == ts]
+            ok = d[col].notna() & d["fwd1y"].notna()
+            d = d[ok]
+            if len(d) < 25:
+                continue
+            p_, f_ = d[d[col] >= 0.15], d[d[col] < 0.15]
+            if len(p_) and len(f_):
+                spreads.append(p_["fwd1y"].mean() - f_["fwd1y"].mean())
+        ic = np.nanmean(rr) if rr else float("nan")
+        sp = np.nanmean(spreads) if spreads else float("nan")
+        print(f"  {lab:<10} IC_fwd {ic:+.3f} | T=0.15 过拦差 {sp*100:+.2f}pp")
 
     # ---------------- 断言与披露 ----------------
     assert len(metrics) > 50, "可评估经理过少"
