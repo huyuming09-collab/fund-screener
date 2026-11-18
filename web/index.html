@@ -168,10 +168,12 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
   padding:11px 13px;cursor:pointer;transition:box-shadow .15s;
   min-width:0;}   /* 项3：网格项可收缩，nowrap 子项不再撑爆两列（移动端不横滑） */
 .mgr-card:active{box-shadow:0 2px 8px rgba(0,0,0,.08);}
-.mc-top{display:flex;align-items:center;gap:6px;min-width:0;}
+.mc-top{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap;}
+  /* 2026-11-18 用户报：出现"新"标签时名字被挤到显示不全——允许标签行换行：
+     放得下=单行（原样），放不下=名字独占一行、标签折到下一行右对齐，名字永不截断 */
 .mc-name{font-size:15.5px;font-weight:700;color:var(--ink);line-height:1.3;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}
-.mc-tags{display:flex;gap:4px;flex-shrink:0;}
+.mc-tags{display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
 .mc-org{font-size:11.5px;color:var(--sub);margin-top:4px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .mc-perf{display:flex;gap:12px;margin-top:7px;font-size:12px;
