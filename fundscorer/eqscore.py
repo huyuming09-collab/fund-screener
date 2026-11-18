@@ -100,15 +100,18 @@ POS_MIN_BY_TYPE = {"股票型": 50.0, "混合型-偏股": 50.0,
                    "混合型-灵活": 30.0, "混合型-平衡": 30.0}
 # ---- 经理级两闸（2026-11-18 用户拍板：G2/0%门槛/新锐回撤 三闸合并为比例闸）----
 # 比例闸 r = 窗口复合年化 / 窗口复合最大回撤（窗口按通道：老将10年/新锐6年）。
-#   证据（eq_persist_backtest 8期回测，剔债口径 2026-11-18 重验）：
-#   T=0.05 过闸更好 +3.93pp（含债版+3.90、4/4期）；T=0.10 +1.87pp（正向但变薄）；
-#   **T≥0.15 反转**（-0.3~-3.6pp：高比值=防守型前瞻反而差，严闸会挡敏锐进攻型）
-#   → 2026-11-18 用户"过闸人很多，加严格一点"拍板：0.05→0.10（证据支持的最严档；
-#   再严就进反转区，若未来回测支持可再提）。r≥0.10 ⇒ 复合年化必为正，
-#   G2/0%门槛仍被严格蕴含。
-RATIO_MIN = 0.10
+#   证据（eq_persist_backtest 8期回测，剔债口径）：T=0.05 过闸更好 +3.93pp（4/4期）；
+#   T=0.10 +1.87pp（正向但变薄）；**T≥0.15 反转**（-0.3~-3.6pp，高比值=防守型前瞻
+#   反而差）。2026-11-18 用户先收紧到0.10、同日又改回0.05（拍板记录：以最优证据档
+#   为准）；r≥0.05 ⇒ 复合年化必为正 ⇒ G2/0%门槛仍被严格蕴含。
+RATIO_MIN = 0.05
 # 规模闸：经理现任基金资产总规模 >10 亿（2026-11-18 用户拍板；数据缺失 fail-open）
 AUM_MIN_YI = 10.0
+# 回撤修复闸（2026-11-18 用户拍板："回撤修复大于6年的拦下"）：窗口内最大回撤
+# 谷底→回前高 >6年（2190天）拦；未修复者按窗口封顶（老将10年/新锐6年均>6年 →
+# 天然被拦）。数据缺失 fail-open。注：回撤修复作为**评分**因子8期IC≈0（无增量），
+# 仅作闸用（定性规则：6年还没爬出坑 = 不算把握市场）。
+RECOVER_MAX_D = 6 * 365
 # 展示上限（2026-11-18 用户拍板"老将40+新锐25"）：资格=过全部新闸（当期全量进
 # roster 状态与 CSV），页面只展示各通道按分排序的前 N；导出图仍截前20
 VET_SHOW_N = 40
@@ -128,7 +131,13 @@ BIG_SCALE_YI = 100.0        # 拍板②A：规模不入分，≥100亿打"大"�
 # = 0.2/0.2/0.2/0.4——回撤加倍有前瞻IC背书（四因子里 c4r 最高 +0.142）；
 # 权重网格验证三验尺全进前4（周云#1/徐彦#3/刘旭#4，吴博俊压#13）；复合口径 c1≈支付宝
 #（刘旭我们10.93% vs 支付宝11.62%，差0.69pp 在验证 MAE0.60 带内）。
-CAREER_W = {"c1": 0.2, "c2": 0.2, "c3": 0.2, "c4r": 0.4}
+CAREER_W = {"c1": 0.2, "c2": 0.2, "c3": 0.2, "c4r": 0.4}   # 新锐四因子（及基线）
+# 2026-11-18 用户拍板："（剩余Alpha）直接进老将评分"——老将五因子。
+#   权重=旧四因子**原比例缩放**（.18/.18/.18/.36 与 .2/.2/.2/.4 比例完全一致，
+#   保持经11-16网格验证的相对结构）+ alpha0.10；依据（8期同台回测）：alpha 老将侧
+#   唯一正信号（a_med IC+0.049一致83%；融合Δ+0.018 唯一为正）；新锐侧为负 → 不加。
+#   迭代记录：.15×3+.4+.15 版回撤相对权重升至47% → 刘旭被挤到#5（破验尺）→ 回调。
+CAREER_W_VET = {"c1": 0.17, "c2": 0.17, "c3": 0.17, "c4r": 0.34, "alpha": 0.15}
 # 持仓校验降级（2026-11-13）：前10重仓中相关桶合计 <15% → 同格降均衡
 HOLD_MIN = 0.15
 HOLD_TTL_H = 24 * 30
@@ -602,14 +611,18 @@ def career_dual_flags(pairs: pd.DataFrame, f10s: dict, log) -> dict:
 
 
 # ---------------------------------------------------------------- 生涯四因子（2026-11-16 上线）
-def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = None):
-    """单经理生涯四因子@今天（用户2026-11-15 规格：所有管理过的含已离职、共管不拆）。
+def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = None,
+                       weekly: dict | None = None):
+    """单经理生涯因子@今天（用户2026-11-15 规格：所有管理过的含已离职、共管不拆）。
 
     c1 = 等权复合年化（`D.manager_career_ann`，≈支付宝口径，2026-11-17 含债修订 MAE1.42pp）；
     c2 = 逐产品 (任职年化−同期市场年化) 按管理天数加权；
     c3 = 复合曲线年度胜率（≥3年才可算，全历史）；
     c4 = **窗口内**复合最大回撤（2026-11-18 用户定：老将近10年/新锐近6年，
          window_y 由调用方按通道传入；None=全历史回退）。窗口超过其生涯长度时取全部可得。
+    a_med/a_min = **剩余Alpha**（2026-11-18 用户拍板进老将评分）：窗口内滚动回归
+         截距（周频，市场+6风格，2年窗季度步）的中位/最差，年化——weekly 由调用方
+         预建（None → alpha 不算，评分按缺失50中性）。
     产品窗 [start, min(end, 今天)]，≥250天；任一失败该因子 NaN（装配时中性50分位）。"""
     codes = set(qg["code"].tolist())
     mid = _manager_id_of(key.split("|", 1)[0], codes, f10s)
@@ -672,6 +685,8 @@ def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = N
     c2 = (num2 / den2) if den2 > 0 else float("nan")
     c3 = c4 = float("nan")
     r = float("nan")
+    a_med = a_min = None
+    rec = None
     if rets:
         try:
             port = pd.concat(rets, axis=1).mean(axis=1, skipna=True).dropna()
@@ -688,6 +703,19 @@ def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = N
                 if len(seg) >= 200:
                     peak = seg.cummax()
                     c4 = float(((peak - seg) / peak).max())
+                    # 回撤修复天数（2026-11-18 用户拍板进筛选闸：>6年拦下）：
+                    # 窗口内最大回撤谷底→回前高；未修复→窗口封顶（老将10年/新锐6年
+                    # 封顶值均 >6年 → 未修复者天然被拦，语义自洽）
+                    ddv = ((peak - seg) / peak).values
+                    ti = int(np.argmax(ddv))
+                    after = seg.values[ti:]
+                    peak_at = peak.values[ti]
+                    hit = np.where(after[1:] >= peak_at)[0]
+                    if len(hit):
+                        rec = int((seg.index[ti + int(hit[0]) + 1]
+                                   - seg.index[ti]).days)
+                    else:
+                        rec = int((seg.index[-1] - seg.index[0]).days)
                     # 比例闸 r（2026-11-18 用户定；回测4/4期+3.9pp，T=0.05）
                     # = 同窗几何年化 / 同窗回撤（回撤0.05%下限防除零；负年化→负比自然淘汰）
                     try:
@@ -698,23 +726,71 @@ def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = N
                         ann_w = float("nan")
                     if ann_w == ann_w:
                         r = ann_w / (c4 if c4 > 0.0005 else 0.0005)
+                # 剩余Alpha（2026-11-18 用户拍板进老将评分）：窗口滚动回归截距，
+                # 周频复利聚合、市场+6风格、2年窗季度步，年化（与回测脚本同构）
+                if weekly and window_y:
+                    pw = port[port.index > cut]
+                    if len(pw) >= 500:
+                        wser = (1 + pw).resample("W-FRI").prod() - 1
+                        X = pd.concat(
+                            [weekly["m"].rename("m")]
+                            + [s.rename(b) for b, s in weekly["prox"].items()],
+                            axis=1).reindex(wser.index)
+                        dfx = pd.concat([wser.rename("y"), X], axis=1).dropna()
+                        if len(dfx) >= 150:
+                            als = []
+                            for st in range(0, len(dfx) - 104 + 1, 13):
+                                sg2 = dfx.iloc[st:st + 104]
+                                Xm = np.column_stack(
+                                    [sg2.drop(columns=["y"]).values,
+                                     np.ones(len(sg2))])
+                                try:
+                                    coef, *_ = np.linalg.lstsq(
+                                        Xm, sg2["y"].values, rcond=None)
+                                except np.linalg.LinAlgError:
+                                    continue
+                                als.append(coef[-1] * 52)
+                            if len(als) >= 4:
+                                aa = np.array(als)
+                                a_med = float(np.median(aa))
+                                a_min = float(np.min(aa))
         except Exception:
             pass
-    return dict(c1=c1, c2=c2, c3=c3, c4=c4, r=r, aum=round(aum_eq, 2))
+    return dict(c1=c1, c2=c2, c3=c3, c4=c4, r=r, rec=rec,
+                a_med=a_med, a_min=a_min, aum=round(aum_eq, 2))
 
 
 def career_weighted_scores(facts: dict, chan_of: dict) -> dict:
-    """生涯四因子 → 通道内分位加权分（纯函数，供单测）。
+    """生涯因子 → 通道内分位加权分（纯函数，供单测）。
 
-    每因子在**本通道内**对非缺失值取分位（0-100），缺失=50 中性；
-    c4 反向（回撤浅=高分）；加权和 = CAREER_W；全因子缺失的 key 不产出（调用方回落）。"""
+    2026-11-18 用户拍板："（剩余Alpha）直接进老将评分"——
+      老将(A通道) = CAREER_W_VET 五因子（c1/c2/c3 各0.15 + c4r0.4 + alpha0.15）；
+      新锐(B通道) = CAREER_W 四因子不变（alpha 在新锐侧 IC 为负，数据不支持）。
+    alpha = 剩余Alpha（2026-11-18 用户拍板进老将评分）：**滚动区间中位数**的
+    通道分位（主轴主判断"多区间中位数为正"）。最差区间 a_min 保留进 data.js 供
+    展示/回核但**不进分**——数据裁定：双条件取弱分位版会把验尺徐彦从#1压到#8
+    （其最差窗-13.5%被重罚），而 fwd IC 单条件几乎不亏（+0.018 vs +0.020），
+    验尺优先（2026-11-18 用户"具体要看数据分析"授权）。
+    每因子在本通道内对非缺失值取分位（0-100），缺失=50 中性；c4 反向；
+    全因子缺失的 key 不产出（调用方回落）。"""
     out: dict = {}
     for ch in ("A", "B"):
         keys = [k for k in facts
                 if chan_of.get(k) == ch and facts[k] is not None]
         if not keys:
             continue
-        for f, w in CAREER_W.items():
+        wmap = CAREER_W_VET if ch == "A" else CAREER_W
+        for f, w in wmap.items():
+            if f == "alpha":
+                #只取区间中位数分位（双条件版破坏验尺，见 docstring）
+                vals = {k: facts[k].get("a_med") for k in keys}
+                ok = {kk: vv for kk, vv in vals.items()
+                      if vv is not None and vv == vv}
+                pct = pd.Series(ok, dtype=float).rank(pct=True) * 100
+                for k in keys:
+                    out.setdefault(k, 0.0)
+                    out[k] += float(pct.get(k, 50.0)) * w
+                continue
             src = "c4" if f == "c4r" else f
             vals = {k: facts[k].get(src) for k in keys}
             ok = {k: v for k, v in vals.items()
@@ -1649,16 +1725,26 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     # 权重 CAREER_W=(0.2/0.2/0.2/0.4)，通道内分位；近期三因子(mom1/F3/mdd)降为展示列。
     t_car = time.time()
     mkt_c = G._load_close(G.STYLE_MARKET)
+    # 剩余Alpha所需周频序列（2026-11-18）：市场+6风格代理，一次构建全候选共用
+    weekly = None
+    if mkt_c is not None:
+        weekly = {"m": mkt_c.resample("W-FRI").last().pct_change().dropna(),
+                  "prox": {}}
+        for _pn, _bkt in G.STYLE_PROXIES.items():
+            _cl = G._load_close(_pn)
+            if _cl is not None:
+                weekly["prox"][_bkt] = _cl.resample("W-FRI").last().pct_change().dropna()
     cand_keys = [k for k, c in cand.items() if c.get("channel") in ("A", "B")]
 
     def _cf(k):
         qg = qual_by_key.get(k)
         if qg is None:
             return k, None
-        # 2026-11-18 用户定：c4/比例闸窗口按通道——老将10年 / 新锐6年
+        # 2026-11-18 用户定：c4/比例闸/Alpha窗口按通道——老将10年 / 新锐6年
         wy = 10.0 if cand[k].get("channel") == "A" else 6.0
         try:
-            return k, career_factors_for(k, qg, f10s, mkt_c, window_y=wy)
+            return k, career_factors_for(k, qg, f10s, mkt_c, window_y=wy,
+                                         weekly=weekly)
         except Exception:
             return k, None
 
@@ -1670,10 +1756,10 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     log(f"      生涯四因子：可算 {len(facts)}/{len(cand_keys)}"
         f"（复合口径，权重 {CAREER_W}），耗时 {time.time() - t_car:.0f}s")
 
-    # ---- 经理级两闸（2026-11-18 用户拍板）：比例闸 r≥RATIO_MIN + 规模>AUM_MIN_YI ----
-    # 证据见 RATIO_MIN 注释（8期回测 T=0.05 过闸更好4/4期+3.90pp；T≥0.15反转）；
-    # 两闸数据缺失一律 fail-open（不冤枉），复评节奏由 roster_update 管。
-    n_rcut = n_acut = n_na = 0
+    # ---- 经理级三闸（2026-11-18 用户拍板）：比例闸 r≥RATIO_MIN + 规模>AUM_MIN_YI
+    #      + 回撤修复≤RECOVER_MAX_D（>6年拦下）。证据见各常量注释；
+    #      数据缺失一律 fail-open（不冤枉），复评节奏由 roster_update 管。
+    n_rcut = n_acut = n_reccut = n_na = n_recna = 0
     for k, c in cand.items():
         if c.get("channel") not in ("A", "B"):
             continue
@@ -1691,10 +1777,19 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         if av is not None and av <= AUM_MIN_YI:
             aum_ok = False
             n_acut += 1
+        rec = (facts.get(k) or {}).get("rec")
+        rec_ok = True
+        if rec is None or rec != rec:
+            n_recna += 1
+        elif rec > RECOVER_MAX_D:
+            rec_ok = False
+            n_reccut += 1
         c["ratio"] = (r if r is not None and r == r else None)
+        c["rec"] = rec
         c["aum"] = av
-        c["gate_ok"] = r_ok and aum_ok
-    log(f"      经理两闸：比例闸拦 {n_rcut}（r缺失放行 {n_na}）| 规模闸拦 {n_acut}")
+        c["gate_ok"] = r_ok and aum_ok and rec_ok
+    log(f"      经理三闸：比例闸拦 {n_rcut}（r缺失放行 {n_na}）| 规模闸拦 {n_acut}"
+        f" | 修复闸拦 {n_reccut}（缺失放行 {n_recna}）")
 
     state, changes = roster_update(state, cand, eval_now, today, asof)
     save_roster(state)
@@ -1821,7 +1916,7 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
                                    and facts[key].get(f) is not None
                                    and facts[key].get(f) == facts[key].get(f)
                                    else None)
-                      for f in ("c2", "c3", "c4")},
+                       for f in ("c2", "c3", "c4", "a_med", "a_min")},
                    aum=av)
         lst = m.get("list")
         lists[lst if lst in ("vet", "new") else "vet"].append(row)

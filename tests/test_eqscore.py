@@ -354,11 +354,12 @@ class TestW3Contract:
                          "F2": 0.15, "F6": 0.14}
 
     def test_dual_system_constants(self):
-        """2026-11-18 闸重构常量：比例闸0.10（8期回测：0.05档+3.93pp、0.10档+1.87pp、
-        ≥0.15反转——0.10为证据支持的最严档，用户"加严格一点"拍板0.05→0.10）/
-        规模闸10亿；被合并的三闸常量与双十加分均已删除。"""
-        assert ES.RATIO_MIN == 0.10
+        """2026-11-18 闸与权重常量：比例闸回0.05（8期回测最优档+3.93pp、
+        ≥0.15反转）/规模闸10亿/回撤修复闸6年/老将五因子权重；
+        被合并的三闸常量与双十加分均已删除。"""
+        assert ES.RATIO_MIN == 0.05
         assert ES.AUM_MIN_YI == 10.0
+        assert ES.RECOVER_MAX_D == 6 * 365
         assert ES.BIG_SCALE_YI == 100.0
         for gone in ("ABS_RET_MIN", "DEEP_LOSS_MIN", "NEW_MDD_MAX",
                      "DUAL_SCORE_BONUS"):
@@ -796,23 +797,41 @@ class TestHardGates:
 
 # ---------------------------------------------------------------- 14. 生涯四因子评分
 class TestCareerScoring:
-    """生涯四因子（2026-11-16 用户拍板上线）：经理分=通道内分位加权
-    (c1水平0.2/c2超额0.2/c3年度胜率0.2/c4回撤反向0.4)；
-    复合口径 c1≈支付宝（刘旭我们10.93 vs 支付宝11.62）；缺因子=50中性；全缺不产出。"""
+    """生涯因子评分（2026-11-16 上线；2026-11-18 用户拍板"剩余Alpha直接进老将评分"）：
+    老将五因子 CAREER_W_VET（.18/.18/.18/.36=旧四因子原比例 + alpha.10）；
+    新锐四因子 CAREER_W 不变；缺因子=50中性；全缺不产出。"""
 
     def test_weights_constant(self):
         assert ES.CAREER_W == {"c1": 0.2, "c2": 0.2, "c3": 0.2, "c4r": 0.4}
         assert abs(sum(ES.CAREER_W.values()) - 1.0) < 1e-9
+        assert ES.CAREER_W_VET == {"c1": 0.17, "c2": 0.17, "c3": 0.17,
+                                   "c4r": 0.34, "alpha": 0.15}
+        assert abs(sum(ES.CAREER_W_VET.values()) - 1.0) < 1e-9
 
     def test_channel_percentile_weighted(self):
-        """同通道内：四因子全好 > 全差（c4 反向生效）。"""
+        """同通道内：四因子全好 > 全差（c4 反向生效）。
+        老将多alpha项（缺失=50中性×0.15）→ 满分档=92.5而非100。"""
         facts = {"a|c": dict(c1=12.0, c2=8.0, c3=0.8, c4=0.25),
                  "b|c": dict(c1=6.0, c2=3.0, c3=0.5, c4=0.55),
                  "c|c": dict(c1=9.0, c2=5.0, c3=0.65, c4=0.40)}
         chan = {"a|c": "A", "b|c": "A", "c|c": "A"}
         sc = ES.career_weighted_scores(facts, chan)
         assert sc["a|c"] > sc["c|c"] > sc["b|c"]
-        assert sc["a|c"] == 100.0                      # 通道内全因子第一
+        assert sc["a|c"] == 92.5                      # 85(四因子满按原比例) + 7.5(alpha中性)
+
+    def test_alpha_median_scoring(self):
+        """剩余Alpha按滚动区间**中位数**分位进分（2026-11-18 数据裁定：双条件取弱
+        版把验尺徐彦从#1压到#8→弃用；最差区间a_min保留展示不进分）：
+        中位数最高者得分最高，最差区间差但中位数好者不被拖累。"""
+        facts = {"a|c": dict(c1=10.0, c2=8.0, c3=0.8, c4=0.20,
+                             a_med=0.09, a_min=-0.14),
+                 "b|c": dict(c1=9.0, c2=7.0, c3=0.7, c4=0.25,
+                             a_med=0.06, a_min=0.01),
+                 "c|c": dict(c1=8.0, c2=6.0, c3=0.6, c4=0.30,
+                             a_med=-0.01, a_min=-0.01)}
+        sc = ES.career_weighted_scores(facts, {k: "A" for k in facts})
+        # a 中位最高（-14%最差不进分）→ 得分最高
+        assert sc["a|c"] > sc["b|c"] > sc["c|c"]
 
     def test_missing_factor_is_neutral(self):
         """缺的因子按50分位中性，不改变其余因子的排序方向。"""
@@ -820,7 +839,9 @@ class TestCareerScoring:
                  "b|c": dict(c1=5.0, c2=None, c3=float("nan"), c4=0.6)}
         sc = ES.career_weighted_scores(facts, {"a|c": "A", "b|c": "A"})
         assert sc["a|c"] > sc["b|c"]
-        assert sc["a|c"] == 80.0 and sc["b|c"] == 50.0  # 100/50 分位 × (0.2+0.4) + 50×0.4
+        # a: c1满分100×.17=17 + c2/c3缺失50×.17×2=17 + c4r满分100×.34=34
+        #    + alpha缺失中性50×.15=7.5 → 75.5；b 同构=50.0
+        assert sc["a|c"] == 75.5 and sc["b|c"] == 50.0
 
     def test_all_nan_not_scored(self):
         """全因子缺失 → 不产出（调用方回落基金分），不给50混榜。"""
@@ -828,11 +849,11 @@ class TestCareerScoring:
         assert ES.career_weighted_scores(facts, {"a|c": "A"}) == {}
 
     def test_channels_score_independently(self):
-        """通道隔离：单人通道自己是自己通道的100分位（跨通道不可比）。"""
+        """通道隔离：A=五因子（alpha中性+7.5→92.5）、B=四因子满分100（跨通道不可比）。"""
         facts = {"a|c": dict(c1=10.0, c2=1.0, c3=0.9, c4=0.2),
                  "b|c": dict(c1=1.0, c2=10.0, c3=0.1, c4=0.9)}
         sc = ES.career_weighted_scores(facts, {"a|c": "A", "b|c": "B"})
-        assert sc["a|c"] == 100.0 and sc["b|c"] == 100.0
+        assert sc["a|c"] == 92.5 and sc["b|c"] == 100.0
 
 
 # ---------------------------------------------------------------- 15. 资产配置史（项8a）
