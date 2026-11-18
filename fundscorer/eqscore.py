@@ -620,11 +620,19 @@ def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = N
     now = pd.Timestamp.today()
     num2 = den2 = 0.0
     rets = []
+    aum_eq = 0.0
     for p in spans:
         # 2026-11-18 剔债（张清华案例，用户定模块定位）：债券/偏债产品不计主动权益能力，
         # c2/c3/c4/r 与 c1（manager_career_ann 同款过滤）保持同一产品口径
         if D._is_bond_like(p.get("code", ""), p.get("name") or ""):
             continue
+        # 在管非债产品的 f10 规模和（2026-11-18 用户定：管理规模只统计计算从业年化
+        # 的产品——偏债不计；仅池内代码有 f10 缓存，池外权益如 QDII 规模量级小不计）
+        if p.get("end") is None:
+            try:
+                aum_eq += float((f10s.get(p.get("code")) or {}).get("scale_yi") or 0)
+            except (TypeError, ValueError):
+                pass
         s0 = p.get("start")
         e0 = p.get("end") or now
         try:
@@ -692,7 +700,7 @@ def career_factors_for(key: str, qg, f10s: dict, mkt, window_y: float | None = N
                         r = ann_w / (c4 if c4 > 0.0005 else 0.0005)
         except Exception:
             pass
-    return dict(c1=c1, c2=c2, c3=c3, c4=c4, r=r)
+    return dict(c1=c1, c2=c2, c3=c3, c4=c4, r=r, aum=round(aum_eq, 2))
 
 
 def career_weighted_scores(facts: dict, chan_of: dict) -> dict:
@@ -1565,10 +1573,6 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     pool = _pool(refresh)
     em = _mgr_table(refresh)
     pairs = G.career_pairs(em, pool["code"].tolist())
-    # 管理规模（项4卡片，2026-11-17）：经理在管总规模（亿），em 同值重复行取一
-    aum_map = {k: v for k, v in zip(zip(em["姓名"].astype(str),
-                                        em["所属公司"].astype(str)),
-                                    em["现任基金资产总规模"])}
     log(f"[1/6] 池 {len(pool)} 只 / 从业对 {len(pairs)}")
 
     navres = _nav_stats(pool["code"].tolist(), refresh, workers, log)
@@ -1680,10 +1684,9 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         elif r < RATIO_MIN:
             r_ok = False
             n_rcut += 1
-        try:
-            av = float(str(aum_map.get((c["name"], c["company"]))).replace(",", ""))
-        except (TypeError, ValueError):
-            av = None
+        # 规模闸用"在管非债规模"（2026-11-18 用户定：管理规模只统计计算从业年化
+        # 的产品，偏债不计；来源=facts.aum 池内口径）。无 facts → None → fail-open。
+        av = (facts.get(k) or {}).get("aum")
         aum_ok = True
         if av is not None and av <= AUM_MIN_YI:
             aum_ok = False
@@ -1792,13 +1795,9 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
             bucket = display_bucket(feat.at[rep0["code"], "bucket"])
         entry = str(m.get("entry", today))
         ann = c.get("career_ann")
-        # 管理规模（项4，2026-11-17）：em 表现任基金资产总规模（亿，字符串容错）
-        av = aum_map.get((c["name"], c["company"]))
-        try:
-            av = (round(float(str(av).replace(",", "")), 2)
-                  if av not in (None, "", "--") else None)
-        except ValueError:
-            av = None
+        # 管理规模（2026-11-18 用户定）：只统计计算从业年化的产品=在管非债规模（池内口径），
+        # 偏债不计——em 总规模口径作废
+        av = c.get("aum")
         row = dict(key=key, name=c["name"], company=c["company"],
                    career=round(c["career"], 1) if c["career"] else None,
                    tenure=(round(float(qg["tenure_y"].max()), 1)
