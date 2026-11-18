@@ -354,9 +354,10 @@ class TestW3Contract:
                          "F2": 0.15, "F6": 0.14}
 
     def test_dual_system_constants(self):
-        """2026-11-18 闸重构常量：比例闸0.05（8期回测4/4期+3.9pp）/规模闸10亿；
-        被合并的三闸常量（ABS_RET/DEEP_LOSS/NEW_MDD）与双十加分均已删除。"""
-        assert ES.RATIO_MIN == 0.05
+        """2026-11-18 闸重构常量：比例闸0.10（8期回测：0.05档+3.93pp、0.10档+1.87pp、
+        ≥0.15反转——0.10为证据支持的最严档，用户"加严格一点"拍板0.05→0.10）/
+        规模闸10亿；被合并的三闸常量与双十加分均已删除。"""
+        assert ES.RATIO_MIN == 0.10
         assert ES.AUM_MIN_YI == 10.0
         assert ES.BIG_SCALE_YI == 100.0
         for gone in ("ABS_RET_MIN", "DEEP_LOSS_MIN", "NEW_MDD_MAX",

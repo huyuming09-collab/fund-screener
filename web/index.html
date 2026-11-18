@@ -176,6 +176,9 @@ main{padding:12px 12px 30px;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrol
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0;}
 .mc-tags{display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;
   margin-left:auto;}   /* 折行后标签组贴右，不悬在左边 */
+  /* 2026-11-18 用户定：新标签独立一行（不再与名字同行，任何宽度都生效）——
+     flex-basis:100% 使它永远开新行，text-align:right 让芯片贴右 */
+.mc-new{flex:0 0 100%;text-align:right;}
 .mc-org{font-size:11.5px;color:var(--sub);margin-top:4px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .mc-perf{display:flex;gap:12px;margin-top:7px;font-size:12px;
@@ -1140,8 +1143,8 @@ function renderMgrList(cat){
         <span class="mc-tags">
           <span class="rk style ${cat==='mgr_vet'?'vet':'nwx'}">${cat==='mgr_vet'?'老将':'新锐'}</span>
           <span class="rk style ${MGR_BK_CLS[r.bucket]||'b-bal'}">${r.bucket||'均衡'}</span>
-          ${r.is_new?'<span class="rk new">新</span>':''}
         </span>
+        ${r.is_new?'<span class="rk new mc-new">新</span>':''}
       </div>
       <div class="mc-org">${aumTxt(r)}</div>
       <div class="mc-perf">${perf('近五年年化', r.ret5y)}${perf('从业年化', r.ann_career)}</div>
@@ -1293,7 +1296,7 @@ function mgrBodyHTML(row, det){
     <div class="m"><div class="v">${fc(row.car_c3,0)}</div><div class="l">年度胜率 · 0.2</div></div>
     <div class="m"><div class="v">${fc(row.car_c4,0)}</div><div class="l">${c4lab} · 0.4</div></div>
   </div>
-  <div class="q-note">分数 = 上述四因子在同通道（老将/新锐）内的分位加权（0.2/0.2/0.2/0.4，回撤越浅分越高；<b>回撤窗口：老将近10年 / 新锐近6年</b>）。<b>生涯指标（复合年化/超额/回撤）剔除债券与偏债类产品</b>——本榜评主动权益管理能力，债券仅作避险不计（2026-11-18）。入场 = <b>比例闸</b>（同窗复合年化÷回撤 ≥0.05）+ <b>规模闸</b>（基金≥2亿 · 经理现任>10亿）+ 类型仓位线 + 本人任本基金≥5年；双十仅展示标签、不计分；池内相对评分，不同榜与不同期不可横向比较。</div>`;
+  <div class="q-note">分数 = 上述四因子在同通道（老将/新锐）内的分位加权（0.2/0.2/0.2/0.4，回撤越浅分越高；<b>回撤窗口：老将近10年 / 新锐近6年</b>）。<b>生涯指标（复合年化/超额/回撤）剔除债券与偏债类产品</b>——本榜评主动权益管理能力，债券仅作避险不计（2026-11-18）。入场 = <b>比例闸</b>（同窗复合年化÷回撤 ≥0.10）+ <b>规模闸</b>（基金≥2亿 · 经理现任>10亿）+ 类型仓位线 + 本人任本基金≥5年；双十仅展示标签、不计分；池内相对评分，不同榜与不同期不可横向比较。</div>`;
 
   return `<div class="md-h">评分口径</div>${ruleHTML}`
     + `<div class="md-h">代表作</div>${repHTML}`

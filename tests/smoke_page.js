@@ -674,7 +674,12 @@ if (D.mgr && (D.mgr.vet || []).length){
       && html.includes('drawStackedArea')                          /* 项8a：堆叠子图 */
       && html.includes('β 是什么')                                 /* 项8a：折叠说明 */
       && html.includes('评分口径')                                 /* 项8b：评分口径块 */
-      && !html.includes('不许手挑'));                              /* 项5：删开发注记 */
+      && !html.includes('不许手挑')                                /* 项5：删开发注记 */
+      /* 2026-11-18 新标独行 v3：mc-new 在 mc-tags 之外、flex-basis:100% 永远独占一行，
+         名字 flex-basis:auto 参与换行判定（第一版 basis=0 导致换行永不触发的回归防护） */
+      && html.includes('mc-new{flex:0 0 100%')
+      && html.includes('mc-new">新</span>')
+      && html.includes('flex:1 1 auto;min-width:0;}'));
 
   /* 项7：点查交互单元断言——桩 cv 捕获监听器，pointermove 归一 0..1、pointerleave 清准星 */
   (() => {
