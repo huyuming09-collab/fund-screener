@@ -91,6 +91,15 @@ def main() -> int:
 
     mkt = G._load_close(G.STYLE_MARKET)
     mkt = mkt[mkt.index <= pd.Timestamp(origins[-1])]
+    # 四候选因子（2026-11-18 用户提出"看数据融合/替换"）所需的周频序列：
+    # 市场 + 6行业风格代理（与产线风格分类同源；均截断到最晚起点防前视）
+    mkt_w = mkt.resample("W-FRI").last().pct_change().dropna()
+    prox_w = {}
+    for pn, bkt in G.STYLE_PROXIES.items():
+        cl = G._load_close(pname := pn)
+        if cl is not None:
+            cl = cl[cl.index <= pd.Timestamp(origins[-1])]
+            prox_w[bkt] = cl.resample("W-FRI").last().pct_change().dropna()
 
     def career_at(k, T: pd.Timestamp, chan: str = "A"):
         """四因子@T：产品窗 [start, min(end,T)]，≥250天；共管不拆（按用户规格）。
@@ -150,7 +159,65 @@ def main() -> int:
         if len(seg) >= 200:
             peak = seg.cummax()
             c4 = float(((peak - seg) / peak).max())
-        return dict(c1=c1, c2=c2, c3=c3, c4=c4, n=len(rets))
+        # ---- 四候选因子（2026-11-18 用户提出，通道窗口与 c4 一致，同窗无前视）----
+        sortino = ir = rec = a_med = a_min = None
+        port_w = port[port.index > cut]
+        if len(port_w) >= 500 and len(seg) >= 200:
+            # 索提诺 = 年化超额(复合−市场同窗) / 下行半方差；信息比率 = 超额 / 跟踪误差
+            mm = mkt.pct_change().dropna()
+            both = pd.concat([port_w, mm], axis=1, join="inner").dropna()
+            both.columns = ["f", "m"]
+            if len(both) >= 500:
+                yw = (both.index[-1] - both.index[0]).days / 365.0
+                try:
+                    ann_f = float((1 + both["f"]).prod()) ** (1 / yw) - 1
+                    ann_m = float((1 + both["m"]).prod()) ** (1 / yw) - 1
+                    ann_ex = ann_f - ann_m
+                except (OverflowError, ZeroDivisionError, ValueError):
+                    ann_ex = np.nan
+                dn = both["f"][both["f"] < 0]
+                ddev = (float(np.sqrt((dn ** 2).mean())) * np.sqrt(252)
+                        if len(dn) > 50 else np.nan)
+                te = float(both["f"].sub(both["m"]).std()) * np.sqrt(252)
+                if ann_ex == ann_ex:
+                    if ddev == ddev and ddev > 0:
+                        sortino = ann_ex / ddev
+                    if te > 0:
+                        ir = ann_ex / te
+            # 回撤修复时间：窗口内最大回撤谷底→回前高天数；未修复→窗口封顶（排序垫底）
+            ddv = ((seg.cummax() - seg) / seg.cummax()).values
+            ti = int(np.argmax(ddv))
+            after = seg.values[ti:]
+            peak_at = seg.cummax().values[ti]
+            hit = np.where(after[1:] >= peak_at)[0]
+            if len(hit):
+                rec = (seg.index[ti + int(hit[0]) + 1] - seg.index[ti]).days
+            else:
+                rec = (seg.index[-1] - seg.index[0]).days
+            # 主轴：滚动残差Alpha（周频复利聚合，市场+6风格回归，2年窗、季度步）
+            w = (1 + port_w).resample("W-FRI").prod() - 1
+            X = pd.concat([mkt_w.rename("m")]
+                          + [s.rename(b) for b, s in prox_w.items()],
+                          axis=1).reindex(w.index)
+            dfx = pd.concat([w.rename("y"), X], axis=1).dropna()
+            if len(dfx) >= 150:
+                alphas = []
+                for st in range(0, len(dfx) - 104 + 1, 13):
+                    sg2 = dfx.iloc[st:st + 104]
+                    Xm = np.column_stack([sg2.drop(columns=["y"]).values,
+                                          np.ones(len(sg2))])
+                    try:
+                        coef, *_ = np.linalg.lstsq(Xm, sg2["y"].values,
+                                                   rcond=None)
+                    except np.linalg.LinAlgError:
+                        continue
+                    alphas.append(coef[-1] * 52)     # 周截距→年化
+                if len(alphas) >= 4:
+                    a = np.array(alphas)
+                    a_med = float(np.median(a))
+                    a_min = float(np.min(a))
+        return dict(c1=c1, c2=c2, c3=c3, c4=c4, n=len(rets),
+                    sortino=sortino, ir=ir, rec=rec, a_med=a_med, a_min=a_min)
 
     # 逐 key×origin 计算（nav 缓存内；首跑含补抓）
     rows = []
@@ -171,12 +238,13 @@ def main() -> int:
     # ---- IC：逐期 Spearman vs 前瞻（防未来函数）----
     mrg = panel.merge(cf, on=["key", "origin"], how="inner")
     mrg["c4r"] = -mrg["c4"]                      # 回撤反向化（浅=好）
-    use = ["c1", "c2", "c3", "c4r"]
-    print("\n== 生涯四因子 IC（逐期 Spearman 均值 | 符号一致期占比 | 期数）==")
+    use = ["c1", "c2", "c3", "c4r"]              # 评分基线：权重/验尺只用旧四（对照不动）
+    use_ic = use + ["sortino", "ir", "rec", "a_med", "a_min"]   # IC 同台：+四候选
+    print("\n== 因子 IC（现有四 + 四候选；逐期 Spearman 均值 | 符号一致期占比 | 期数）==")
     for ch, lab in (("A", "老将"), ("B", "新锐")):
         sub = mrg[mrg["chan"] == ch]
         print(f"-- {lab} --")
-        for f in use:
+        for f in use_ic:
             rr_f, rr_r, ns = [], [], []
             for o in origins:
                 d = sub[sub["origin"] == o]
@@ -274,6 +342,85 @@ def main() -> int:
             f"{n}#{pos.get(n, '-')}" for n in ANCHORS) +
             f"  （共{len(j)}人；头部: " +
             "、".join(j.head(5)["name"]) + "）")
+
+    # ---- 融合增量（2026-11-18 用户：不预设权重，看数据决定"融谁/换谁"）----
+    print("\n== 融合增量对比：现有四因子 vs 加候选（通道内分位加权 → fwd IC 均值·Δ对基线）==")
+
+    def variant_ic(cols):
+        """cols: [(因子, 方向+1/-1, 权重)] → 通道内分位、逐期 → fwd1y spearman 均值。"""
+        out = {}
+        for ch in ("A", "B"):
+            sub = mrg[mrg["chan"] == ch]
+            ics = []
+            for o in origins:
+                d = sub[sub["origin"] == o]
+                if len(d) < 25:
+                    continue
+                sc = pd.Series(0.0, index=d.index)
+                for c, sg, wt in cols:
+                    fv = pd.to_numeric(d[c], errors="coerce")
+                    if sg < 0:
+                        fv = -fv
+                    sc = sc + fv.rank(pct=True).fillna(0.5) * wt
+                ok = d["fwd1y"].notna()
+                if ok.sum() >= 25:
+                    ics.append(spear(sc[ok], d.loc[ok, "fwd1y"]))
+            out[ch] = float(np.nanmean(ics)) if ics else np.nan
+        return out
+
+    OLD = [("c1", 1, .2), ("c2", 1, .2), ("c3", 1, .2), ("c4r", 1, .4)]
+    variants = [
+        ("现有四因子(CAREER_W)", OLD),
+        ("+索提诺 .2", OLD + [("sortino", 1, .2)]),
+        ("+信息比率 .2", OLD + [("ir", 1, .2)]),
+        ("+修复时间 .2", OLD + [("rec", -1, .2)]),
+        ("+alpha中位 .2", OLD + [("a_med", 1, .2)]),
+        ("+alpha最差 .2", OLD + [("a_min", 1, .2)]),
+        ("新四等权(仅候选)", [("sortino", 1, .25), ("ir", 1, .25),
+                        ("rec", -1, .25), ("a_med", 1, .25)]),
+        ("现有+新四各.1", OLD + [("sortino", 1, .1), ("ir", 1, .1),
+                          ("rec", -1, .1), ("a_med", 1, .1)]),
+    ]
+    base = variant_ic(OLD)
+    for name, cols in variants:
+        v = variant_ic(cols)
+        print(f"  {name:<18} 老将 {v['A']:+.3f} (Δ{v['A']-base['A']:+.3f}) | "
+              f"新锐 {v['B']:+.3f} (Δ{v['B']-base['B']:+.3f})")
+
+    # ---- 闸对比：现行比例闸 vs alpha 规则（主轴做闸的候选形态）----
+    print("\n== 闸对比（前瞻1年绝对收益：过闸 vs 被拦）==")
+
+    def gate_spread(mask_fn, name):
+        pf, ff, n_o = [], [], 0
+        for o in origins:
+            d = mrg[mrg["origin"] == o]
+            d = d[d["fwd1y"].notna()]
+            if len(d) < 25:
+                continue
+            m = mask_fn(d).fillna(False)
+            if m.sum() == 0 or (~m).sum() == 0:
+                continue
+            n_o += 1
+            pf.extend(d[m]["fwd1y"].tolist())
+            ff.extend(d[~m]["fwd1y"].tolist())
+        if not pf or not ff:
+            print(f"  {name}: 样本不足")
+            return
+        print(f"  {name:<26} 过 n={len(pf):>4} fwd {np.mean(pf)*100:+.2f}% | "
+              f"拦 n={len(ff):>4} fwd {np.mean(ff)*100:+.2f}% | "
+              f"差 {(np.mean(pf)-np.mean(ff))*100:+.2f}pp | 期 {n_o}")
+
+    r_ = lambda d: pd.to_numeric(d["ratio"], errors="coerce") if "ratio" in d else pd.Series(np.nan, index=d.index)
+    am_ = lambda d: pd.to_numeric(d["a_med"], errors="coerce")
+    amin_ = lambda d: pd.to_numeric(d["a_min"], errors="coerce")
+    gate_spread(lambda d: r_(d) >= 0.10, "比例闸 r>=0.10（现行）")
+    gate_spread(lambda d: am_(d) > 0, "alpha中位>0")
+    gate_spread(lambda d: (am_(d) > 0) & (amin_(d) >= -0.02),
+                "alpha中位>0 且 最差>= -2%")
+    gate_spread(lambda d: (am_(d) > 0) & (amin_(d) >= 0),
+                "alpha中位>0 且 最差>=0")
+    gate_spread(lambda d: (am_(d) > 0) & (r_(d) >= 0.10),
+                "alpha中位>0 且 r>=0.10")
 
     print(f"\n产出: data/eq_career_factors.pkl | 耗时 {(time.time()-t0)/60:.1f}min")
     return 0
