@@ -107,6 +107,10 @@ POS_MIN_BY_TYPE = {"股票型": 50.0, "混合型-偏股": 50.0,
 RATIO_MIN = 0.05
 # 规模闸：经理现任基金资产总规模 >10 亿（2026-11-18 用户拍板；数据缺失 fail-open）
 AUM_MIN_YI = 10.0
+# 展示上限（2026-11-18 用户拍板"老将40+新锐25"）：资格=过全部新闸（当期全量进
+# roster 状态与 CSV），页面只展示各通道按分排序的前 N；导出图仍截前20
+VET_SHOW_N = 40
+NEW_SHOW_N = 25
 # 小格合并（2026-11-14 七问排查 P1 落地）：A格(type×7桶)样本 < 此值 →
 # 改在（类型×三类）组内取年窗分位，大格不动。
 # eq_cell_merge_eval 双起点判据全过：M1 考卷两期 Jaccard 0.312→0.377、
@@ -1828,6 +1832,14 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
         for i, r in enumerate(lists[k], 1):
             r["rank"] = i
 
+    # 展示上限（2026-11-18 用户拍板：老将前40 + 新锐前25）——资格（过全部新闸）在
+    # roster 状态里是全量，这里只切展示层与明细；CSV 回核仍写全量（lists_full）
+    lists_full = {k: list(v) for k, v in lists.items()}
+    for _k, _cap in (("vet", VET_SHOW_N), ("new", NEW_SHOW_N)):
+        lists[_k] = lists[_k][:_cap]
+    _shown = {r["key"] for _l in lists.values() for r in _l}
+    detail = {k: v for k, v in detail.items() if k in _shown}
+
     buckets = sorted({r["bucket"] for r in lists["vet"] + lists["new"]},
                      key=lambda b: CANON3.index(b) if b in CANON3 else 99)
     payload = dict(asof=asof_s or None,
@@ -1840,7 +1852,7 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     try:
         mgr_rows = [dict(list_=k, **{kk: vv for kk, vv in r.items()
                                      if kk != "key"})
-                    for k in ("vet", "new") for r in lists[k]]
+                    for k in ("vet", "new") for r in lists_full[k]]
         pd.DataFrame(mgr_rows).to_csv(CSV_MGR, index=False, encoding="utf-8-sig")
         frows = []
         for r in qual.itertuples(index=False):
@@ -1866,7 +1878,9 @@ def build(refresh: bool = True, workers: int = 8, log=print) -> dict | None:
     except Exception as e:
         log(f"      [warn] CSV 写出失败（{e}）")
 
-    log(f"完成：老将榜 {len(payload['vet'])} 人 / 新锐榜 {len(payload['new'])} 人，"
+    log(f"完成：老将榜 {len(payload['vet'])} 人 / 新锐榜 {len(payload['new'])} 人"
+        f"（展示上限 {VET_SHOW_N}/{NEW_SHOW_N}，资格全量 "
+        f"{sum(len(v) for v in lists_full.values())} 人），"
         f"明细 {len(detail)}，耗时 {(time.time() - t0) / 60:.1f}min"
         f" → eq_score_{{mgrs,funds}}.csv")
     return payload
